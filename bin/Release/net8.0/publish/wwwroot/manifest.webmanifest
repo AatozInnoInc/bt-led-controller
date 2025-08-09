@@ -1,0 +1,30 @@
+{
+  "name": "Car Lister",
+  "short_name": "Car Lister",
+  "id": "./",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#007bff",
+  "prefer_related_applications": false,
+  "description": "Find your perfect ride or sell your car with ease",
+  "icons": [
+    {
+      "src": "images/car-lister-favicon.png",
+      "type": "image/png",
+      "sizes": "64x64"
+    },
+    {
+      "src": "images/Cow in Space with Flaming CRT.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "images/car-lister-favicon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ]
+}

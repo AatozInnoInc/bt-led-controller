@@ -1,0 +1,12 @@
+{
+  "name": "bt-led-guitar-dashboard",
+  "version": "1.0.0",
+  "description": "BT LED Guitar Dashboard PWA",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["blazor", "pwa", "guitar", "dashboard"],
+  "author": "",
+  "license": "ISC"
+}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BT LED Guitar Dashboard</title>
+    <base href="/" />
+    <link rel="icon" type="image/png" href="images/bt-led-guitar-dashboard-favicon.png" />
+    <link rel="apple-touch-icon" href="images/bt-led-guitar-dashboard-favicon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/navmenu.css" />
+    <link rel="stylesheet" href="css/home.css" />
+    <link rel="stylesheet" href="css/login.css" />
+    <link rel="stylesheet" href="css/addlisting.css" />
+    <link rel="stylesheet" href="css/authlayout.css" />
+    <link rel="stylesheet" href="css/policy.css" />
+    <link rel="stylesheet" href="css/open-iconic/font/css/open-iconic-bootstrap.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script>
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            authDomain: "bt-led-guitar-dashboard.firebaseapp.com",
+            projectId: "bt-led-guitar-dashboard",
+            storageBucket: "bt-led-guitar-dashboard.firebasestorage.app",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdefghijklmnop"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+    </script>
+    <script src="js/firebaseAuth.js"></script>
+    <script src="js/firestore.js"></script>
+    <script src="js/notifications.js"></script>
+</head>
+
+<body>
+    <div id="app">
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Loading...</div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

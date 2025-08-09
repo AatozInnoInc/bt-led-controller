@@ -1,0 +1,42 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Login - BT LED Guitar Dashboard</PageTitle>
+
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <img src="images/bt-led-guitar-dashboard-favicon.png" alt="BT LED Guitar Dashboard Logo" />
+            <h1>BT LED Guitar Dashboard</h1>
+            <p>Sign in to access your guitar LED configurations</p>
+        </div>
+
+        <div class="login-form">
+            <button class="btn btn-google" @onclick="SignInWithGoogle">
+                <img src="images/google-icon.png" alt="Google" class="google-icon" />
+                Sign in with Google
+            </button>
+        </div>
+
+        <div class="login-footer">
+            <p>By signing in, you agree to our <a href="/termsofservice">Terms of Service</a> and <a href="/privacypolicy">Privacy Policy</a></p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private async Task SignInWithGoogle()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("signInWithGoogle");
+        }
+        catch (Exception ex)
+        {
+            // Handle error
+            Console.WriteLine($"Error signing in: {ex.Message}");
+        }
+    }
+} 
