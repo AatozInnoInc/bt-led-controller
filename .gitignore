@@ -99,6 +99,11 @@ artifacts/
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 
+# Firebase secret configuration files
+wwwroot/js/firebase-config-secret.js
+*.secret.js
+*.secret.json
+
 # StyleCop
 StyleCopReport.xml
 

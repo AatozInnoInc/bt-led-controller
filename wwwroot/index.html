@@ -19,23 +19,31 @@
     <link rel="stylesheet" href="css/open-iconic/font/css/open-iconic-bootstrap.min.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Firebase Configuration - Secure Version -->
+    <script src="js/firebase-config.js"></script>
+    
+    <!-- Load secret config if it exists (this file should be created locally and excluded from Git) -->
+    <script src="js/firebase-config-secret.js" onerror="console.log('Secret config not found, using default config')"></script>
+    
+    <!-- Initialize Firebase -->
     <script>
-        // Your web app's Firebase configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyBqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
-            authDomain: "bt-led-guitar-dashboard.firebaseapp.com",
-            projectId: "bt-led-guitar-dashboard",
-            storageBucket: "bt-led-guitar-dashboard.firebasestorage.app",
-            messagingSenderId: "123456789012",
-            appId: "1:123456789012:web:abcdefghijklmnop"
-        };
-
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
+        // Initialize Firebase when the page loads
+        document.addEventListener('DOMContentLoaded', async function() {
+            if (typeof window.initializeFirebase === 'function') {
+                await window.initializeFirebase();
+            } else {
+                console.error('Firebase initialization function not found');
+            }
+        });
     </script>
+    
+    <!-- Custom Firebase interface scripts -->
     <script src="js/firebaseAuth.js"></script>
     <script src="js/firestore.js"></script>
     <script src="js/notifications.js"></script>
