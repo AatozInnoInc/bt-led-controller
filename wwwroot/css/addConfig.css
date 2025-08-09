@@ -1,5 +1,5 @@
-/* Add Listing Page Styles */
-.add-listing-container {
+/* Add New Effect Page Styles */
+.add-config-container {
     max-width: 1200px;
     margin: 1rem auto;
     padding: 1rem;
@@ -1135,7 +1135,7 @@
 
 /* Tablet and Desktop Styles (min-width: 768px) */
 @media (min-width: 768px) {
-    .add-listing-container {
+    .add-config-container {
         margin: 0 auto;
         padding: 2rem;
     }

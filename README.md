@@ -9,7 +9,7 @@ bt-led-guitar-dashboard/
 ├── Pages/                    # Blazor pages
 │   ├── Home.razor           # Landing page
 │   ├── Login.razor          # Authentication page
-│   ├── AddListing.razor     # Configuration management
+│   ├── AddConfig.razor      # Configuration management
 │   ├── PrivacyPolicy.razor  # Privacy policy
 │   └── TermsOfService.razor # Terms of service
 ├── Shared/                  # Shared components

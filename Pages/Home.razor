@@ -20,9 +20,6 @@
                 <button class="btn btn-primary btn-lg" @onclick='() => NavigationManager.NavigateTo("addlisting")'>
                     <i class="fas fa-plus"></i> Add New Configuration
                 </button>
-                <button class="btn btn-outline-primary btn-lg" @onclick='() => NavigationManager.NavigateTo("/login")'>
-                    <i class="fas fa-sign-in-alt"></i> Login
-                </button>
             </div>
         </div>
     </div>
@@ -111,6 +108,6 @@
 
     private void NavigateToAddListing()
     {
-        NavigationManager.NavigateTo("/add-listing");
+        NavigationManager.NavigateTo("/add-config");
     }
 }

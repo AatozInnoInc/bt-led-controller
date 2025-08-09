@@ -1,4 +1,4 @@
-@page "/addlisting"
+@page "/addConfig"
 @using Microsoft.AspNetCore.Authorization
 @using bt_led_guitar_dashboard.Services
 @using Microsoft.JSInterop
@@ -8,16 +8,16 @@
 @attribute [Authorize]
 
 <PageTitle>Add New Configuration - BT LED Guitar Dashboard</PageTitle>
-<link href="css/addlisting.css" rel="stylesheet" />
+<link href="css/addConfig.css" rel="stylesheet" />
 <script src="js/firestore.js"></script>
 
-<div class="add-listing-container">
+<div class="add-Config-container">
     <div class="header">
         <button class="btn-back" @onclick="GoBack">
             <span class="oi oi-arrow-left"></span>
             Back
         </button>
-        <h1>Add New Car Listing</h1>
+        <h1>Add New Car Config</h1>
         <p class="subtitle">Scrape car details from CarGurus.com</p>
     </div>
 
@@ -163,17 +163,9 @@
             }
             
             <div class="actions">
-                <button class="btn btn-primary" @onclick="SaveListing">
+                <button class="btn btn-primary" @onclick="SaveConfig">
                     <span class="oi oi-plus"></span>
-                    Save Listing
-                </button>
-                <button class="btn btn-download" @onclick="DownloadListing">
-                    <span class="oi oi-data-transfer-download"></span>
-                    Download Listing
-                </button>
-                <button class="btn btn-images" @onclick="DownloadImages" disabled="@(scrapedCar?.Images == null || !scrapedCar.Images.Any())">
-                    <span class="oi oi-image"></span>
-                    Download Images
+                    Save Config
                 </button>
                 <button class="btn btn-secondary" @onclick="ScrapeAgain">
                     <span class="oi oi-reload"></span>
@@ -185,7 +177,7 @@
         {
             <div class="scrape-form">
                 <div class="form-group">
-                    <label for="cargurus-url">CarGurus.com Listing URL</label>
+                    <label for="cargurus-url">CarGurus.com Config URL</label>
                     <input 
                         type="url" 
                         id="cargurus-url" 
@@ -430,7 +422,7 @@
         if (firstRender)
         {
             // Initialize any JavaScript functionality
-            await JSRuntime.InvokeVoidAsync("console.log", "AddListing page loaded");
+            await JSRuntime.InvokeVoidAsync("console.log", "AddConfig page loaded");
             
             // Add fullscreen event listeners
             await JSRuntime.InvokeVoidAsync("eval", @"
@@ -505,7 +497,7 @@
         await ScrollToActiveFullscreenThumbnail();
     }
 
-    private async Task SaveListing()
+    private async Task SaveConfig()
     {
         if (scrapedCar == null) return;
 
@@ -518,29 +510,29 @@
         }
         catch (Exception ex)
         {
-            errorMessage = $"Error saving listing: {ex.Message}";
+            errorMessage = $"Error saving Config: {ex.Message}";
             StateHasChanged();
         }
     }
 
-    private async Task DownloadListing()
+    private async Task DownloadConfig()
     {
         if (scrapedCar == null) return;
 
         try
         {
             // Create a comprehensive HTML report
-            var htmlContent = GenerateListingReport(scrapedCar);
+            var htmlContent = GenerateConfigReport(scrapedCar);
             
             // Convert to PDF or create a downloadable HTML file
-            var fileName = $"car-listing-{scrapedCar.Year}-{scrapedCar.Make}-{scrapedCar.Model}-{DateTime.Now:yyyyMMdd-HHmmss}.html";
+            var fileName = $"car-Config-{scrapedCar.Year}-{scrapedCar.Make}-{scrapedCar.Model}-{DateTime.Now:yyyyMMdd-HHmmss}.html";
             
             // Trigger download using JavaScript
             await JSRuntime.InvokeVoidAsync("downloadFile", fileName, htmlContent);
         }
         catch (Exception ex)
         {
-            errorMessage = $"Error downloading listing: {ex.Message}";
+            errorMessage = $"Error downloading Config: {ex.Message}";
             StateHasChanged();
         }
     }
@@ -565,7 +557,7 @@
 
 
 
-    private string GenerateListingReport(ScrapedCar car)
+    private string GenerateConfigReport(ScrapedCar car)
     {
         var html = new System.Text.StringBuilder();
         
@@ -574,7 +566,7 @@
         html.AppendLine("<head>");
         html.AppendLine("    <meta charset='UTF-8'>");
         html.AppendLine("    <meta name='viewport' content='width=device-width, initial-scale=1.0'>");
-        html.AppendLine($"    <title>Car Listing - {car.FullTitle}</title>");
+        html.AppendLine($"    <title>Car Config - {car.FullTitle}</title>");
         html.AppendLine("    <style>");
         html.AppendLine("        body {");
         html.AppendLine("            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;");
@@ -742,7 +734,7 @@
         }
 
         html.AppendLine("    <div class='footer'>");
-        html.AppendLine($"        <p>Car Listing Report - {car.FullTitle}</p>");
+        html.AppendLine($"        <p>Car Config Report - {car.FullTitle}</p>");
         html.AppendLine($"        <p>Original URL: {car.OriginalUrl}</p>");
         html.AppendLine("        <p>Generated by BT LED Guitar Dashboard</p>");
         html.AppendLine("    </div>");
