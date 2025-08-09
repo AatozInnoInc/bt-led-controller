@@ -1,7 +1,7 @@
 ﻿@page "/"
 
 @using Microsoft.AspNetCore.Components.Authorization
-@using car_lister.Services
+@using bt_led_guitar_dashboard.Services
 
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager NavigationManager
@@ -17,10 +17,10 @@
             <h1>BT LED Guitar Dashboard</h1>
             <p class="hero-subtitle">Control your guitar's LED system with ease</p>
             <div class="hero-buttons">
-                <button class="btn btn-primary btn-lg" @onclick="() => NavigationManager.NavigateTo('/addlisting')">
+                <button class="btn btn-primary btn-lg" @onclick='() => NavigationManager.NavigateTo("addlisting")'>
                     <i class="fas fa-plus"></i> Add New Configuration
                 </button>
-                <button class="btn btn-outline-primary btn-lg" @onclick="() => NavigationManager.NavigateTo('/login')">
+                <button class="btn btn-outline-primary btn-lg" @onclick='() => NavigationManager.NavigateTo("/login")'>
                     <i class="fas fa-sign-in-alt"></i> Login
                 </button>
             </div>

@@ -1,44 +1,41 @@
 using Microsoft.JSInterop;
-using System.Threading.Tasks;
 
-namespace car_lister.Services
+namespace bt_led_guitar_dashboard.Services;
+public interface IFirebaseAuthService
 {
-    public interface IFirebaseAuthService
+    Task<bool> SignInWithGoogleAsync();
+    Task SignOutAsync();
+    Task<bool> IsUserAuthenticatedAsync();
+}
+
+public class FirebaseAuthService : IFirebaseAuthService
+{
+    private readonly IJSRuntime _jsRuntime;
+
+    public FirebaseAuthService(IJSRuntime jsRuntime)
     {
-        Task<bool> SignInWithGoogleAsync();
-        Task SignOutAsync();
-        Task<bool> IsUserAuthenticatedAsync();
+        _jsRuntime = jsRuntime;
     }
 
-    public class FirebaseAuthService : IFirebaseAuthService
+    public async Task<bool> SignInWithGoogleAsync()
     {
-        private readonly IJSRuntime _jsRuntime;
-
-        public FirebaseAuthService(IJSRuntime jsRuntime)
+        try
         {
-            _jsRuntime = jsRuntime;
+            return await _jsRuntime.InvokeAsync<bool>("firebaseAuth.signInWithGoogle");
         }
-
-        public async Task<bool> SignInWithGoogleAsync()
+        catch
         {
-            try
-            {
-                return await _jsRuntime.InvokeAsync<bool>("firebaseAuth.signInWithGoogle");
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public async Task SignOutAsync()
-        {
-            await _jsRuntime.InvokeVoidAsync("firebaseAuth.signOut");
-        }
-
-        public async Task<bool> IsUserAuthenticatedAsync()
-        {
-            return await _jsRuntime.InvokeAsync<bool>("firebaseAuth.isUserAuthenticated");
+            return false;
         }
     }
-} 
+
+    public async Task SignOutAsync()
+    {
+        await _jsRuntime.InvokeVoidAsync("firebaseAuth.signOut");
+    }
+
+    public async Task<bool> IsUserAuthenticatedAsync()
+    {
+        return await _jsRuntime.InvokeAsync<bool>("firebaseAuth.isUserAuthenticated");
+    }
+}

@@ -1,7 +1,7 @@
 ﻿using Microsoft.JSInterop;
 using System.Threading.Tasks;
 
-namespace car_lister.Services;
+namespace bt_led_guitar_dashboard.Services;
 
 
 public class FirebaseService

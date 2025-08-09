@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using System.Security.Claims;
 
-namespace car_lister.Services;
+namespace bt_led_guitar_dashboard.Services;
 
 public class FirebaseAuthenticationStateProvider : AuthenticationStateProvider
 {

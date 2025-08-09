@@ -1,5 +1,0 @@
-C:\Users\aatoz_\source\repos\AatozInnoInc\car-lister\bin\Release\net8.0\publish\firebase.json
-C:\Users\aatoz_\source\repos\AatozInnoInc\car-lister\bin\Release\net8.0\publish\firestore.indexes.json
-C:\Users\aatoz_\source\repos\AatozInnoInc\car-lister\bin\Release\net8.0\publish\package-lock.json
-C:\Users\aatoz_\source\repos\AatozInnoInc\car-lister\bin\Release\net8.0\publish\emcc-props.json
-C:\Users\aatoz_\source\repos\AatozInnoInc\car-lister\bin\Release\net8.0\publish\web.config
