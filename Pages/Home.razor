@@ -17,7 +17,7 @@
             <h1>BT LED Guitar Dashboard</h1>
             <p class="hero-subtitle">Control your guitar's LED system with ease</p>
             <div class="hero-buttons">
-                <button class="btn btn-primary btn-lg" @onclick='() => NavigationManager.NavigateTo("addlisting")'>
+                <button class="btn btn-primary btn-lg" @onclick='() => NavigationManager.NavigateTo("addconfig")'>
                     <i class="fas fa-plus"></i> Add New Configuration
                 </button>
             </div>
@@ -106,8 +106,8 @@
         NavigationManager.NavigateTo("/login");
     }
 
-    private void NavigateToAddListing()
+    private void NavigateToAddConfig()
     {
-        NavigationManager.NavigateTo("/add-config");
+        NavigationManager.NavigateTo("/addconfig");
     }
 }
