@@ -4,6 +4,14 @@ export interface BluetoothDevice {
   rssi: number;
   isConnected: boolean;
   manufacturerData?: string;
+  // Real BLE properties
+  localName?: string;
+  txPowerLevel?: number;
+  serviceUUIDs?: string[];
+  overflowServiceUUIDs?: string[];
+  solicitedServiceUUIDs?: string[];
+  serviceData?: { [key: string]: string };
+  manufacturerDataRaw?: string;
 }
 
 export interface LEDConfiguration {
@@ -32,4 +40,33 @@ export interface BluetoothState {
   devices: BluetoothDevice[];
   connectedDevice: BluetoothDevice | null;
   error: string | null;
+}
+
+// New interfaces for BLE communication
+export interface BLEService {
+  uuid: string;
+  isPrimary: boolean;
+  characteristics: BLECharacteristic[];
+}
+
+export interface BLECharacteristic {
+  uuid: string;
+  properties: {
+    read: boolean;
+    write: boolean;
+    writeWithoutResponse: boolean;
+    notify: boolean;
+    indicate: boolean;
+    broadcast: boolean;
+    authenticatedSignedWrites: boolean;
+    extendedProperties: boolean;
+  };
+  value?: string;
+}
+
+export interface BLEConnection {
+  deviceId: string;
+  isConnected: boolean;
+  services: BLEService[];
+  error?: string;
 }
