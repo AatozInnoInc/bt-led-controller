@@ -1,156 +1,113 @@
-# 🎸 BT LED Guitar Dashboard PWA
+# BT LED Guitar Dashboard
 
-A modern Progressive Web App (PWA) built with Blazor WebAssembly for controlling guitar LED systems.
+A React Native app for controlling LED guitar systems via Bluetooth Low Energy (BLE) connection to Adafruit ItsyBitsy nRF52840 Express devices.
 
-## 📁 Project Structure
+## Features
 
-```
-bt-led-guitar-dashboard/
-├── Pages/                    # Blazor pages
-│   ├── Home.razor           # Landing page
-│   ├── Login.razor          # Authentication page
-│   ├── AddConfig.razor      # Configuration management
-│   ├── PrivacyPolicy.razor  # Privacy policy
-│   └── TermsOfService.razor # Terms of service
-├── Shared/                  # Shared components
-│   ├── NavMenu.razor        # Navigation menu
-│   ├── AppFooter.razor      # Footer component
-│   └── AuthLayout.razor     # Authenticated layout
-├── Services/                # Service classes
-│   ├── FirebaseService.cs   # Firebase integration
-│   └── FirebaseAuthService.cs # Authentication service
-├── wwwroot/                 # Static assets
-│   ├── css/                 # Stylesheets
-│   ├── js/                  # JavaScript files
-│   └── images/              # Images and icons
-└── bt-led-guitar-dashboard.csproj       # .NET project file
-```
+- **Bluetooth Device Discovery**: Scan for and connect to nearby BLE devices
+- **Configuration Profiles**: Create and manage LED configuration profiles for your devices
+- **LED Control**: Configure brightness, color, patterns, and speed for multiple LEDs
+- **Cross-Platform**: Works on iOS, Android, and Web
+- **Modern UI**: iOS/meta-inspired design with dark theme
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- .NET 8.0 SDK
-- Node.js (for package management)
-- Firebase project (for authentication and database)
+- Node.js (v16 or higher)
+- Expo CLI
+- iOS Simulator or Android Emulator (for mobile testing)
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd bt-led-guitar-dashboard
-```
-
-2. Install dependencies:
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Configure Firebase:
-   - Create a Firebase project
-   - Enable Authentication (Google sign-in)
-   - Enable Firestore Database
-   - Update `wwwroot/index.html` with your Firebase config
-
-4. Run the application:
+2. Start the development server:
 ```bash
-dotnet run
+npm start
 ```
 
-5. Open your browser and navigate to `https://localhost:5001`
+3. Run on your preferred platform:
+```bash
+# iOS
+npm run ios
 
-## 🔧 Configuration
+# Android
+npm run android
 
-### Firebase Setup
-
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Create a new project
-3. Enable Authentication with Google sign-in
-4. Enable Firestore Database
-5. Update the Firebase configuration in `wwwroot/index.html`:
-
-```javascript
-const firebaseConfig = {
-    apiKey: "your-api-key",
-    authDomain: "your-project.firebaseapp.com",
-    projectId: "your-project-id",
-    storageBucket: "your-project.firebasestorage.app",
-    messagingSenderId: "your-sender-id",
-    appId: "your-app-id"
-};
+# Web
+npm run web
 ```
 
-## 🎨 Features
+## Usage
 
-- **LED Configuration Management**: Create and manage guitar LED configurations
-- **Real-time Control**: Control your guitar's LED system in real-time
-- **Mobile Responsive**: Works seamlessly on all devices
-- **Offline Support**: PWA features for offline functionality
-- **Secure Authentication**: Google sign-in integration
-- **Cloud Sync**: All configurations stored securely in the cloud
+### Adding a New Configuration
 
-## 🛠️ Development
+1. Tap "Add New Configuration" on the home screen
+2. The app will scan for nearby Bluetooth devices
+3. Select your ItsyBitsy nRF52840 Express device
+4. Create a configuration profile with:
+   - Profile name
+   - LED configurations (brightness, color, pattern, speed)
+5. Save the profile for future use
+
+### LED Configuration Options
+
+- **Brightness**: 0-100% control
+- **Colors**: Red, Green, Blue, Yellow, Magenta, Cyan
+- **Patterns**: Solid, Pulse, Rainbow, Custom
+- **Speed**: 0-100% for animated patterns
+
+## Bluetooth Permissions
+
+The app requires Bluetooth permissions to function:
+
+- **iOS**: Bluetooth usage descriptions are configured in app.json
+- **Android**: Bluetooth and location permissions are required for device scanning
+
+## Development
 
 ### Project Structure
 
-- **Blazor WebAssembly**: Frontend framework
-- **Firebase**: Backend services (Auth, Firestore)
-- **PWA**: Progressive Web App features
-- **Bootstrap**: UI framework
-
-### Key Files
-
-- `Program.cs`: Application entry point
-- `App.razor`: Root component
-- `wwwroot/index.html`: Main HTML file
-- `wwwroot/manifest.webmanifest`: PWA manifest
-- `Services/FirebaseService.cs`: Firebase integration
-
-## 📦 Deployment
-
-### Firebase Hosting
-
-1. Install Firebase CLI:
-```bash
-npm install -g firebase-tools
+```
+src/
+├── components/          # Reusable UI components
+├── screens/            # Screen components
+│   ├── HomeScreen.tsx
+│   ├── DeviceDiscoveryScreen.tsx
+│   ├── CreateProfileScreen.tsx
+│   └── ...
+├── types/              # TypeScript type definitions
+│   └── bluetooth.ts
+└── utils/              # Utility functions and themes
+    └── theme.ts
 ```
 
-2. Login to Firebase:
-```bash
-firebase login
-```
+### Key Components
 
-3. Initialize Firebase:
-```bash
-firebase use bt-led-guitar-dashboard
-```
+- **DeviceDiscoveryScreen**: Handles Bluetooth device scanning and selection
+- **CreateProfileScreen**: Manages LED configuration profile creation
+- **Bluetooth Types**: TypeScript interfaces for device and profile management
 
-4. Build and deploy:
-```bash
-dotnet publish -c Release
-firebase deploy
-```
+## Future Enhancements
 
-## 🤝 Contributing
+- Real-time LED control via BLE communication
+- Profile management and editing
+- Cloud sync for configurations
+- Advanced LED patterns and effects
+- Device firmware updates
+
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Submit a pull request
+4. Test thoroughly
+5. Submit a pull request
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-If you encounter any issues or have questions, please:
-
-1. Check the [Issues](https://github.com/your-repo/issues) page
-2. Create a new issue with detailed information
-3. Contact the development team
-
----
-
-**Note**: This is a PWA, so users can install it on their devices for a native app-like experience. 
+This project is licensed under the MIT License.
