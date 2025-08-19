@@ -431,29 +431,24 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       </View>
 
       {/* Platform Info */}
-      {Platform.OS === 'web' && (
-        <View style={styles.platformInfo}>
-          <Text style={styles.platformInfoText}>
-            🌐 Web Platform - {isWebBluetoothSupported ? 'Bluetooth Supported' : 'Bluetooth Not Supported'}
-          </Text>
-        </View>
-      )}
-      {Platform.OS === 'ios' && (
-        <View style={[styles.platformInfo, !isBluetoothInitialized && styles.platformInfoError]}>
-          <Text style={[styles.platformInfoText, !isBluetoothInitialized && styles.platformInfoTextError]}>
-            📱 iOS Platform - {isBluetoothInitialized ? 'Bluetooth Ready' : 
-             !bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'}
-          </Text>
-        </View>
-      )}
-      {Platform.OS === 'android' && (
-        <View style={[styles.platformInfo, !isBluetoothInitialized && styles.platformInfoError]}>
-          <Text style={[styles.platformInfoText, !isBluetoothInitialized && styles.platformInfoTextError]}>
-            🤖 Android Platform - {isBluetoothInitialized ? 'Bluetooth Ready' : 
-             !bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'}
-          </Text>
-        </View>
-      )}
+      {(() => {
+        const isWebPlatform = Platform.OS === 'web';
+        const platformIcon = isWebPlatform ? '🌐' : Platform.OS === 'ios' ? '📱' : '🤖';
+        const platformName = isWebPlatform ? 'Web' : Platform.OS === 'ios' ? 'iOS' : 'Android';
+        const isPlatformError = !isWebPlatform && !isBluetoothInitialized;
+        const platformStatusText = isWebPlatform
+          ? (isWebBluetoothSupported ? 'Bluetooth Supported' : 'Bluetooth Not Supported')
+          : (isBluetoothInitialized
+              ? 'Bluetooth Ready'
+              : (!bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'));
+        return (
+          <View style={[styles.platformInfo, isPlatformError && styles.platformInfoError]}>
+            <Text style={[styles.platformInfoText, isPlatformError && styles.platformInfoTextError]}>
+              {platformIcon} {platformName} Platform - {platformStatusText}
+            </Text>
+          </View>
+        );
+      })()}
 
       {/* Scan Button */}
       <View style={styles.scanSection}>
