@@ -23,7 +23,6 @@ export const isPotentialMicrocontroller = (device: Partial<BluetoothDevice> & an
     name.toLowerCase().includes('esp32') ||
     name.toLowerCase().includes('microcontroller') ||
     name.toLowerCase().includes('bluefruit') ||
-    name.toLowerCase().includes('led guitar controller') ||
     name.toLowerCase().includes('guitar controller') ||
     name.toLowerCase().includes('led guitar')
   );
