@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { BluetoothDevice, BLEConnection } from '../types/bluetooth';
+import { NUS_SERVICE_UUID, NUS_WRITE_CHAR_UUID, isUuidLikelyUart } from './bleConstants';
 
 // Only import react-native-ble-plx on native platforms
 let BleManager: any, Device: any, State: any;
@@ -170,13 +171,7 @@ class BluetoothService {
       console.log('🔧 Available services:', services.map((s: any) => s.uuid));
       
       // Look for Nordic UART Service (standard) or Adafruit BLE UART service
-      const uartService = services.find((service: any) => {
-        const uuid = service.uuid.toLowerCase();
-        return uuid === '6e400001-b5a3-f393-e0a9-e50e24dcca9e' || // Nordic UART Service
-               uuid.includes('6e400001') || // Nordic UART Service (partial match)
-               uuid.includes('adafruit') || // Adafruit services
-               uuid.includes('feather');    // Feather services
-      });
+      const uartService = services.find((service: any) => isUuidLikelyUart(service.uuid));
 
       if (!uartService) {
         console.warn('❌ UART service not found, trying to list available services...');
@@ -195,8 +190,7 @@ class BluetoothService {
       // Look for write characteristic (Nordic UART Write or similar)
       const writeCharacteristic = characteristics.find((char: any) => {
         const uuid = char.uuid.toLowerCase();
-        return uuid === '6e400002-b5a3-f393-e0a9-e50e24dcca9e' || // Nordic UART Write
-               uuid.includes('6e400002'); // Nordic UART Write (partial match)
+        return uuid === NUS_WRITE_CHAR_UUID || uuid.includes('6e400002');
       });
 
       if (!writeCharacteristic) {

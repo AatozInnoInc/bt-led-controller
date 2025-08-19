@@ -1,4 +1,5 @@
 import { BluetoothDevice } from '../types/bluetooth';
+import { NUS_SERVICE_UUID, NUS_NOTIFY_CHAR_UUID, NUS_WRITE_CHAR_UUID } from './bleConstants';
 
 class BluetoothWebService {
   private isSupported: boolean = false;
@@ -12,7 +13,8 @@ class BluetoothWebService {
   }
 
   private checkWebBluetoothSupport(): boolean {
-    return 'bluetooth' in navigator && 'requestDevice' in navigator.bluetooth;
+    const nav: any = (typeof navigator !== 'undefined' ? navigator : undefined) as any;
+    return !!(nav && nav.bluetooth && typeof nav.bluetooth.requestDevice === 'function');
   }
 
   async initialize(): Promise<boolean> {
@@ -36,9 +38,9 @@ class BluetoothWebService {
       console.log('Starting Web Bluetooth scan...');
       
       // Request device with specific filters for your nRF52
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true, // For testing - you can filter by services later
-        optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] // UART service
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [NUS_SERVICE_UUID]
       });
 
       console.log('Device selected via Web Bluetooth:', device.name, 'ID:', device.id);
@@ -119,10 +121,10 @@ class BluetoothWebService {
       console.log('Setting up notifications for responses...');
       
       // Get the UART service
-      const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+      const service = await server.getPrimaryService(NUS_SERVICE_UUID);
       
       // Get the notify characteristic
-      this.notifyCharacteristic = await service.getCharacteristic('6e400003-b5a3-f393-e0a9-e50e24dcca9e');
+      this.notifyCharacteristic = await service.getCharacteristic(NUS_NOTIFY_CHAR_UUID);
       
       console.log('Got notify characteristic, starting notifications...');
       
@@ -192,10 +194,10 @@ class BluetoothWebService {
       }
 
       // Get the UART service
-      const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+      const service = await server.getPrimaryService(NUS_SERVICE_UUID);
       
       // Get the write characteristic
-      const writeCharacteristic = await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
+      const writeCharacteristic = await service.getCharacteristic(NUS_WRITE_CHAR_UUID);
 
       // Convert message to ArrayBuffer
       const encoder = new TextEncoder();

@@ -1,29 +1,19 @@
 import { BluetoothDevice } from '../types/bluetooth';
+import { ADAFRUIT_KEYWORDS, isUuidLikelyUart } from './bleConstants';
 
 export const isPotentialMicrocontroller = (device: Partial<BluetoothDevice> & any): boolean => {
   const serviceUUIDs: string[] | undefined = device.serviceUUIDs;
   const name: string | undefined = device.name || device.localName;
   const manufacturerData: string | undefined = device.manufacturerData || device.manufacturerDataRaw;
 
-  const hasNordicUART = serviceUUIDs?.some((uuid: string) =>
-    uuid.toLowerCase().includes('6e400') ||
-    uuid.toLowerCase().includes('b5a3-f393-e0a9-e50e24dcca9e')
-  ) || false;
+  const hasNordicUART = serviceUUIDs?.some((uuid: string) => isUuidLikelyUart(uuid)) || false;
 
-  const hasAdafruitUART = serviceUUIDs?.some((uuid: string) =>
-    uuid.toLowerCase().includes('6e400001') ||
-    uuid.toLowerCase().includes('6e400002') ||
-    uuid.toLowerCase().includes('6e400003') ||
-    uuid.toLowerCase().includes('adafruit') ||
-    uuid.toLowerCase().includes('feather')
-  ) || false;
+  const hasAdafruitUART = serviceUUIDs?.some((uuid: string) => {
+    const lower = uuid.toLowerCase();
+    return isUuidLikelyUart(lower) || ADAFRUIT_KEYWORDS.some(k => lower.includes(k));
+  }) || false;
 
-  const hasAdafruitPattern = !!manufacturerData && (
-    manufacturerData.includes('Adafruit') ||
-    manufacturerData.includes('adafruit') ||
-    manufacturerData.includes('Bluefruit') ||
-    manufacturerData.includes('Feather')
-  );
+  const hasAdafruitPattern = !!manufacturerData && ADAFRUIT_KEYWORDS.some(k => manufacturerData.toLowerCase().includes(k));
 
   const hasMicrocontrollerName = !!name && (
     name.toLowerCase().includes('feather') ||
