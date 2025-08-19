@@ -16,10 +16,14 @@
       "backgroundColor": "#000000"
     },
     "ios": {
+      "bundleIdentifier": "com.aatozinnovations.myledguitar",
+      "buildNumber": "2",
       "supportsTablet": true,
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to your LED guitar controller",
-        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to your LED guitar controller"
+        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to your LED guitar controller",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

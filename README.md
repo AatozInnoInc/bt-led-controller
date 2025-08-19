@@ -47,12 +47,22 @@ npm run web
 ### Adding a New Configuration
 
 1. Tap "Add New Configuration" on the home screen
-2. The app will scan for nearby Bluetooth devices
-3. Select your ItsyBitsy nRF52840 Express device
-4. Create a configuration profile with:
+2. The app will scan for nearby Bluetooth devices using native Bluetooth APIs
+3. Select your ItsyBitsy nRF52840 Express device from the discovered devices
+4. The app will connect to the device and verify the connection
+5. Create a configuration profile with:
    - Profile name
    - LED configurations (brightness, color, pattern, speed)
-5. Save the profile for future use
+6. Save the profile for future use
+
+### Bluetooth Device Requirements
+
+The app is designed to work with devices that support the Nordic UART Service (NUS):
+- **Service UUID**: `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
+- **Write Characteristic**: `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
+- **Read Characteristic**: `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
+
+This includes Adafruit ItsyBitsy nRF52840 Express and similar Nordic-based devices.
 
 ### LED Configuration Options
 
@@ -65,8 +75,15 @@ npm run web
 
 The app requires Bluetooth permissions to function:
 
-- **iOS**: Bluetooth usage descriptions are configured in app.json
+- **iOS**: Bluetooth usage descriptions are configured in app.json. The app uses `react-native-ble-plx` for native Bluetooth functionality.
 - **Android**: Bluetooth and location permissions are required for device scanning
+- **Web**: Uses Web Bluetooth API (supported in Chrome and Edge)
+
+## Platform Support
+
+- **iOS**: Full native Bluetooth Low Energy support with device discovery, connection, and message sending
+- **Android**: Full native Bluetooth Low Energy support (requires development build)
+- **Web**: Web Bluetooth API support for testing and development
 
 ## Development
 

@@ -57,8 +57,11 @@ BLEUart bleuart;
 
 void setup()
 {
+  // Initialize Serial without any waiting - just start it
   Serial.begin(115200);
-  while ( !Serial ) delay(10);   // for nrf52840 with native usb
+  
+  // Give Serial a moment to initialize, but don't wait for it
+  delay(100);
 
   Serial.println("Adafruit Bluefruit Neopixel Test");
   Serial.println("--------------------------------");
@@ -92,7 +95,14 @@ void setup()
 
 void startAdv(void)
 {  
-  // Advertising packet
+  // Set device name for better iOS compatibility (shorter name)
+  Bluefruit.setName("LED Guitar");
+  
+  // Clear any existing advertising data
+  Bluefruit.Advertising.clearData();
+  Bluefruit.ScanResponse.clearData();
+  
+  // Advertising packet - iOS compatible flags
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
   
@@ -113,9 +123,12 @@ void startAdv(void)
    * https://developer.apple.com/library/content/qa/qa1931/_index.html   
    */
   Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
+  Bluefruit.Advertising.setInterval(32, 244);   // iOS recommended: 20ms fast, 152.5ms slow
   Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-  Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
+  
+  Serial.println("BLE Advertising started with name: LED Guitar");
+  Serial.println("Device ready for connections!");
 }
 
 void connect_callback(uint16_t conn_handle)
@@ -184,6 +197,9 @@ void loop()
       }
     }
   }
+  
+  // Small delay to prevent watchdog issues
+  delay(10);
 }
 
 void handleTextMessage(int firstChar) {

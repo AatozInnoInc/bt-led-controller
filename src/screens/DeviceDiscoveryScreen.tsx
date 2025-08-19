@@ -8,11 +8,13 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothWebService } from '../utils/bluetoothWebService';
+import { bluetoothService } from '../utils/bluetoothService';
 
 interface DeviceDiscoveryScreenProps {
   navigation: any;
@@ -28,9 +30,20 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   const [isTestingFailure, setIsTestingFailure] = useState(false);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
   const [isWebBluetoothSupported, setIsWebBluetoothSupported] = useState(false);
+  const [isBluetoothInitialized, setIsBluetoothInitialized] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('all');
 
   useEffect(() => {
     checkWebBluetoothSupport();
+    initializeBluetooth();
+
+    // Cleanup function to stop scan when component unmounts
+    return () => {
+      if (Platform.OS !== 'web' && isScanning) {
+        bluetoothService.stopScan();
+      }
+    };
   }, []);
 
   const checkWebBluetoothSupport = () => {
@@ -43,30 +56,116 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     }
   };
 
-  // Mock data for development - replace with actual Bluetooth scanning
-  const mockDevices: BluetoothDevice[] = [
-    {
-      id: '1',
-      name: 'Bluefruit Feather52',
-      rssi: -45,
-      isConnected: false,
-      manufacturerData: 'Adafruit Industries',
-    },
-    {
-      id: '2',
-      name: 'ItsyBitsy nRF52840 Express',
-      rssi: -52,
-      isConnected: false,
-      manufacturerData: 'Adafruit',
-    },
-    {
-      id: '3',
-      name: 'LED Guitar Controller',
-      rssi: -67,
-      isConnected: false,
-      manufacturerData: 'Custom',
-    },
-  ];
+  const initializeBluetooth = async () => {
+    if (Platform.OS !== 'web') {
+      try {
+        // Check if we're in Expo Go (native module not available)
+        if (!bluetoothService.isAvailable()) {
+          setIsBluetoothInitialized(false);
+          setError('Bluetooth requires a development build. Use Expo Go for UI testing only.');
+          return;
+        }
+        
+        const initialized = await bluetoothService.initialize();
+        setIsBluetoothInitialized(initialized);
+        if (!initialized) {
+          setError('Failed to initialize Bluetooth. Please check your Bluetooth settings.');
+        }
+      } catch (error) {
+        console.error('Bluetooth initialization error:', error);
+        if ((error as Error).message.includes('native module')) {
+          setError('Bluetooth requires a development build. Use Expo Go for UI testing only.');
+        } else {
+          setError('Failed to initialize Bluetooth: ' + (error as Error).message);
+        }
+      }
+    }
+  };
+
+  const isPotentialMicrocontroller = (device: any): boolean => {
+    // Check for Nordic UART Service UUID (standard NUS)
+    const hasNordicUART = device.serviceUUIDs?.some((uuid: string) => 
+      uuid.toLowerCase().includes('6e400') || 
+      uuid.toLowerCase().includes('b5a3-f393-e0a9-e50e24dcca9e')
+    );
+    
+    // Check for Adafruit Bluefruit BLE UART service UUIDs
+    const hasAdafruitUART = device.serviceUUIDs?.some((uuid: string) => 
+      uuid.toLowerCase().includes('6e400001') ||  // Nordic UART Service
+      uuid.toLowerCase().includes('6e400002') ||  // Nordic UART Write
+      uuid.toLowerCase().includes('6e400003') ||  // Nordic UART Read
+      uuid.toLowerCase().includes('adafruit') ||  // Adafruit services
+      uuid.toLowerCase().includes('feather')      // Feather services
+    );
+    
+    // Check for Adafruit manufacturer data patterns
+    const hasAdafruitPattern = device.manufacturerData && (
+      device.manufacturerData.includes('Adafruit') ||
+      device.manufacturerData.includes('adafruit') ||
+      device.manufacturerData.includes('Bluefruit') ||
+      device.manufacturerData.includes('Feather')
+    );
+    
+    // Check for common microcontroller names
+    const hasMicrocontrollerName = device.name && (
+      device.name.toLowerCase().includes('feather') ||
+      device.name.toLowerCase().includes('itsybitsy') ||
+      device.name.toLowerCase().includes('nrf52') ||
+      device.name.toLowerCase().includes('arduino') ||
+      device.name.toLowerCase().includes('esp32') ||
+      device.name.toLowerCase().includes('microcontroller') ||
+      device.name.toLowerCase().includes('bluefruit') ||
+      device.name.toLowerCase().includes('led guitar controller') ||
+      device.name.toLowerCase().includes('guitar controller')
+    );
+    
+    // Check for any service UUIDs (many microcontrollers advertise services)
+    const hasAnyServices = device.serviceUUIDs && device.serviceUUIDs.length > 0;
+    
+    return hasNordicUART || hasAdafruitUART || hasAdafruitPattern || hasMicrocontrollerName || hasAnyServices;
+  };
+
+  const getDeviceDisplayName = (device: any): string => {
+    if (device.name) {
+      return device.name;
+    }
+    
+    if (isPotentialMicrocontroller(device)) {
+      return `Possible Microcontroller (${device.id.substring(0, 8)}...)`;
+    }
+    
+    return `Unknown Device (${device.id.substring(0, 8)}...)`;
+  };
+
+  const getFilteredDevices = (): BluetoothDevice[] => {
+    let filtered = devices;
+    
+    // Apply search filter
+    if (searchQuery) {
+      filtered = filtered.filter(device => 
+        device.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.manufacturerData?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    // Apply type filter
+    switch (filterType) {
+      case 'microcontrollers':
+        filtered = filtered.filter(device => isPotentialMicrocontroller(device));
+        break;
+      case 'named':
+        filtered = filtered.filter(device => device.name && device.name.trim() !== '');
+        break;
+      case 'all':
+      default:
+        break;
+    }
+    
+    return filtered;
+  };
+
+
 
   const startScan = async () => {
     try {
@@ -85,11 +184,131 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         const webDevices = await bluetoothWebService.startScan();
         setDevices(webDevices);
       } else {
-        // Use mock data for mobile (since we need development build for real Bluetooth)
-        setTimeout(() => {
-          setDevices(mockDevices);
+        // Use real Bluetooth for mobile
+        if (!isBluetoothInitialized) {
+          // In Expo Go, show mock data for UI testing
+          if (!bluetoothService.isAvailable()) {
+            console.log('Using mock data for Expo Go testing');
+            setTimeout(() => {
+              const mockDevices: BluetoothDevice[] = [
+                {
+                  id: '1',
+                  name: 'Bluefruit Feather52',
+                  rssi: -45,
+                  isConnected: false,
+                  manufacturerData: 'Adafruit Industries',
+                },
+                {
+                  id: '2',
+                  name: 'ItsyBitsy nRF52840 Express',
+                  rssi: -52,
+                  isConnected: false,
+                  manufacturerData: 'Adafruit',
+                },
+                {
+                  id: '3',
+                  name: 'LED Guitar Controller',
+                  rssi: -67,
+                  isConnected: false,
+                  manufacturerData: 'Custom',
+                },
+              ];
+              setDevices(mockDevices);
+              setIsScanning(false);
+            }, 2000);
+            return;
+          }
+          setError('Bluetooth not initialized. Please check your Bluetooth settings.');
           setIsScanning(false);
-        }, 2000);
+          return;
+        }
+
+        // Request permissions first
+        const hasPermissions = await bluetoothService.requestPermissions();
+        if (!hasPermissions) {
+          setError('Bluetooth permissions are required to scan for devices.');
+          setIsScanning(false);
+          return;
+        }
+
+        // Start real Bluetooth scan with device discovery callback
+        await bluetoothService.startScan((device: any) => {
+          // Log ALL devices found for debugging
+          console.log('📱 DEVICE FOUND:', {
+            id: device.id,
+            name: device.name || 'NO NAME',
+            rssi: device.rssi,
+            manufacturerData: device.manufacturerData || 'NO MANUFACTURER DATA',
+            serviceUUIDs: device.serviceUUIDs || 'NO SERVICES',
+            localName: device.localName || 'NO LOCAL NAME'
+          });
+          
+          // Check if this might be our microcontroller
+          const isMCU = isPotentialMicrocontroller(device);
+          if (isMCU) {
+            console.log('🎯 POTENTIAL MICROCONTROLLER FOUND:', {
+              id: device.id,
+              name: device.name,
+              serviceUUIDs: device.serviceUUIDs,
+              manufacturerData: device.manufacturerData
+            });
+          }
+          
+          // Check if this matches our web device
+          if (device.name === 'ItsyBitsy nRF52840 Express' || 
+              device.localName === 'ItsyBitsy nRF52840 Express' ||
+              device.name?.includes('nRF52840') ||
+              device.localName?.includes('nRF52840')) {
+            console.log('🎯 ITSYBITSY NRF52840 FOUND!:', {
+              id: device.id,
+              name: device.name,
+              localName: device.localName,
+              serviceUUIDs: device.serviceUUIDs,
+              manufacturerData: device.manufacturerData
+            });
+          }
+          
+          // Check if this matches our new device name
+          if (device.name === 'LED Guitar' || 
+              device.localName === 'LED Guitar' ||
+              device.name?.includes('LED Guitar') ||
+              device.localName?.includes('LED Guitar')) {
+            console.log('🎯 LED GUITAR CONTROLLER FOUND!:', {
+              id: device.id,
+              name: device.name,
+              localName: device.localName,
+              serviceUUIDs: device.serviceUUIDs,
+              manufacturerData: device.manufacturerData
+            });
+          }
+          
+          // Show all devices, even those without names
+          const newDevice: BluetoothDevice = {
+            id: device.id,
+            name: getDeviceDisplayName(device),
+            rssi: device.rssi || -50,
+            isConnected: false,
+            manufacturerData: device.manufacturerData || 'Unknown',
+            serviceUUIDs: device.serviceUUIDs || [],
+          };
+          
+          setDevices(prevDevices => {
+            // Check if device already exists
+            const exists = prevDevices.find(d => d.id === device.id);
+            if (!exists) {
+              console.log('Adding new device to list:', newDevice.name);
+              return [...prevDevices, newDevice];
+            }
+            return prevDevices;
+          });
+        });
+
+        // Stop scan after 10 seconds
+        setTimeout(async () => {
+          await bluetoothService.stopScan();
+          setIsScanning(false);
+        }, 10000);
+        
         return;
       }
 
@@ -101,8 +320,15 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     }
   };
 
-  const stopScan = () => {
+  const stopScan = async () => {
     setIsScanning(false);
+    if (Platform.OS !== 'web') {
+      try {
+        await bluetoothService.stopScan();
+      } catch (error) {
+        console.error('Error stopping scan:', error);
+      }
+    }
   };
 
   const connectToDevice = async (device: BluetoothDevice) => {
@@ -132,8 +358,16 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         await bluetoothWebService.connectToDevice(device.id);
         console.log('Web Bluetooth connection successful');
       } else {
-        // Simulate connection delay for mobile
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Use real Bluetooth connection for mobile
+        console.log('Attempting to connect to device via native Bluetooth:', device.name);
+        
+        try {
+          await bluetoothService.connectToDevice(device.id);
+          console.log('Native Bluetooth connection successful');
+        } catch (error) {
+          console.error('Native Bluetooth connection failed:', error);
+          throw new Error('Failed to connect to device: ' + (error as Error).message);
+        }
       }
 
       // Update device status
@@ -172,8 +406,8 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       if (Platform.OS === 'web') {
         await bluetoothWebService.disconnectDevice(connectedDevice.id);
       } else {
-        // Simulate disconnection delay for mobile
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Use real Bluetooth disconnection for mobile
+        await bluetoothService.disconnectDevice(connectedDevice.id);
       }
       
       setConnectedDevice(null);
@@ -206,9 +440,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         const response = await bluetoothWebService.sendMessage(connectedDevice.id, 'Hello World!');
         setLastResponse(response);
       } else {
-        // Simulate sending delay for mobile
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setLastResponse('Message sent successfully (mock mode)');
+        // Use real Bluetooth to send message for mobile
+        await bluetoothService.sendMessage(connectedDevice.id, 'Hello World!');
+        setLastResponse('Message sent successfully via Bluetooth');
       }
 
     } catch (error) {
@@ -236,9 +470,13 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         const response = await bluetoothWebService.sendMessage(connectedDevice.id, 'ERROR_TEST');
         setLastResponse(response);
       } else {
-        // Simulate error for mobile
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setLastResponse('Error test completed (mock mode)');
+        // Use real Bluetooth to send error test message for mobile
+        try {
+          await bluetoothService.sendMessage(connectedDevice.id, 'ERROR_TEST');
+          setLastResponse('Error test message sent via Bluetooth');
+        } catch (error) {
+          setLastResponse('Error test triggered: ' + (error as Error).message);
+        }
       }
 
     } catch (error) {
@@ -299,55 +537,70 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     }
   };
 
-  const renderDevice = ({ item }: { item: BluetoothDevice }) => (
-    <TouchableOpacity
-      style={[
-        styles.deviceCard,
-        item.isConnected && styles.deviceCardConnected,
-        isConnecting && styles.deviceCardConnecting
-      ]}
-      onPress={() => selectDevice(item)}
-      activeOpacity={0.7}
-      disabled={isConnecting}
-    >
-      <View style={styles.deviceInfo}>
-        <View style={styles.deviceHeader}>
-          <Ionicons 
-            name={item.isConnected ? "bluetooth" : "bluetooth-outline"} 
-            size={24} 
-            color={item.isConnected ? theme.dark.success : theme.dark.primary} 
-          />
-          <Text style={styles.deviceName}>{item.name}</Text>
-          {item.isConnected && (
-            <View style={styles.connectedBadge}>
-              <Text style={styles.connectedText}>Connected</Text>
-            </View>
-          )}
-          {isConnecting && !item.isConnected && (
-            <View style={styles.connectingBadge}>
-              <ActivityIndicator size="small" color={theme.dark.text} />
-              <Text style={styles.connectingText}>Connecting...</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.deviceDetails}>
-          <Text style={styles.deviceDetail}>
-            Signal: {item.rssi} dBm
-          </Text>
-          {item.manufacturerData && (
+  const renderDevice = ({ item }: { item: BluetoothDevice }) => {
+    const isMicrocontroller = isPotentialMicrocontroller(item);
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.deviceCard,
+          item.isConnected && styles.deviceCardConnected,
+          isConnecting && styles.deviceCardConnecting,
+          isMicrocontroller && styles.deviceCardMicrocontroller
+        ]}
+        onPress={() => selectDevice(item)}
+        activeOpacity={0.7}
+        disabled={isConnecting}
+      >
+        <View style={styles.deviceInfo}>
+          <View style={styles.deviceHeader}>
+            <Ionicons 
+              name={item.isConnected ? "bluetooth" : (isMicrocontroller ? "hardware-chip" : "bluetooth-outline")} 
+              size={24} 
+              color={item.isConnected ? theme.dark.success : (isMicrocontroller ? theme.dark.warning : theme.dark.primary)} 
+            />
+            <Text style={styles.deviceName}>{item.name}</Text>
+            {item.isConnected && (
+              <View style={styles.connectedBadge}>
+                <Text style={styles.connectedText}>Connected</Text>
+              </View>
+            )}
+            {isMicrocontroller && !item.isConnected && (
+              <View style={styles.microcontrollerBadge}>
+                <Text style={styles.microcontrollerText}>MCU</Text>
+              </View>
+            )}
+            {isConnecting && !item.isConnected && (
+              <View style={styles.connectingBadge}>
+                <ActivityIndicator size="small" color={theme.dark.text} />
+                <Text style={styles.connectingText}>Connecting...</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.deviceDetails}>
             <Text style={styles.deviceDetail}>
-              Manufacturer: {item.manufacturerData}
+              Signal: {item.rssi} dBm
             </Text>
-          )}
+            {item.manufacturerData && (
+              <Text style={styles.deviceDetail}>
+                Manufacturer: {item.manufacturerData}
+              </Text>
+            )}
+            {item.serviceUUIDs && item.serviceUUIDs.length > 0 && (
+              <Text style={styles.deviceDetail}>
+                Services: {item.serviceUUIDs.length}
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
-      <Ionicons 
-        name="chevron-forward" 
-        size={20} 
-        color={theme.dark.textSecondary} 
-      />
-    </TouchableOpacity>
-  );
+        <Ionicons 
+          name="chevron-forward" 
+          size={20} 
+          color={theme.dark.textSecondary} 
+        />
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
@@ -377,12 +630,17 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           </Text>
         </View>
       ) : (
-        <View style={styles.mockNotice}>
-          <Text style={styles.mockNoticeText}>
-            ⚠️ Currently using mock data for Expo Go testing
+        <View style={styles.nativeNotice}>
+          <Text style={styles.nativeNoticeText}>
+            {bluetoothService.isAvailable() ? '📱 Using Native Bluetooth API' : '⚠️ Expo Go - UI Testing Only'}
           </Text>
-          <Text style={styles.mockNoticeSubtext}>
-            Use development build for real Bluetooth functionality
+          <Text style={styles.nativeNoticeSubtext}>
+            {bluetoothService.isAvailable() 
+              ? (isBluetoothInitialized 
+                  ? 'Real Bluetooth functionality available'
+                  : 'Initializing Bluetooth...')
+              : 'Use development build for real Bluetooth functionality'
+            }
           </Text>
         </View>
       )}
@@ -411,16 +669,33 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           </Text>
         </View>
       )}
+      {Platform.OS === 'ios' && (
+        <View style={[styles.platformInfo, !isBluetoothInitialized && styles.platformInfoError]}>
+          <Text style={[styles.platformInfoText, !isBluetoothInitialized && styles.platformInfoTextError]}>
+            📱 iOS Platform - {isBluetoothInitialized ? 'Bluetooth Ready' : 
+             !bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'}
+          </Text>
+        </View>
+      )}
+      {Platform.OS === 'android' && (
+        <View style={[styles.platformInfo, !isBluetoothInitialized && styles.platformInfoError]}>
+          <Text style={[styles.platformInfoText, !isBluetoothInitialized && styles.platformInfoTextError]}>
+            🤖 Android Platform - {isBluetoothInitialized ? 'Bluetooth Ready' : 
+             !bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'}
+          </Text>
+        </View>
+      )}
 
       {/* Scan Button */}
       <View style={styles.scanSection}>
         <TouchableOpacity
           style={[
             styles.scanButton,
-            isScanning && styles.scanButtonActive
+            isScanning && styles.scanButtonActive,
+            (!isBluetoothInitialized && Platform.OS !== 'web') && styles.scanButtonDisabled
           ]}
           onPress={isScanning ? stopScan : startScan}
-          disabled={isScanning || isConnecting}
+          disabled={isScanning || isConnecting || (!isBluetoothInitialized && Platform.OS !== 'web')}
         >
           {isScanning ? (
             <ActivityIndicator color={theme.dark.text} size="small" />
@@ -432,10 +707,83 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             />
           )}
           <Text style={styles.scanButtonText}>
-            {isScanning ? 'Scanning...' : 'Scan for Devices'}
+            {isScanning ? 'Scanning...' : 
+             (!isBluetoothInitialized && Platform.OS !== 'web') ? 
+               (!bluetoothService.isAvailable() ? 'Test UI (Mock Data)' : 'Bluetooth Not Ready') : 
+             'Scan for Devices'}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Search and Filter Section */}
+      {devices.length > 0 && (
+        <View style={styles.searchSection}>
+          {/* Search Bar */}
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={20} color={theme.dark.textSecondary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search devices..."
+              placeholderTextColor={theme.dark.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color={theme.dark.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Filter Buttons */}
+          <View style={styles.filterButtons}>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                filterType === 'all' && styles.filterButtonActive
+              ]}
+              onPress={() => setFilterType('all')}
+            >
+              <Text style={[
+                styles.filterButtonText,
+                filterType === 'all' && styles.filterButtonTextActive
+              ]}>
+                All ({devices.length})
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                filterType === 'microcontrollers' && styles.filterButtonActive
+              ]}
+              onPress={() => setFilterType('microcontrollers')}
+            >
+              <Text style={[
+                styles.filterButtonText,
+                filterType === 'microcontrollers' && styles.filterButtonTextActive
+              ]}>
+                Microcontrollers ({devices.filter(d => isPotentialMicrocontroller(d)).length})
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                filterType === 'named' && styles.filterButtonActive
+              ]}
+              onPress={() => setFilterType('named')}
+            >
+              <Text style={[
+                styles.filterButtonText,
+                filterType === 'named' && styles.filterButtonTextActive
+              ]}>
+                Named ({devices.filter(d => d.name && d.name.trim() !== '').length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Send Message Button */}
       {connectedDevice && (
@@ -502,7 +850,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
       {/* Device List */}
       <FlatList
-        data={devices}
+        data={getFilteredDevices()}
         renderItem={renderDevice}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.deviceList}
@@ -562,6 +910,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  platformInfoError: {
+    backgroundColor: theme.dark.error + '20',
+    borderColor: theme.dark.error,
+  },
+  platformInfoTextError: {
+    color: theme.dark.error,
+  },
   scanSection: {
     paddingHorizontal: 20,
     paddingVertical: 20,
@@ -586,6 +941,58 @@ const styles = StyleSheet.create({
   },
   scanButtonActive: {
     backgroundColor: theme.dark.secondary,
+  },
+  scanButtonDisabled: {
+    backgroundColor: theme.dark.textSecondary,
+    opacity: 0.5,
+  },
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.dark.card,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.dark.border,
+  },
+  searchInput: {
+    flex: 1,
+    color: theme.dark.text,
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  filterButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterButton: {
+    flex: 1,
+    backgroundColor: theme.dark.card,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.dark.border,
+    alignItems: 'center',
+  },
+  filterButtonActive: {
+    backgroundColor: theme.dark.primary,
+    borderColor: theme.dark.primary,
+  },
+  filterButtonText: {
+    color: theme.dark.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  filterButtonTextActive: {
+    color: theme.dark.text,
+    fontWeight: '600',
   },
   scanButtonText: {
     color: theme.dark.text,
@@ -706,6 +1113,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.dark.primary + '10',
     opacity: 0.7,
   },
+  deviceCardMicrocontroller: {
+    borderColor: theme.dark.warning,
+    backgroundColor: theme.dark.warning + '10',
+  },
   deviceInfo: {
     flex: 1,
   },
@@ -745,6 +1156,17 @@ const styles = StyleSheet.create({
     color: theme.dark.text,
     fontWeight: '600',
     marginLeft: 4,
+  },
+  microcontrollerBadge: {
+    backgroundColor: theme.dark.warning,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  microcontrollerText: {
+    fontSize: 12,
+    color: theme.dark.text,
+    fontWeight: '600',
   },
   deviceDetails: {
     marginLeft: 36,
@@ -810,6 +1232,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   mockNoticeSubtext: {
+    color: theme.dark.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  nativeNotice: {
+    backgroundColor: theme.dark.success + '20',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.dark.success,
+    marginTop: 20,
+  },
+  nativeNoticeText: {
+    color: theme.dark.success,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  nativeNoticeSubtext: {
     color: theme.dark.textSecondary,
     fontSize: 12,
     textAlign: 'center',
