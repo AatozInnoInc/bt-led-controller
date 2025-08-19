@@ -13,32 +13,40 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 import { BluetoothDevice } from '../types/bluetooth';
-import { bluetoothWebService } from '../utils/bluetoothWebService';
 import { bluetoothService } from '../utils/bluetoothService';
+import { isPotentialMicrocontroller } from '../utils/bleUtils';
+import { useBluetooth } from '../hooks/useBluetooth';
 
 interface DeviceDiscoveryScreenProps {
   navigation: any;
 }
 
 const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigation }) => {
-  const [isScanning, setIsScanning] = useState(false);
-  const [devices, setDevices] = useState<BluetoothDevice[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [isTestingFailure, setIsTestingFailure] = useState(false);
-  const [lastResponse, setLastResponse] = useState<string | null>(null);
-  const [isWebBluetoothSupported, setIsWebBluetoothSupported] = useState(false);
-  const [isBluetoothInitialized, setIsBluetoothInitialized] = useState(false);
+  const {
+    isScanning,
+    isConnecting,
+    isSending,
+    isTestingFailure,
+    devices,
+    connectedDevice,
+    error,
+    lastResponse,
+    isWebBluetoothSupported,
+    isBluetoothInitialized,
+    initialize,
+    startScan,
+    stopScan,
+    connect,
+    disconnect,
+    send,
+    sendFailureTest,
+  } = useBluetooth();
+  // moved into useBluetooth hook
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('all');
 
   useEffect(() => {
-    checkWebBluetoothSupport();
-    initializeBluetooth();
-
-    // Cleanup function to stop scan when component unmounts
+    initialize();
     return () => {
       if (Platform.OS !== 'web' && isScanning) {
         bluetoothService.stopScan();
@@ -46,96 +54,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     };
   }, []);
 
-  const checkWebBluetoothSupport = () => {
-    if (Platform.OS === 'web') {
-      const supported = bluetoothWebService.isWebBluetoothSupported();
-      setIsWebBluetoothSupported(supported);
-      if (!supported) {
-        setError('Web Bluetooth is not supported in this browser. Try Chrome or Edge.');
-      }
-    }
-  };
+  // moved to useBluetooth hook
 
-  const initializeBluetooth = async () => {
-    if (Platform.OS !== 'web') {
-      try {
-        // Check if we're in Expo Go (native module not available)
-        if (!bluetoothService.isAvailable()) {
-          setIsBluetoothInitialized(false);
-          setError('Bluetooth requires a development build. Use Expo Go for UI testing only.');
-          return;
-        }
-        
-        const initialized = await bluetoothService.initialize();
-        setIsBluetoothInitialized(initialized);
-        if (!initialized) {
-          setError('Failed to initialize Bluetooth. Please check your Bluetooth settings.');
-        }
-      } catch (error) {
-        console.error('Bluetooth initialization error:', error);
-        if ((error as Error).message.includes('native module')) {
-          setError('Bluetooth requires a development build. Use Expo Go for UI testing only.');
-        } else {
-          setError('Failed to initialize Bluetooth: ' + (error as Error).message);
-        }
-      }
-    }
-  };
-
-  const isPotentialMicrocontroller = (device: any): boolean => {
-    // Check for Nordic UART Service UUID (standard NUS)
-    const hasNordicUART = device.serviceUUIDs?.some((uuid: string) => 
-      uuid.toLowerCase().includes('6e400') || 
-      uuid.toLowerCase().includes('b5a3-f393-e0a9-e50e24dcca9e')
-    );
-    
-    // Check for Adafruit Bluefruit BLE UART service UUIDs
-    const hasAdafruitUART = device.serviceUUIDs?.some((uuid: string) => 
-      uuid.toLowerCase().includes('6e400001') ||  // Nordic UART Service
-      uuid.toLowerCase().includes('6e400002') ||  // Nordic UART Write
-      uuid.toLowerCase().includes('6e400003') ||  // Nordic UART Read
-      uuid.toLowerCase().includes('adafruit') ||  // Adafruit services
-      uuid.toLowerCase().includes('feather')      // Feather services
-    );
-    
-    // Check for Adafruit manufacturer data patterns
-    const hasAdafruitPattern = device.manufacturerData && (
-      device.manufacturerData.includes('Adafruit') ||
-      device.manufacturerData.includes('adafruit') ||
-      device.manufacturerData.includes('Bluefruit') ||
-      device.manufacturerData.includes('Feather')
-    );
-    
-    // Check for common microcontroller names
-    const hasMicrocontrollerName = device.name && (
-      device.name.toLowerCase().includes('feather') ||
-      device.name.toLowerCase().includes('itsybitsy') ||
-      device.name.toLowerCase().includes('nrf52') ||
-      device.name.toLowerCase().includes('arduino') ||
-      device.name.toLowerCase().includes('esp32') ||
-      device.name.toLowerCase().includes('microcontroller') ||
-      device.name.toLowerCase().includes('bluefruit') ||
-      device.name.toLowerCase().includes('led guitar controller') ||
-      device.name.toLowerCase().includes('guitar controller')
-    );
-    
-    // Check for any service UUIDs (many microcontrollers advertise services)
-    const hasAnyServices = device.serviceUUIDs && device.serviceUUIDs.length > 0;
-    
-    return hasNordicUART || hasAdafruitUART || hasAdafruitPattern || hasMicrocontrollerName || hasAnyServices;
-  };
-
-  const getDeviceDisplayName = (device: any): string => {
-    if (device.name) {
-      return device.name;
-    }
-    
-    if (isPotentialMicrocontroller(device)) {
-      return `Possible Microcontroller (${device.id.substring(0, 8)}...)`;
-    }
-    
-    return `Unknown Device (${device.id.substring(0, 8)}...)`;
-  };
+  // moved to utils/bleUtils
 
   const getFilteredDevices = (): BluetoothDevice[] => {
     let filtered = devices;
@@ -167,170 +88,11 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
 
 
-  const startScan = async () => {
-    try {
-      setIsScanning(true);
-      setError(null);
-      setDevices([]);
+  // moved to useBluetooth hook
 
-      if (Platform.OS === 'web') {
-        if (!isWebBluetoothSupported) {
-          setError('Web Bluetooth is not supported in this browser');
-          setIsScanning(false);
-          return;
-        }
+  // moved to useBluetooth hook
 
-        // Use real Web Bluetooth
-        const webDevices = await bluetoothWebService.startScan();
-        setDevices(webDevices);
-      } else {
-        // Use real Bluetooth for mobile
-        if (!isBluetoothInitialized) {
-          // In Expo Go, show mock data for UI testing
-          if (!bluetoothService.isAvailable()) {
-            console.log('Using mock data for Expo Go testing');
-            setTimeout(() => {
-              const mockDevices: BluetoothDevice[] = [
-                {
-                  id: '1',
-                  name: 'Bluefruit Feather52',
-                  rssi: -45,
-                  isConnected: false,
-                  manufacturerData: 'Adafruit Industries',
-                },
-                {
-                  id: '2',
-                  name: 'ItsyBitsy nRF52840 Express',
-                  rssi: -52,
-                  isConnected: false,
-                  manufacturerData: 'Adafruit',
-                },
-                {
-                  id: '3',
-                  name: 'LED Guitar Controller',
-                  rssi: -67,
-                  isConnected: false,
-                  manufacturerData: 'Custom',
-                },
-              ];
-              setDevices(mockDevices);
-              setIsScanning(false);
-            }, 2000);
-            return;
-          }
-          setError('Bluetooth not initialized. Please check your Bluetooth settings.');
-          setIsScanning(false);
-          return;
-        }
-
-        // Request permissions first
-        const hasPermissions = await bluetoothService.requestPermissions();
-        if (!hasPermissions) {
-          setError('Bluetooth permissions are required to scan for devices.');
-          setIsScanning(false);
-          return;
-        }
-
-        // Start real Bluetooth scan with device discovery callback
-        await bluetoothService.startScan((device: any) => {
-          // Log ALL devices found for debugging
-          console.log('📱 DEVICE FOUND:', {
-            id: device.id,
-            name: device.name || 'NO NAME',
-            rssi: device.rssi,
-            manufacturerData: device.manufacturerData || 'NO MANUFACTURER DATA',
-            serviceUUIDs: device.serviceUUIDs || 'NO SERVICES',
-            localName: device.localName || 'NO LOCAL NAME'
-          });
-          
-          // Check if this might be our microcontroller
-          const isMCU = isPotentialMicrocontroller(device);
-          if (isMCU) {
-            console.log('🎯 POTENTIAL MICROCONTROLLER FOUND:', {
-              id: device.id,
-              name: device.name,
-              serviceUUIDs: device.serviceUUIDs,
-              manufacturerData: device.manufacturerData
-            });
-          }
-          
-          // Check if this matches our web device
-          if (device.name === 'ItsyBitsy nRF52840 Express' || 
-              device.localName === 'ItsyBitsy nRF52840 Express' ||
-              device.name?.includes('nRF52840') ||
-              device.localName?.includes('nRF52840')) {
-            console.log('🎯 ITSYBITSY NRF52840 FOUND!:', {
-              id: device.id,
-              name: device.name,
-              localName: device.localName,
-              serviceUUIDs: device.serviceUUIDs,
-              manufacturerData: device.manufacturerData
-            });
-          }
-          
-          // Check if this matches our new device name
-          if (device.name === 'LED Guitar' || 
-              device.localName === 'LED Guitar' ||
-              device.name?.includes('LED Guitar') ||
-              device.localName?.includes('LED Guitar')) {
-            console.log('🎯 LED GUITAR CONTROLLER FOUND!:', {
-              id: device.id,
-              name: device.name,
-              localName: device.localName,
-              serviceUUIDs: device.serviceUUIDs,
-              manufacturerData: device.manufacturerData
-            });
-          }
-          
-          // Show all devices, even those without names
-          const newDevice: BluetoothDevice = {
-            id: device.id,
-            name: getDeviceDisplayName(device),
-            rssi: device.rssi || -50,
-            isConnected: false,
-            manufacturerData: device.manufacturerData || 'Unknown',
-            serviceUUIDs: device.serviceUUIDs || [],
-          };
-          
-          setDevices(prevDevices => {
-            // Check if device already exists
-            const exists = prevDevices.find(d => d.id === device.id);
-            if (!exists) {
-              console.log('Adding new device to list:', newDevice.name);
-              return [...prevDevices, newDevice];
-            }
-            return prevDevices;
-          });
-        });
-
-        // Stop scan after 10 seconds
-        setTimeout(async () => {
-          await bluetoothService.stopScan();
-          setIsScanning(false);
-        }, 10000);
-        
-        return;
-      }
-
-      setIsScanning(false);
-    } catch (error) {
-      console.error('Scan error:', error);
-      setError('Failed to scan for devices: ' + (error as Error).message);
-      setIsScanning(false);
-    }
-  };
-
-  const stopScan = async () => {
-    setIsScanning(false);
-    if (Platform.OS !== 'web') {
-      try {
-        await bluetoothService.stopScan();
-      } catch (error) {
-        console.error('Error stopping scan:', error);
-      }
-    }
-  };
-
+  /* moved to hook
   const connectToDevice = async (device: BluetoothDevice) => {
     try {
       setIsConnecting(true);
@@ -398,7 +160,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       setIsConnecting(false);
     }
   };
+  */
 
+  /* moved to hook
   const disconnectDevice = async () => {
     if (!connectedDevice) return;
 
@@ -423,7 +187,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       setError('Failed to disconnect device');
     }
   };
+  */
 
+  /* moved to hook
   const sendMessage = async () => {
     if (!connectedDevice) {
       setError('No device connected');
@@ -453,7 +219,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       setIsSending(false);
     }
   };
+  */
 
+  /* moved to hook
   const testFailure = async () => {
     if (!connectedDevice) {
       setError('No device connected');
@@ -487,6 +255,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       setIsTestingFailure(false);
     }
   };
+  */
 
   const selectDevice = (device: BluetoothDevice) => {
     console.log('Device selected:', device.name, 'Connected:', device.isConnected);
@@ -499,7 +268,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           `${device.name} is already connected. Would you like to disconnect?`
         );
         if (shouldDisconnect) {
-          disconnectDevice();
+          disconnect();
         }
       } else {
         Alert.alert(
@@ -507,7 +276,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           `${device.name} is already connected. Would you like to disconnect?`,
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Disconnect', onPress: () => disconnectDevice() },
+            { text: 'Disconnect', onPress: () => disconnect() },
           ]
         );
       }
@@ -517,7 +286,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         const shouldConnect = window.confirm(`Connect to ${device.name}?`);
         if (shouldConnect) {
           console.log('Connect confirmed for device:', device.name);
-          connectToDevice(device);
+          connect(device);
         } else {
           console.log('Connect cancelled for device:', device.name);
         }
@@ -529,7 +298,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             { text: 'Cancel', style: 'cancel' },
             { text: 'Connect', onPress: () => {
               console.log('Connect button pressed for device:', device.name);
-              connectToDevice(device);
+              connect(device);
             }},
           ]
         );
@@ -794,7 +563,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
                 styles.sendMessageButton,
                 isSending && styles.sendMessageButtonActive
               ]}
-              onPress={sendMessage}
+              onPress={() => send('Hello World!')}
               disabled={isSending}
             >
               {isSending ? (
@@ -816,7 +585,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
                  styles.testFailureButton,
                  isTestingFailure && styles.testFailureButtonActive
                ]}
-               onPress={testFailure}
+               onPress={sendFailureTest}
                disabled={isTestingFailure || isSending}
              >
                {isTestingFailure ? (
