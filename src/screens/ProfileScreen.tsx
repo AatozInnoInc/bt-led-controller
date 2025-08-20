@@ -56,7 +56,7 @@ const ProfileScreen: React.FC = () => {
     >
       <View style={styles.menuItemLeft}>
         <View style={styles.iconContainer}>
-          <Ionicons name={icon as any} size={20} color={theme.dark.primary} />
+          <Ionicons name={icon as any} size={20} color={theme.dark.textSecondary} />
         </View>
         <View style={styles.menuItemContent}>
           <Text style={styles.menuItemTitle}>{title}</Text>
@@ -65,8 +65,8 @@ const ProfileScreen: React.FC = () => {
       </View>
       {showSwitch ? (
         <Switch
-          trackColor={{ false: theme.dark.border, true: theme.dark.primary + '40' }}
-          thumbColor={switchValue ? theme.dark.primary : theme.dark.textSecondary}
+          trackColor={{ false: theme.dark.border, true: 'rgba(255,255,255,0.3)' }}
+          thumbColor={switchValue ? '#FFFFFF' : theme.dark.textSecondary}
           onValueChange={onSwitchChange}
           value={switchValue}
         />
@@ -92,10 +92,10 @@ const ProfileScreen: React.FC = () => {
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
-            <Ionicons name="person" size={40} color={theme.dark.primary} />
+            <Ionicons name="person" size={40} color="#FFFFFF" />
           </View>
           <TouchableOpacity style={styles.editAvatarButton}>
-            <Ionicons name="camera" size={16} color={theme.dark.text} />
+            <Ionicons name="camera" size={16} color={theme.dark.background} />
           </TouchableOpacity>
         </View>
         <Text style={styles.userName}>John Doe</Text>
@@ -212,10 +212,26 @@ const ProfileScreen: React.FC = () => {
 
       {/* Logout Button */}
       <View style={styles.logoutSection}>
-        <BlurView intensity={20} tint="dark" style={styles.logoutButton}>
-          <Ionicons name="log-out" size={20} color={theme.dark.error} />
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </BlurView>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <LinearGradient
+            colors={['#E53935', '#D32F2F', '#C62828']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <LinearGradient
+            colors={['rgba(255,255,255,0.2)', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.logoutButtonContent}>
+            <View style={styles.logoutIconContainer}>
+              <Ionicons name="log-out" size={22} color="#FFFFFF" />
+            </View>
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -269,8 +285,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: theme.dark.primary,
-    shadowColor: theme.dark.primary,
+    borderColor: 'rgba(255,255,255,0.3)',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 12,
@@ -283,7 +299,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: theme.dark.primary,
+    backgroundColor: 'rgba(255,255,255,0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -309,7 +325,7 @@ const styles = StyleSheet.create({
     borderColor: theme.dark.border,
   },
   editProfileText: {
-    color: theme.dark.primary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -353,7 +369,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: theme.dark.primary + '20',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -376,26 +392,40 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   logoutButton: {
-    backgroundColor: theme.dark.card,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    position: 'relative',
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 12px 32px rgba(229,57,53,0.4)',
+    } : {
+      shadowColor: '#E53935',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.4,
+      shadowRadius: 32,
+      elevation: 16,
+    }),
+  },
+  logoutButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.dark.error + '40',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
+  },
+  logoutIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   logoutButtonText: {
-    color: theme.dark.error,
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
 

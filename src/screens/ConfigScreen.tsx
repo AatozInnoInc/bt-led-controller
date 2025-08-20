@@ -95,8 +95,11 @@ const ConfigScreen: React.FC = () => {
       {/* Power Control */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Ionicons name="power" size={24} color={theme.dark.primary} />
-          <Text style={styles.sectionTitle}>Power Control</Text>
+          <Ionicons name="hardware-chip" size={24} color="#FFFFFF" />
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>Microcontroller</Text>
+            <Text style={styles.sectionSubtitle}>Control LED system power and effects</Text>
+          </View>
         </View>
         <BlurView intensity={30} tint="dark" style={styles.powerCard}>
           <View style={styles.powerInfo}>
@@ -146,10 +149,12 @@ const ConfigScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>Effects</Text>
         <View style={styles.effectsGrid}>
           {effects.map((effect) => (
-            <BlurView key={effect.id} intensity={20} tint="dark" style={styles.effectCard}>
-              <Ionicons name={effect.icon as any} size={24} color={theme.dark.primary} />
+            <TouchableOpacity key={effect.id} activeOpacity={0.7} style={styles.effectCardWrapper}>
+              <BlurView intensity={20} tint="dark" style={styles.effectCard}>
+                <Ionicons name={effect.icon as any} size={24} color="#FFFFFF" />
               <Text style={styles.effectName}>{effect.name}</Text>
             </BlurView>
+            </TouchableOpacity>
           ))}
         </View>
       </View>
@@ -163,13 +168,15 @@ const ConfigScreen: React.FC = () => {
             { name: 'Jazz Mode', description: 'Smooth, slow fade' },
             { name: 'Classical Mode', description: 'Gentle, solid glow' },
           ].map((preset, index) => (
-            <BlurView key={index} intensity={20} tint="dark" style={styles.presetCard}>
+            <TouchableOpacity key={index} activeOpacity={0.7} style={styles.presetCardWrapper}>
+              <BlurView intensity={20} tint="dark" style={styles.presetCard}>
               <View style={styles.presetInfo}>
                 <Text style={styles.presetName}>{preset.name}</Text>
                 <Text style={styles.presetDescription}>{preset.description}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={theme.dark.textSecondary} />
             </BlurView>
+            </TouchableOpacity>
           ))}
         </View>
       </View>
@@ -177,8 +184,24 @@ const ConfigScreen: React.FC = () => {
       {/* Save Button */}
       <View style={styles.saveSection}>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Ionicons name="save" size={20} color={theme.dark.text} />
+          <LinearGradient
+            colors={['#007AFF', '#0056CC', '#0033AA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <LinearGradient
+            colors={['rgba(255,255,255,0.2)', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.saveButtonContent}>
+            <View style={styles.saveIconContainer}>
+              <Ionicons name="save" size={22} color="#FFFFFF" />
+            </View>
           <Text style={styles.saveButtonText}>Save Configuration</Text>
+          </View>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -229,7 +252,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: theme.dark.text,
+  },
+  sectionTitleContainer: {
     marginLeft: 12,
+    flex: 1,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: theme.dark.textSecondary,
+    marginTop: 2,
   },
   powerCard: {
     backgroundColor: theme.dark.card,
@@ -328,6 +359,9 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 12,
   },
+  effectCardWrapper: {
+    ...(Platform.OS === 'web' && { cursor: 'pointer' }),
+  },
   effectCard: {
     backgroundColor: theme.dark.card,
     padding: 16,
@@ -351,6 +385,9 @@ const styles = StyleSheet.create({
   },
   presetsList: {
     marginTop: 12,
+  },
+  presetCardWrapper: {
+    ...(Platform.OS === 'web' && { cursor: 'pointer' }),
   },
   presetCard: {
     backgroundColor: theme.dark.card,
@@ -386,28 +423,40 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   saveButton: {
-    backgroundColor: theme.dark.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    position: 'relative',
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 12px 32px rgba(0,122,255,0.4)',
+    } : {
+      shadowColor: '#007AFF',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.4,
+      shadowRadius: 32,
+      elevation: 16,
+    }),
+  },
+  saveButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.primary}4D`,
-    } : {
-      shadowColor: theme.dark.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 8,
-    }),
+  },
+  saveIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   saveButtonText: {
-    color: theme.dark.text,
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
 

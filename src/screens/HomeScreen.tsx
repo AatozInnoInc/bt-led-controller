@@ -115,8 +115,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           {[
             'Easy LED configuration management',
             'Real-time control and monitoring',
-            'Cross-platform compatibility',
-            'Secure cloud storage',
             'User-friendly interface',
           ].map((benefit, index) => (
             <View key={index} style={styles.benefitItem}>

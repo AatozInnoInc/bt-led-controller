@@ -64,7 +64,7 @@ function TabNavigator() {
         component={ProfileScreen}
         options={{ title: 'Profile' }}
       />
-    </Tab.Navigator>
+          </Tab.Navigator>
     </>
   );
 }
@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.dark.background,
   },
+
   webHeader: {
     backgroundColor: theme.dark.surface,
     paddingTop: Platform.OS === 'web' ? 20 : 0,
