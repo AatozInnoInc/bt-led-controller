@@ -9,6 +9,8 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 
@@ -76,6 +78,16 @@ const ProfileScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <LinearGradient
+        colors={[ '#0a0a0a', '#0b1736' ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject as any}
+      />
+      <View style={styles.backgroundDecor}>
+        <View style={styles.blobPrimary} />
+        <View style={styles.blobSecondary} />
+      </View>
       {/* Profile Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
@@ -96,7 +108,7 @@ const ProfileScreen: React.FC = () => {
       {/* Account Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.menuContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
           <MenuItem
             icon="person-circle"
             title="Personal Information"
@@ -117,13 +129,13 @@ const ProfileScreen: React.FC = () => {
             title="Cloud Storage"
             subtitle="2.5 GB of 5 GB used"
           />
-        </View>
+        </BlurView>
       </View>
 
       {/* Preferences Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Preferences</Text>
-        <View style={styles.menuContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
           <MenuItem
             icon="notifications"
             title="Notifications"
@@ -154,13 +166,13 @@ const ProfileScreen: React.FC = () => {
             title="Language"
             subtitle="English (US)"
           />
-        </View>
+        </BlurView>
       </View>
 
       {/* Support Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Support</Text>
-        <View style={styles.menuContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
           <MenuItem
             icon="help-circle"
             title="Help & Support"
@@ -178,13 +190,13 @@ const ProfileScreen: React.FC = () => {
             icon="star"
             title="Rate App"
           />
-        </View>
+        </BlurView>
       </View>
 
       {/* About Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
-        <View style={styles.menuContainer}>
+        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
           <MenuItem
             icon="information-circle"
             title="App Version"
@@ -195,15 +207,15 @@ const ProfileScreen: React.FC = () => {
             icon="code-slash"
             title="Open Source Licenses"
           />
-        </View>
+        </BlurView>
       </View>
 
       {/* Logout Button */}
       <View style={styles.logoutSection}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <BlurView intensity={20} tint="dark" style={styles.logoutButton}>
           <Ionicons name="log-out" size={20} color={theme.dark.error} />
           <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
+        </BlurView>
       </View>
     </ScrollView>
   );
@@ -213,6 +225,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.dark.background,
+    position: 'relative',
+  },
+  backgroundDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 240,
+  },
+  blobPrimary: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(0,122,255,0.16)',
+    top: -60,
+    left: -40,
+  },
+  blobSecondary: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,149,0,0.14)',
+    top: -10,
+    right: -30,
   },
   profileHeader: {
     alignItems: 'center',
@@ -232,6 +270,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 3,
     borderColor: theme.dark.primary,
+    shadowColor: theme.dark.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
   editAvatarButton: {
     position: 'absolute',
@@ -286,6 +329,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.dark.border,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
   menuItem: {
     flexDirection: 'row',
@@ -337,6 +385,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: theme.dark.error + '40',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
   logoutButtonText: {
     color: theme.dark.error,

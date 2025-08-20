@@ -8,6 +8,8 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 
@@ -59,6 +61,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <LinearGradient
+        colors={[ '#0a0a0a', '#0b1736' ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject as any}
+      />
+      <View style={styles.backgroundDecor}>
+        <View style={styles.blobPrimary} />
+        <View style={styles.blobSecondary} />
+      </View>
       {/* Hero Section */}
       <View style={styles.heroSection}>
         <View style={styles.heroContent}>
@@ -84,13 +96,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <Text style={styles.sectionTitle}>Features</Text>
         <View style={styles.featuresGrid}>
           {features.map((feature) => (
-            <FeatureCard
-              key={feature.id}
-              title={feature.title}
-              description={feature.description}
-              icon={feature.icon}
-              color={feature.color}
-            />
+            <BlurView key={feature.id} intensity={30} tint="dark" style={{ borderRadius: 16 }}>
+              <FeatureCard
+                title={feature.title}
+                description={feature.description}
+                icon={feature.icon}
+                color={feature.color}
+              />
+            </BlurView>
           ))}
         </View>
       </View>
@@ -140,6 +153,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.dark.background,
+    position: 'relative',
+  },
+  backgroundDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 260,
+    overflow: 'visible',
+  },
+  blobPrimary: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(0,122,255,0.18)',
+    top: -60,
+    left: -40,
+  },
+  blobSecondary: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(88,86,214,0.16)',
+    top: -20,
+    right: -30,
   },
   heroSection: {
     paddingTop: 20,
@@ -218,11 +258,16 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   featureCard: {
-    backgroundColor: theme.dark.card,
+    backgroundColor: theme.dark.card + 'B3',
     padding: 20,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: theme.dark.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
   iconContainer: {
     width: 48,
@@ -277,6 +322,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: theme.dark.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
   },
   quickActionText: {
     fontSize: 14,

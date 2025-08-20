@@ -3,6 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View, Platform, Text } from 'react-native';
 
@@ -18,6 +20,7 @@ import { theme } from './src/utils/theme';
 
 // Import custom tab bar
 import CustomTabBar from './src/components/CustomTabBar';
+import SignInScreen from './src/screens/SignInScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -34,8 +37,12 @@ function TabNavigator() {
         tabBar={props => <CustomTabBar {...props} />}
         screenOptions={{
           headerShown: Platform.OS !== 'web',
+          headerTransparent: true,
+          headerBackground: () => (
+            <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+          ),
           headerStyle: {
-            backgroundColor: theme.dark.surface,
+            backgroundColor: 'transparent',
             borderBottomColor: theme.dark.border,
             borderBottomWidth: 0.5,
           },
@@ -63,38 +70,62 @@ function TabNavigator() {
 }
 
 export default function App() {
+  const [isSignedIn, setIsSignedIn] = React.useState(false);
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <NavigationContainer theme={{
-        dark: true,
-        colors: {
-          primary: theme.dark.primary,
-          background: theme.dark.background,
-          card: theme.dark.surface,
-          text: theme.dark.text,
-          border: theme.dark.border,
-          notification: theme.dark.error,
-        },
-      }}>
-        <Stack.Navigator>
-          <Stack.Screen 
-            name="Main" 
-            component={TabNavigator} 
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen 
-            name="DeviceDiscovery" 
-            component={DeviceDiscoveryScreen}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen 
-            name="CreateProfile" 
-            component={CreateProfileScreen}
-            options={{ headerShown: false }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
+      {Platform.OS === 'ios' && !isSignedIn ? (
+        <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
+      ) : (
+        <NavigationContainer theme={{
+          dark: true,
+          colors: {
+            primary: theme.dark.primary,
+            background: theme.dark.background,
+            card: theme.dark.surface,
+            text: theme.dark.text,
+            border: theme.dark.border,
+            notification: theme.dark.error,
+          },
+        }}>
+          <Stack.Navigator screenOptions={{ headerBackTitleVisible: false }}>
+            <Stack.Screen 
+              name="Main" 
+              component={TabNavigator} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="DeviceDiscovery" 
+              component={DeviceDiscoveryScreen as any}
+              options={{ 
+                headerShown: Platform.OS !== 'web',
+                presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                headerTransparent: true,
+                headerBackground: () => (
+                  <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+                ),
+                headerTitle: 'Device Discovery',
+                headerTintColor: theme.dark.text,
+              }}
+            />
+            <Stack.Screen 
+              name="CreateProfile" 
+              component={CreateProfileScreen as any}
+              options={{ 
+                headerShown: Platform.OS !== 'web',
+                presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                headerTransparent: true,
+                headerBackground: () => (
+                  <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+                ),
+                headerTitle: 'Create Profile',
+                headerTintColor: theme.dark.text,
+              }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      )}
     </View>
   );
 }

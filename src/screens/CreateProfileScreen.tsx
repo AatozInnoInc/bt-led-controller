@@ -9,6 +9,8 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 import { BluetoothDevice, DeviceProfile, LEDConfiguration } from '../types/bluetooth';
@@ -216,6 +218,16 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
 
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={[ '#0a0a0a', '#0b1736' ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject as any}
+      />
+      <View style={styles.backgroundDecor}>
+        <View style={styles.blobPrimary} />
+        <View style={styles.blobSecondary} />
+      </View>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -230,13 +242,13 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Device Info */}
-        <View style={styles.deviceInfoCard}>
+        <BlurView intensity={25} tint="dark" style={styles.deviceInfoCard}>
           <Ionicons name="bluetooth" size={24} color={theme.dark.primary} />
           <View style={styles.deviceInfo}>
             <Text style={styles.deviceName}>{device.name}</Text>
             <Text style={styles.deviceDetail}>Signal: {device.rssi} dBm</Text>
           </View>
-        </View>
+        </BlurView>
 
         {/* Profile Name */}
         <View style={styles.section}>
@@ -284,6 +296,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.dark.background,
+    position: 'relative',
+  },
+  backgroundDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 220,
+  },
+  blobPrimary: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(0,122,255,0.16)',
+    top: -50,
+    left: -40,
+  },
+  blobSecondary: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(175,82,222,0.14)',
+    top: -10,
+    right: -30,
   },
   header: {
     flexDirection: 'row',
@@ -321,6 +359,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: theme.dark.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
   deviceInfo: {
     marginLeft: 12,
@@ -368,6 +411,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: theme.dark.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
   ledConfigHeader: {
     flexDirection: 'row',

@@ -1,5 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 
@@ -11,7 +13,7 @@ interface TabBarProps {
 
 const CustomTabBar: React.FC<TabBarProps> = ({ state, descriptors, navigation }) => {
   return (
-    <View style={styles.container}>
+    <BlurView intensity={30} tint="dark" style={styles.container}>
       {state.routes.map((route: any, index: number) => {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel !== undefined
@@ -23,6 +25,9 @@ const CustomTabBar: React.FC<TabBarProps> = ({ state, descriptors, navigation })
         const isFocused = state.index === index;
 
         const onPress = () => {
+          if (Platform.OS !== 'web') {
+            Haptics.selectionAsync();
+          }
           const event = navigation.emit({
             type: 'tabPress',
             target: route.key,
@@ -65,21 +70,23 @@ const CustomTabBar: React.FC<TabBarProps> = ({ state, descriptors, navigation })
             onLongPress={onLongPress}
             style={styles.tab}
           >
-            <Ionicons
-              name={getIconName() as any}
-              size={24}
-              color={isFocused ? theme.dark.primary : theme.dark.textSecondary}
-            />
-            <Text style={[
-              styles.label,
-              { color: isFocused ? theme.dark.primary : theme.dark.textSecondary }
-            ]}>
-              {label}
-            </Text>
+            <View style={[styles.tabContent, isFocused && styles.activePill]}>
+              <Ionicons
+                name={getIconName() as any}
+                size={22}
+                color={isFocused ? theme.dark.primary : theme.dark.textSecondary}
+              />
+              <Text style={[
+                styles.label,
+                { color: isFocused ? theme.dark.primary : theme.dark.textSecondary }
+              ]}>
+                {label}
+              </Text>
+            </View>
           </TouchableOpacity>
         );
       })}
-    </View>
+    </BlurView>
   );
 };
 
@@ -89,15 +96,34 @@ const styles = StyleSheet.create({
     backgroundColor: theme.dark.surface,
     borderTopColor: theme.dark.border,
     borderTopWidth: 0.5,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+    paddingBottom: Platform.OS === 'ios' ? 14 : 10,
     paddingTop: 10,
-    height: Platform.OS === 'ios' ? 80 : 70,
-    ...(Platform.OS === 'web' && { position: 'fixed', bottom: 0, left: 0, right: 0 }),
+    height: Platform.OS === 'ios' ? 78 : 68,
+    marginHorizontal: 12,
+    marginBottom: Platform.OS === 'web' ? 0 : 12,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 10,
+    ...(Platform.OS === 'web' ? { position: 'absolute' as const, bottom: 0, left: 0, right: 0, borderRadius: 0, marginHorizontal: 0 } : null),
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  activePill: {
+    backgroundColor: '#007AFF22',
   },
   label: {
     fontSize: 12,

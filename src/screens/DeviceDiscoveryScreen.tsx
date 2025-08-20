@@ -10,6 +10,8 @@ import {
   Platform,
   TextInput,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 import { BluetoothDevice } from '../types/bluetooth';
@@ -418,6 +420,16 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={[ '#0a0a0a', '#0b1736' ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject as any}
+      />
+      <View style={styles.backgroundDecor}>
+        <View style={styles.blobPrimary} />
+        <View style={styles.blobSecondary} />
+      </View>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -442,11 +454,11 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
               ? 'Bluetooth Ready'
               : (!bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'));
         return (
-          <View style={[styles.platformInfo, isPlatformError && styles.platformInfoError]}>
+          <BlurView intensity={25} tint="dark" style={[styles.platformInfo, isPlatformError && styles.platformInfoError]}>
             <Text style={[styles.platformInfoText, isPlatformError && styles.platformInfoTextError]}>
               {platformIcon} {platformName} Platform - {platformStatusText}
             </Text>
-          </View>
+          </BlurView>
         );
       })()}
 
@@ -483,7 +495,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       {devices.length > 0 && (
         <View style={styles.searchSection}>
           {/* Search Bar */}
-          <View style={styles.searchBar}>
+          <BlurView intensity={18} tint="dark" style={styles.searchBar}>
             <Ionicons name="search" size={20} color={theme.dark.textSecondary} />
             <TextInput
               style={styles.searchInput}
@@ -497,7 +509,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
                 <Ionicons name="close-circle" size={20} color={theme.dark.textSecondary} />
               </TouchableOpacity>
             )}
-          </View>
+          </BlurView>
 
           {/* Filter Buttons */}
           <View style={styles.filterButtons}>
@@ -636,6 +648,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.dark.background,
+    position: 'relative',
+  },
+  backgroundDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+  },
+  blobPrimary: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(88,86,214,0.18)',
+    top: -50,
+    left: -40,
+  },
+  blobSecondary: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(0,122,255,0.14)',
+    top: -10,
+    right: -30,
   },
   header: {
     flexDirection: 'row',
@@ -867,6 +905,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: theme.dark.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
   deviceCardConnected: {
     borderColor: theme.dark.success,
