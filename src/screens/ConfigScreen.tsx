@@ -10,7 +10,7 @@ import {
   Platform,
   Animated,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -362,7 +362,6 @@ const ConfigScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.dark.background,
     position: 'relative',
     ...(Platform.OS === 'web' && {
       // @ts-ignore - Web-specific styles

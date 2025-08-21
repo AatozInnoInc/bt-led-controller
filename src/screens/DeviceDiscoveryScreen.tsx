@@ -10,7 +10,7 @@ import {
   Platform,
   TextInput,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
@@ -647,7 +647,6 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.dark.background,
     position: 'relative',
   },
   backgroundDecor: {

@@ -21,7 +21,6 @@
     "expo-dev-client": "~5.2.4",
     "expo-device": "~7.1.4",
     "expo-haptics": "^13.0.1",
-    "expo-linear-gradient": "^13.0.2",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",

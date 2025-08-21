@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -88,7 +88,6 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
-		backgroundColor: theme.dark.background,
 		paddingHorizontal: 24,
 		paddingTop: 64,
 		paddingBottom: 24,

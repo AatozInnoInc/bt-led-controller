@@ -82,7 +82,7 @@ export default function App() {
           dark: true,
           colors: {
             primary: theme.dark.primary,
-            background: theme.dark.background,
+            background: 'transparent',
             card: theme.dark.surface,
             text: theme.dark.text,
             border: theme.dark.border,
@@ -133,7 +133,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.dark.background,
+    backgroundColor: '#0a0a0a', // Set a dark default background
   },
 
   webHeader: {
