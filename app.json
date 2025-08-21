@@ -7,6 +7,9 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "experiments": {
+      "tsconfigPaths": true
+    },
     "plugins": [
       "expo-dev-client",
       "expo-apple-authentication"
