@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { theme } from '../utils/theme';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import GradientButton from '../components/GradientButton';
 
 const ConfigScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
@@ -249,7 +250,6 @@ const ConfigScreen: React.FC = () => {
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView 
           style={styles.container} 
-          contentContainerStyle={{ paddingBottom: tabBarHeight + 20 }}
           contentInsetAdjustmentBehavior="never"
           scrollIndicatorInsets={{ bottom: tabBarHeight }}
           showsVerticalScrollIndicator={false}
@@ -345,26 +345,14 @@ const ConfigScreen: React.FC = () => {
 
       {/* Save Button */}
       <View style={styles.saveSection}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <LinearGradient
-            colors={['#007AFF', '#0056CC', '#0033AA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <LinearGradient
-            colors={['rgba(255,255,255,0.2)', 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={styles.saveButtonContent}>
-            <View style={styles.saveIconContainer}>
-              <Ionicons name="save" size={22} color="#FFFFFF" />
-            </View>
-            <Text style={styles.saveButtonText}>Save Configuration</Text>
-          </View>
-        </TouchableOpacity>
+        <GradientButton
+          text="Save Configuration"
+          onPress={handleSave}
+          colors={['#2F7CFF', 'rgba(0,86,204,0.85)']}
+          glossColors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.00)']}
+          iconName="save"
+          style={styles.saveButton}
+        />
       </View>
         </ScrollView>
       </SafeAreaView>
@@ -619,18 +607,18 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     position: 'relative',
-    paddingVertical: 18,
+    paddingVertical: 20,
     paddingHorizontal: 32,
-    borderRadius: 20,
+    borderRadius: 28,
     overflow: 'hidden',
     ...(Platform.OS === 'web' ? {
-      boxShadow: '0 12px 32px rgba(0,122,255,0.4)',
+      boxShadow: '0 18px 44px rgba(0,122,255,0.35)',
     } : {
       shadowColor: '#007AFF',
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.4,
-      shadowRadius: 32,
-      elevation: 16,
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.35,
+      shadowRadius: 28,
+      elevation: 18,
     }),
   },
   saveButtonContent: {

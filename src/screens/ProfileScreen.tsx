@@ -15,6 +15,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import GradientButton from '../components/GradientButton';
 
 const ProfileScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
@@ -94,7 +95,6 @@ const ProfileScreen: React.FC = () => {
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView 
           style={styles.container} 
-          contentContainerStyle={{ paddingBottom: tabBarHeight + 20 }}
           contentInsetAdjustmentBehavior="never"
           scrollIndicatorInsets={{ bottom: tabBarHeight }}
           showsVerticalScrollIndicator={false}
@@ -214,26 +214,14 @@ const ProfileScreen: React.FC = () => {
 
       {/* Logout Button */}
       <View style={styles.logoutSection}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <LinearGradient
-            colors={['#E53935', '#D32F2F', '#C62828']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <LinearGradient
-            colors={['rgba(255,255,255,0.2)', 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={styles.logoutButtonContent}>
-            <View style={styles.logoutIconContainer}>
-              <Ionicons name="log-out" size={22} color="#FFFFFF" />
-            </View>
-            <Text style={styles.logoutButtonText}>Logout</Text>
-          </View>
-        </TouchableOpacity>
+        <GradientButton
+          text="Logout"
+          onPress={handleLogout}
+          colors={['#FF5A5F', 'rgba(198,40,40,0.88)']}
+          glossColors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.0)']}
+          iconName="log-out"
+          style={styles.logoutButton}
+        />
       </View>
         </ScrollView>
       </SafeAreaView>
@@ -403,18 +391,18 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     position: 'relative',
-    paddingVertical: 18,
+    paddingVertical: 20,
     paddingHorizontal: 32,
-    borderRadius: 20,
+    borderRadius: 28,
     overflow: 'hidden',
     ...(Platform.OS === 'web' ? {
-      boxShadow: '0 12px 32px rgba(229,57,53,0.4)',
+      boxShadow: '0 18px 44px rgba(229,57,53,0.35)',
     } : {
       shadowColor: '#E53935',
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.4,
-      shadowRadius: 32,
-      elevation: 16,
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.35,
+      shadowRadius: 28,
+      elevation: 18,
     }),
   },
   logoutButtonContent: {

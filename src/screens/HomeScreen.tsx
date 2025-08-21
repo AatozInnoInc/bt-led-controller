@@ -77,7 +77,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView 
           style={styles.container} 
-          contentContainerStyle={{ paddingBottom: tabBarHeight + 20 }}
           contentInsetAdjustmentBehavior="never"
           scrollIndicatorInsets={{ bottom: tabBarHeight }}
           showsVerticalScrollIndicator={false}
