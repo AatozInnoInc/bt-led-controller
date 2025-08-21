@@ -119,7 +119,7 @@ const CustomTabBar: React.FC<TabBarProps> = ({ state, descriptors, navigation })
             <View style={[styles.tabContent, isFocused && styles.activePill]}>
                              <Ionicons
                  name={getIconName() as any}
-                 size={22}
+                 size={26}
                  color={isFocused ? '#FFFFFF' : theme.dark.textSecondary}
                />
                <Text style={[
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     }),
   },
   label: {
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 4,
     fontWeight: '500',
   },
