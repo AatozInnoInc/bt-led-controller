@@ -120,11 +120,6 @@ const ProfileScreen: React.FC = () => {
             subtitle="Password and authentication"
           />
           <MenuItem
-            icon="card"
-            title="Payment Methods"
-            subtitle="Manage your payment options"
-          />
-          <MenuItem
             icon="cloud"
             title="Cloud Storage"
             subtitle="2.5 GB of 5 GB used"
@@ -202,10 +197,6 @@ const ProfileScreen: React.FC = () => {
             title="App Version"
             subtitle="1.0.0"
             showArrow={false}
-          />
-          <MenuItem
-            icon="code-slash"
-            title="Open Source Licenses"
           />
         </BlurView>
       </View>
