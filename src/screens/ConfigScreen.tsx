@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   Switch,
   Alert,
   Platform,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { theme } from '../utils/theme';
 
 const ConfigScreen: React.FC = () => {
@@ -26,16 +28,140 @@ const ConfigScreen: React.FC = () => {
   ];
 
   const effects = [
-    { id: 1, name: 'Solid', icon: 'radio-button-on' },
-    { id: 2, name: 'Pulse', icon: 'pulse' },
-    { id: 3, name: 'Rainbow', icon: 'color-palette' },
-    { id: 4, name: 'Wave', icon: 'water' },
-    { id: 5, name: 'Strobe', icon: 'flash' },
-    { id: 6, name: 'Custom', icon: 'settings' },
+    { id: 1, name: 'Solid', icon: 'radio-button-on', color: '#FFFFFF' },
+    { id: 2, name: 'Pulse', icon: 'pulse', color: '#FF6B6B' },
+    { id: 3, name: 'Rainbow', icon: 'color-palette', color: 'linear-gradient(45deg, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4, #FFEAA7, #DDA0DD)' },
+    { id: 4, name: 'Wave', icon: 'water', color: '#4ECDC4' },
+    { id: 5, name: 'Strobe', icon: 'flash', color: '#FFD93D' },
+    { id: 6, name: 'Custom', icon: 'settings', color: '#FF6B9D' },
   ];
 
   const handleSave = () => {
     Alert.alert('Success', 'Configuration saved successfully!');
+  };
+
+  // Animated effect components
+  const AnimatedEffectIcon: React.FC<{ effect: any }> = ({ effect }) => {
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const waveAnim = useRef(new Animated.Value(0)).current;
+    const strobeAnim = useRef(new Animated.Value(1)).current;
+    const [waveColor, setWaveColor] = useState('#4ECDC4');
+
+    useEffect(() => {
+      if (effect.name === 'Pulse') {
+        const pulseAnimation = Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, {
+              toValue: 1.3,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnim, {
+              toValue: 1,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+        pulseAnimation.start();
+        return () => pulseAnimation.stop();
+      }
+
+      if (effect.name === 'Wave') {
+        const waveColors = ['#4ECDC4', '#45B7D1', '#96CEB4', '#4ECDC4'];
+        let colorIndex = 0;
+        
+        const waveAnimation = Animated.loop(
+          Animated.timing(waveAnim, {
+            toValue: 1,
+            duration: 7500,
+            useNativeDriver: false,
+          })
+        );
+        
+        waveAnim.addListener(({ value }) => {
+          const newIndex = Math.floor(value * 4) % 4;
+          if (newIndex !== colorIndex) {
+            colorIndex = newIndex;
+            setWaveColor(waveColors[colorIndex]);
+          }
+        });
+        
+        waveAnimation.start();
+        return () => {
+          waveAnimation.stop();
+          waveAnim.removeAllListeners();
+        };
+      }
+
+      if (effect.name === 'Strobe') {
+        const strobeAnimation = Animated.loop(
+          Animated.sequence([
+            Animated.timing(strobeAnim, {
+              toValue: 0.3,
+              duration: 750,
+              useNativeDriver: true,
+            }),
+            Animated.timing(strobeAnim, {
+              toValue: 1,
+              duration: 750,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+        strobeAnimation.start();
+        return () => strobeAnimation.stop();
+      }
+    }, [effect.name]);
+
+    if (effect.name === 'Rainbow') {
+      return (
+        <View style={styles.rainbowIconContainer}>
+          <LinearGradient
+            colors={['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.rainbowGradient}
+          >
+            <Ionicons name={effect.icon as any} size={24} color="#FFFFFF" />
+          </LinearGradient>
+        </View>
+      );
+    }
+
+    if (effect.name === 'Pulse') {
+      return (
+        <View style={styles.iconContainer}>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <Ionicons name={effect.icon as any} size={24} color={effect.color} />
+          </Animated.View>
+        </View>
+      );
+    }
+
+    if (effect.name === 'Wave') {
+      return (
+        <View style={styles.iconContainer}>
+          <Ionicons name="analytics" size={24} color={waveColor} />
+        </View>
+      );
+    }
+
+    if (effect.name === 'Strobe') {
+      return (
+        <View style={styles.iconContainer}>
+          <Animated.View style={{ opacity: strobeAnim }}>
+            <Ionicons name={effect.icon as any} size={24} color={effect.color} />
+          </Animated.View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.iconContainer}>
+        <Ionicons name={effect.icon as any} size={24} color={effect.color} />
+      </View>
+    );
   };
 
   const ColorPicker: React.FC = () => (
@@ -66,19 +192,44 @@ const ConfigScreen: React.FC = () => {
     value: number;
     onValueChange: (value: number) => void;
     icon: string;
-  }> = ({ title, value, onValueChange, icon }) => (
-    <View style={styles.sliderContainer}>
-      <View style={styles.sliderHeader}>
-        <Ionicons name={icon as any} size={20} color={theme.dark.primary} />
-        <Text style={styles.sliderTitle}>{title}</Text>
-        <Text style={styles.sliderValue}>{value}%</Text>
+  }> = ({ title, value, onValueChange, icon }) => {
+    const [sliderValue, setSliderValue] = useState(value);
+
+    // Only sync on initial mount
+    useEffect(() => {
+      setSliderValue(value);
+    }, []); // Empty dependency array - only runs once
+
+    const handleSliderChange = (newValue: number) => {
+      setSliderValue(newValue);
+    };
+
+    // Remove all parent state updates - slider is completely self-contained
+
+    return (
+      <View style={styles.sliderContainer}>
+        <View style={styles.sliderHeader}>
+          <Ionicons name={icon as any} size={20} color="#FFFFFF" />
+          <Text style={styles.sliderTitle}>{title}</Text>
+          <Text style={styles.sliderValue}>{Math.round(sliderValue)}%</Text>
+        </View>
+        <View style={styles.sliderWrapper}>
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={100}
+            value={sliderValue}
+            onValueChange={handleSliderChange}
+            minimumTrackTintColor="#FFFFFF"
+            maximumTrackTintColor="rgba(255,255,255,0.3)"
+            thumbTintColor="#FFFFFF"
+            step={1}
+            tapToSeek={true}
+          />
+        </View>
       </View>
-      <View style={styles.sliderTrack}>
-        <View style={[styles.sliderFill, { width: `${value}%` }]} />
-        <View style={[styles.sliderThumb, { left: `${value}%` }]} />
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -103,9 +254,9 @@ const ConfigScreen: React.FC = () => {
         </View>
         <BlurView intensity={30} tint="dark" style={styles.powerCard}>
           <View style={styles.powerInfo}>
-            <Text style={styles.powerTitle}>LED System</Text>
+            <Text style={styles.powerTitle}>Guitar LED Controller</Text>
             <Text style={styles.powerSubtitle}>
-              {isEnabled ? 'System is running' : 'System is off'}
+              {isEnabled ? 'LED system active' : 'LED system disabled'}
             </Text>
           </View>
           <Switch
@@ -151,9 +302,9 @@ const ConfigScreen: React.FC = () => {
           {effects.map((effect) => (
             <TouchableOpacity key={effect.id} activeOpacity={0.7} style={styles.effectCardWrapper}>
               <BlurView intensity={20} tint="dark" style={styles.effectCard}>
-                <Ionicons name={effect.icon as any} size={24} color="#FFFFFF" />
-              <Text style={styles.effectName}>{effect.name}</Text>
-            </BlurView>
+                <AnimatedEffectIcon effect={effect} />
+                <Text style={styles.effectName}>{effect.name}</Text>
+              </BlurView>
             </TouchableOpacity>
           ))}
         </View>
@@ -170,12 +321,12 @@ const ConfigScreen: React.FC = () => {
           ].map((preset, index) => (
             <TouchableOpacity key={index} activeOpacity={0.7} style={styles.presetCardWrapper}>
               <BlurView intensity={20} tint="dark" style={styles.presetCard}>
-              <View style={styles.presetInfo}>
-                <Text style={styles.presetName}>{preset.name}</Text>
-                <Text style={styles.presetDescription}>{preset.description}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.dark.textSecondary} />
-            </BlurView>
+                <View style={styles.presetInfo}>
+                  <Text style={styles.presetName}>{preset.name}</Text>
+                  <Text style={styles.presetDescription}>{preset.description}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.dark.textSecondary} />
+              </BlurView>
             </TouchableOpacity>
           ))}
         </View>
@@ -200,7 +351,7 @@ const ConfigScreen: React.FC = () => {
             <View style={styles.saveIconContainer}>
               <Ionicons name="save" size={22} color="#FFFFFF" />
             </View>
-          <Text style={styles.saveButtonText}>Save Configuration</Text>
+            <Text style={styles.saveButtonText}>Save Configuration</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -213,6 +364,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.dark.background,
     position: 'relative',
+    ...(Platform.OS === 'web' && {
+      // @ts-ignore - Web-specific styles
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      MozUserSelect: 'none',
+      msUserSelect: 'none',
+    }),
   },
   backgroundDecor: {
     position: 'absolute',
@@ -330,28 +488,18 @@ const styles = StyleSheet.create({
   sliderValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: theme.dark.primary,
+    color: '#FFFFFF',
   },
-  sliderTrack: {
-    height: 6,
-    backgroundColor: theme.dark.border,
-    borderRadius: 3,
-    position: 'relative',
+  sliderWrapper: {
+    // Prevent text selection on web
   },
-  sliderFill: {
-    height: '100%',
-    backgroundColor: theme.dark.primary,
-    borderRadius: 3,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    top: -4,
-    width: 14,
-    height: 14,
-    backgroundColor: theme.dark.primary,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: theme.dark.background,
+  slider: {
+    width: '100%',
+    height: 40,
+    ...(Platform.OS === 'web' && { 
+      WebkitAppearance: 'none',
+      appearance: 'none',
+    }),
   },
   effectsGrid: {
     flexDirection: 'row',
@@ -382,6 +530,34 @@ const styles = StyleSheet.create({
     color: theme.dark.text,
     marginTop: 8,
     textAlign: 'center',
+  },
+  rainbowIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rainbowGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  waveOverlay: {
+    position: 'absolute',
+    width: 8,
+    height: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 4,
+    opacity: 0.6,
   },
   presetsList: {
     marginTop: 12,
