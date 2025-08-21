@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from '../utils/linearGradientWrapper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
@@ -34,8 +35,11 @@ const CustomTabBar: React.FC<TabBarProps> = ({ state, descriptors, navigation })
     return () => pulseAnimation.stop();
   }, []);
 
+  const insets = useSafeAreaInsets();
+  const barHeight = 52 + insets.bottom; // standard tab bar height + safe-area
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height: barHeight }] }>
       <LinearGradient
         colors={['rgba(25,25,30,0.95)', 'rgba(35,35,40,0.95)', 'rgba(25,25,30,0.95)']}
         start={{ x: 0, y: 0 }}
@@ -55,7 +59,7 @@ const CustomTabBar: React.FC<TabBarProps> = ({ state, descriptors, navigation })
         ]} 
       />
       <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFillObject} />
-      <View style={styles.tabBarContent}>
+      <View style={[styles.tabBarContent, { paddingBottom: insets.bottom }] }>
       {state.routes.map((route: any, index: number) => {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel !== undefined
@@ -138,17 +142,14 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderTopColor: theme.dark.border,
     borderTopWidth: 0.5,
-    height: Platform.OS === 'ios' ? 78 : 68,
-    marginHorizontal: 12,
-    marginBottom: Platform.OS === 'web' ? 0 : 12,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 10,
+    height: Platform.OS === 'ios' ? 90 : 68,
+    marginBottom: 0,
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
     overflow: 'hidden',
-    ...(Platform.OS === 'web' ? { borderRadius: 0, marginHorizontal: 0 } : null),
   },
   tabBarContent: {
     flexDirection: 'row',
@@ -163,8 +164,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 20,
-    ...(Platform.OS === 'web' ? { borderRadius: 0 } : null),
   },
   tab: {
     flex: 1,

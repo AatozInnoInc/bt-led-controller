@@ -10,13 +10,16 @@ import {
   Platform,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { theme } from '../utils/theme';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 const ConfigScreen: React.FC = () => {
+  const tabBarHeight = useBottomTabBarHeight();
   const [isEnabled, setIsEnabled] = useState(false);
   const [brightness, setBrightness] = useState(50);
   const [speed, setSpeed] = useState(30);
@@ -232,7 +235,7 @@ const ConfigScreen: React.FC = () => {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.fullScreen}>
       <LinearGradient
         colors={[ '#0a0a0a', '#0b1736' ]}
         start={{ x: 0, y: 0 }}
@@ -243,8 +246,16 @@ const ConfigScreen: React.FC = () => {
         <View style={styles.blobPrimary} />
         <View style={styles.blobSecondary} />
       </View>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <ScrollView 
+          style={styles.container} 
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 20 }}
+          contentInsetAdjustmentBehavior="never"
+          scrollIndicatorInsets={{ bottom: tabBarHeight }}
+          showsVerticalScrollIndicator={false}
+        >
       {/* Power Control */}
-      <View style={styles.section}>
+      <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
         <View style={styles.sectionHeader}>
           <Ionicons name="hardware-chip" size={24} color="#FFFFFF" />
           <View style={styles.sectionTitleContainer}>
@@ -355,11 +366,19 @@ const ConfigScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  fullScreen: {
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     position: 'relative',
@@ -399,6 +418,7 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: 20,
     paddingVertical: 16,
+    ...(Platform.OS === 'ios' && { paddingTop: 20 }),
   },
   sectionHeader: {
     flexDirection: 'row',

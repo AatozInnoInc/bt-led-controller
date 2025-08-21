@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -42,7 +43,7 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <LinearGradient
         colors={[ '#0a0a0a', '#0b1736' ]}
         start={{ x: 0, y: 0 }}
@@ -81,7 +82,7 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
           By continuing you agree to our Terms and Privacy Policy
         </Text>
       </BlurView>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -89,7 +90,6 @@ const styles = StyleSheet.create({
 	container: {
 		flex: 1,
 		paddingHorizontal: 24,
-		paddingTop: 64,
 		paddingBottom: 24,
 	},
 	hero: {

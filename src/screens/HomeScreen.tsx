@@ -8,10 +8,12 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 const { width } = Dimensions.get('window');
 
@@ -20,6 +22,7 @@ interface HomeScreenProps {
 }
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
+  const tabBarHeight = useBottomTabBarHeight();
   const features = [
     {
       id: 1,
@@ -60,7 +63,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   );
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.fullScreen}>
       <LinearGradient
         colors={[ '#0a0a0a', '#0b1736' ]}
         start={{ x: 0, y: 0 }}
@@ -71,6 +74,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <View style={styles.blobPrimary} />
         <View style={styles.blobSecondary} />
       </View>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <ScrollView 
+          style={styles.container} 
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 20 }}
+          contentInsetAdjustmentBehavior="never"
+          scrollIndicatorInsets={{ bottom: tabBarHeight }}
+          showsVerticalScrollIndicator={false}
+        >
       {/* Hero Section */}
       <View style={styles.heroSection}>
         <View style={styles.heroContent}>
@@ -143,11 +154,19 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
-    </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  fullScreen: {
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     position: 'relative',
@@ -179,7 +198,7 @@ const styles = StyleSheet.create({
     right: -30,
   },
   heroSection: {
-    paddingTop: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 16,
     paddingBottom: 40,
     paddingHorizontal: 20,
   },

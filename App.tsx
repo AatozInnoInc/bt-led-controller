@@ -7,6 +7,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View, Platform, Text } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Import screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -73,11 +74,12 @@ export default function App() {
   const [isSignedIn, setIsSignedIn] = React.useState(false);
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      {Platform.OS === 'ios' && !isSignedIn ? (
-        <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
-      ) : (
+    <SafeAreaProvider>
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        {Platform.OS === 'ios' && !isSignedIn ? (
+          <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
+        ) : (
         <NavigationContainer theme={{
           dark: true,
           colors: {
@@ -125,8 +127,9 @@ export default function App() {
             />
           </Stack.Navigator>
         </NavigationContainer>
-      )}
-    </View>
+        )}
+      </View>
+    </SafeAreaProvider>
   );
 }
 
