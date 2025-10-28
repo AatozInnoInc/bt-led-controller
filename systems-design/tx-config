@@ -1,0 +1,41 @@
+sequenceDiagram
+    autonumber
+    participant User as 🎸 User
+    participant App as React Native App
+    participant BLE as BLE Service (GATT)
+    participant MCU as Microcontroller
+    participant RAM as RAM Buffer
+    participant FLASH as Flash Memory
+
+    User->>App: Opens Configuration UI
+    App->>BLE: Establish BLE Connection
+    BLE->>MCU: Connect Event
+    MCU-->>App: Acknowledge + Current Config Snapshot
+
+    loop Real-time Adjustments
+        User->>App: Adjust parameter (e.g., LED color/brightness)
+        App->>BLE: Send ConfigUpdate(payload)
+        BLE->>MCU: Forward payload
+        MCU->>MCU: Validate Input (range/type/idempotent)
+        alt Valid
+            MCU->>RAM: Apply Temporarily
+            RAM->>MCU: Real-time LED/Effector Update
+            MCU-->>BLE: Ack + Notify Success
+        else Invalid
+            MCU-->>BLE: ErrorEnvelope {code, message}
+        end
+        BLE-->>App: Response (Notify/WriteAck)
+        App-->>User: Visual Feedback (applied or rejected)
+    end
+
+    User->>App: Press “Save Configuration”
+    App->>BLE: CommitConfig()
+    BLE->>MCU: Commit Request
+    MCU->>FLASH: Write New Config (if different)
+    FLASH-->>MCU: Success
+    MCU-->>BLE: Commit Ack
+    BLE-->>App: “Configuration Saved”
+
+    App->>BLE: Disconnect
+    BLE->>MCU: Disconnect Event
+    MCU->>MCU: Revert to Run Mode

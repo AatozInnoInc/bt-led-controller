@@ -1,0 +1,32 @@
+flowchart TD
+
+subgraph Microcontroller_Design["Microcontroller Code Design (C++)"]
+    subgraph Domains
+        LED_Effects[LED Effects Module]
+        BLE_Comm[BLE Communication Module]
+        Config_Logic[Configuration Logic]
+    end
+
+    subgraph Functional_Approach["Functional & Immutable Patterns"]
+        Immutability[Immutable Config Data]
+        PureFunctions[Pure Functions for State Changes]
+    end
+
+    subgraph Error_Handling["Error Handling"]
+        ErrorEnvelope[Error Envelope Pattern]
+    end
+
+    subgraph Optional_Patterns["Optional Layers"]
+        Services[Service Layer]
+        Repositories[Repository Pattern]
+    end
+
+    % Connections
+    BLE_Comm -->|Uses| Config_Logic
+    Config_Logic -->|Functional Style| Immutability
+    Config_Logic --> ErrorEnvelope
+    ErrorEnvelope --> BLE_Comm
+
+    style LED_Effects fill:#ccf,stroke:#333,stroke-width:2px
+    style BLE_Comm fill:#ccf,stroke:#333,stroke-width:2px
+    style Config_Logic fill:#ccf,stroke:#333,stroke-width:2px

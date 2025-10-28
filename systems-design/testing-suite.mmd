@@ -1,0 +1,18 @@
+graph TD
+    subgraph React Native Testing Suite
+        T1[Test Bluetooth Commands]
+        T2[Test Bluetooth Error Handling]
+        T3[Mock Bluetooth Operations]
+        T4[Edge Cases & Envelope Decoding]
+    end
+    
+    T1 --> T3
+    T2 --> T3
+    T3 --> T4
+    
+    note at T1:: Unit tests for each known Bluetooth command
+    note at T2:: Tests for each known error scenario using mock data
+    note at T3:: Mock BLE layer to simulate Bluetooth interactions
+    note at T4:: Include edge cases and validate error envelopes are decoded correctly
+    
+    classDef default fill:#f9f,stroke:#333,stroke-width:2px;

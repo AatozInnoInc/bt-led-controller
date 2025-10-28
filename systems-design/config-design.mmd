@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant UI as ConfigScreen
+    participant CFG as ConfigDomainController
+    participant BLE as BluetoothService
+    participant REP as ConfigRepository
+    participant MCU as Microcontroller
+
+    UI->>CFG: Enter Config Mode
+    CFG->>BLE: Send CMD_ENTER_CONFIG
+    BLE->>MCU: [0x10] Enter Config Mode
+    MCU-->>BLE: Ack [0x90]
+    BLE-->>CFG: Mode Active
+    CFG->>REP: Load Cached Config
+    REP-->>CFG: Return Data
+    CFG->>UI: Populate Sliders, Colors
+
+    loop User Adjusts Settings
+        UI->>CFG: New Setting
+        CFG->>BLE: Send ConfigCommand
+        BLE->>MCU: [0x02, 0x7F]
+        MCU-->>BLE: Ack
+        BLE-->>CFG: Confirm
+        CFG->>UI: Update Visuals
+    end
+
+    UI->>CFG: Save Config
+    CFG->>REP: Serialize + Validate
+    CFG->>BLE: Send CMD_COMMIT_CONFIG
+    MCU-->>BLE: Commit Ack
+    CFG->>UI: Success

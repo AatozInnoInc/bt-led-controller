@@ -1,0 +1,41 @@
+flowchart TD
+
+subgraph MCU[Microcontroller Architecture (C++)]
+    subgraph CoreDomains["Domain Modules"]
+        LED[LED Effects Module]
+        BLE[BLE Communication Module]
+        CFG[Configuration Logic]
+    end
+
+    subgraph Safety["Safety & Validation Layers"]
+        VALIDATE[Validation Layer]
+        IMMU[Immutable Config Objects]
+        SAFEWRITE[Idempotent Flash Writes]
+    end
+
+    subgraph Support["Testing & Documentation"]
+        TEST[Unit + Integration Testing Suite]
+        DOCS[Doxygen / hdoc Auto-Documentation]
+    end
+
+    subgraph Ext["Future Extensibility"]
+        OTA[Firmware / OTA Update Hooks]
+        LOG[Diagnostic Logging Layer]
+    end
+
+    BLE --> VALIDATE
+    VALIDATE --> IMMU
+    IMMU --> CFG
+    CFG --> LED
+    CFG --> SAFEWRITE
+    SAFEWRITE --> OTA
+    CFG --> TEST
+    CFG --> DOCS
+    OTA --> LOG
+end
+
+style MCU fill:#f4f9ff,stroke:#333,stroke-width:2px
+style CoreDomains fill:#cde,stroke:#333,stroke-width:1px
+style Safety fill:#dff,stroke:#333,stroke-width:1px
+style Support fill:#dfd,stroke:#333,stroke-width:1px
+style Ext fill:#ffd,stroke:#333,stroke-width:1px

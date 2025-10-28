@@ -1,0 +1,19 @@
+flowchart TD
+
+subgraph Dev_Environment[Development Environment]
+    Code[Microcontroller Code] --> UnitTests[Unit Tests]
+    UnitTests --> IntegrationTests[Integration Tests]
+    IntegrationTests --> Simulation[Simulated BLE & Power Scenarios]
+end
+
+subgraph Test_Output[Testing Results]
+    Pass[All Tests Pass]
+    Fail[Failing Test Cases]
+end
+
+Code -->|Run tests| UnitTests
+IntegrationTests -->|Check BLE Logic| Simulation
+Simulation -->|Verify Power Limits| Test_Output
+
+style Pass fill:#8f8,stroke:#333,stroke-width:2px
+style Fail fill:#f88,stroke:#333,stroke-width:2px

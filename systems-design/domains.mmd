@@ -1,0 +1,35 @@
+graph TD
+    subgraph Bluetooth Domain
+        A[BluetoothService]
+        B[DeviceRepository]
+        C[BLECommandEncoder]
+        D[ErrorEnvelope]
+        F[ConfigurationModule]
+    end
+    
+    A --> F
+    F -->|Enter/Exit Config Mode| A
+    
+    subgraph Error Handling Module
+        E[ErrorHandler]
+    end
+    
+    D --> E
+    
+    subgraph React Native Testing Suite
+        T1[Test Bluetooth Commands]
+        T2[Test Bluetooth Error Handling]
+        T3[Mock Bluetooth Operations]
+        T4[Edge Cases & Envelope Decoding]
+        T5[Test Config Mode Transitions]
+    end
+    
+    T1 --> T3
+    T2 --> T3
+    T3 --> T4
+    T4 --> T5
+    
+    note at F:: Manages entering and exiting the microcontroller's configuration mode
+    note at T5:: Tests for configuration mode transitions and related errors
+    
+    classDef default fill:#f9f,stroke:#333,stroke-width:2px;
