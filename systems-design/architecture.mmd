@@ -1,33 +1,31 @@
 flowchart TD
 
-subgraph RN[React Native App]
-    UI[User Interface] --> CFG[Configuration Logic]
-    CFG --> BLE_TX[BLE Command Queue]
+subgraph RN["React Native App"]
+    UI["User Interface"] --> CFG["Configuration Logic"]
+    CFG --> BLE_TX["BLE Command Queue"]
 end
 
-subgraph MCU[Microcontroller (ItsyBitsy nRF52840)]
-    BLE_RX[BLE Listener (GATT Service)]
-    BLE_RX --> VALIDATE[Validation Layer]
-    VALIDATE -->|valid| RAMBUF[RAM Buffer / Staging Area]
-    VALIDATE -->|invalid| DROP[Discard / Ignore Command]
-    RAMBUF -->|Only if changed| COMMIT[Write to Non-Volatile Memory]
-    RAMBUF --> APPLY[Apply in Real-Time (LED, Effect, etc.)]
+subgraph MCU["Microcontroller (ItsyBitsy nRF52840)"]
+    BLE_RX["BLE Listener (GATT Service)"]
+    BLE_RX --> VALIDATE["Validation Layer"]
+    VALIDATE -->|valid| RAMBUF["RAM Buffer / Staging Area"]
+    VALIDATE -->|invalid| DROP["Discard / Ignore Command"]
+    RAMBUF -->|Only if changed| COMMIT["Write to Non-Volatile Memory"]
+    RAMBUF --> APPLY["Apply in Real-Time (LED, Effect, etc.)"]
 end
 
 RN -->|BLE connection| BLE_RX
-COMMIT --> STATE[Persisted Configuration]
-STATE -->|Reboot / Power Cycle| RESTORE[Load Settings at Boot]
+COMMIT --> STATE["Persisted Configuration"]
+STATE -->|Reboot / Power Cycle| RESTORE["Load Settings at Boot"]
 RESTORE --> APPLY
 
-%% Notes
-note right of VALIDATE
-All BLE writes go through sanity checks:
-- Range checks
-- Type checks
-- Idempotency check
-end note
+%% Notes (use inline subgraph labels instead of 'note ... end note')
+VALIDATE:::note
+RN:::note2
 
-note left of RN
-User connects only during config session.
-Real-time feedback is sent back via BLE notify.
-end note
+classDef note fill:#333,color:#fff,stroke-width:0px,font-size:12px;
+classDef note2 fill:#333,color:#fff,stroke-width:0px,font-size:12px;
+
+%% You can simulate explanatory notes like this:
+%% VALIDATE:::note means “attach note style to this node”.
+%% RN:::note2 gives RN a subtle visual difference to indicate documentation.

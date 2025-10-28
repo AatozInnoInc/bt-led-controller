@@ -10,9 +10,14 @@ graph TD
     T2 --> T3
     T3 --> T4
     
-    note at T1:: Unit tests for each known Bluetooth command
-    note at T2:: Tests for each known error scenario using mock data
-    note at T3:: Mock BLE layer to simulate Bluetooth interactions
-    note at T4:: Include edge cases and validate error envelopes are decoded correctly
+    N1["Unit tests for each known Bluetooth command"]
+    N2["Tests for each known error scenario using mock data"]
+    N3["Mock BLE layer to simulate Bluetooth interactions"]
+    N4["Include edge cases and validate error envelopes are decoded correctly"]
     
+    T1 -.-> N1
+    T2 -.-> N2
+    T3 -.-> N3
+    T4 -.-> N4
+
     classDef default fill:#f9f,stroke:#333,stroke-width:2px;

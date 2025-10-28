@@ -29,7 +29,10 @@ graph TD
     T3 --> T4
     T4 --> T5
     
-    note at F:: Manages entering and exiting the microcontroller's configuration mode
-    note at T5:: Tests for configuration mode transitions and related errors
+    N1["Manages entering and exiting the microcontroller's configuration mode"]
+    N2["Tests for configuration mode transitions and related errors"]
+    
+    F -.-> N1
+    T5 -.-> N2
     
     classDef default fill:#f9f,stroke:#333,stroke-width:2px;

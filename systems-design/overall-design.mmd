@@ -21,7 +21,7 @@ subgraph Microcontroller_Design["Microcontroller Code Design (C++)"]
         Repositories[Repository Pattern]
     end
 
-    % Connections
+    %% Connections
     BLE_Comm -->|Uses| Config_Logic
     Config_Logic -->|Functional Style| Immutability
     Config_Logic --> ErrorEnvelope
@@ -30,3 +30,4 @@ subgraph Microcontroller_Design["Microcontroller Code Design (C++)"]
     style LED_Effects fill:#ccf,stroke:#333,stroke-width:2px
     style BLE_Comm fill:#ccf,stroke:#333,stroke-width:2px
     style Config_Logic fill:#ccf,stroke:#333,stroke-width:2px
+end
