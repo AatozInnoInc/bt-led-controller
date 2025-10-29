@@ -1,4 +1,21 @@
-%%{config: { "theme": null, "themeCSS": "./theme.mmd" }}%%
+%%{init: {
+  "theme": "dark",
+  "themeVariables": {
+    "primaryColor": "#0d1117",
+    "primaryTextColor": "#e6edf3",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#58a6ff",
+    "secondaryColor": "#161b22",
+    "actorBorder": "#58a6ff",
+    "actorBkg": "#1f6feb",
+    "actorTextColor": "#ffffff",
+    "signalColor": "#58a6ff",
+    "loopTextColor": "#e6edf3",
+    "altBackground": "#161b22",
+    "altTextColor": "#e6edf3",
+    "sequenceNumberColor": "#7ee787"
+  }
+}}%%
 
 graph TD
     subgraph Bluetooth Domain
@@ -36,5 +53,3 @@ graph TD
     
     F -.-> N1
     T5 -.-> N2
-    
-    classDef default fill:#f9f,stroke:#333,stroke-width:2px;
