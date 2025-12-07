@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 const { width } = Dimensions.get('window');
@@ -23,27 +23,28 @@ interface HomeScreenProps {
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const tabBarHeight = useBottomTabBarHeight();
+  const { colors, isDark } = useTheme();
   const features = [
     {
       id: 1,
       title: 'LED Control',
       description: 'Control your guitar\'s LED system with precision and ease.',
       icon: 'musical-notes',
-      color: theme.dark.primary,
+      color: colors.primary,
     },
     {
       id: 2,
       title: 'Mobile Friendly',
       description: 'Access your dashboard from any device, anywhere.',
       icon: 'phone-portrait',
-      color: theme.dark.secondary,
+      color: colors.secondary,
     },
     {
       id: 3,
-      title: 'Cloud Sync',
-      description: 'Your configurations are safely stored in the cloud.',
+      title: 'Syncronization',
+      description: 'Your configurations are safely stored on your device.',
       icon: 'cloud',
-      color: theme.dark.success,
+      color: colors.success,
     },
   ];
 
@@ -52,27 +53,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     description: string;
     icon: string;
     color: string;
-  }> = ({ title, description, icon, color }) => (
-    <View style={styles.featureCard}>
+    themeColors: any;
+  }> = ({ title, description, icon, color, themeColors }) => (
+    <View style={[styles.featureCard, { backgroundColor: themeColors.card + 'B3', borderColor: themeColors.border }]}>
       <View style={[styles.iconContainer, { backgroundColor: color + '20' }]}>
         <Ionicons name={icon as any} size={24} color={color} />
       </View>
-      <Text style={styles.featureTitle}>{title}</Text>
-      <Text style={styles.featureDescription}>{description}</Text>
+      <Text style={[styles.featureTitle, { color: themeColors.text }]}>{title}</Text>
+      <Text style={[styles.featureDescription, { color: themeColors.textSecondary }]}>{description}</Text>
     </View>
   );
 
   return (
     <View style={styles.fullScreen}>
       <LinearGradient
-        colors={[ '#0a0a0a', '#0b1736' ]}
+        colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
       <View style={styles.backgroundDecor}>
-        <View style={styles.blobPrimary} />
-        <View style={styles.blobSecondary} />
+        <View style={[styles.blobPrimary, { backgroundColor: isDark ? 'rgba(0,122,255,0.18)' : 'rgba(0,122,255,0.09)' }]} />
+        <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(88,86,214,0.16)' : 'rgba(88,86,214,0.08)' }]} />
       </View>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView 
@@ -84,72 +86,56 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       {/* Hero Section */}
       <View style={styles.heroSection}>
         <View style={styles.heroContent}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="musical-notes" size={60} color={theme.dark.primary} />
+          <View style={[styles.logoContainer, { backgroundColor: colors.card }]}>
+            <Ionicons name="musical-notes" size={60} color={colors.primary} />
           </View>
-          <Text style={styles.heroTitle}>BT LED Guitar Dashboard</Text>
-          <Text style={styles.heroSubtitle}>
+          <Text style={[styles.heroTitle, { color: colors.text }]}>BT LED Guitar Dashboard</Text>
+          <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
             Control your guitar's LED system with ease
           </Text>
           <TouchableOpacity 
-            style={styles.primaryButton}
+            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
             onPress={() => navigation.navigate('DeviceDiscovery')}
           >
-            <Ionicons name="add" size={20} color={theme.dark.text} />
-            <Text style={styles.primaryButtonText}>Add New Configuration</Text>
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={[styles.primaryButtonText, { color: '#FFFFFF' }]}>Add New Configuration</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Features Section */}
       <View style={styles.featuresSection}>
-        <Text style={styles.sectionTitle}>Features</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Features</Text>
         <View style={styles.featuresGrid}>
           {features.map((feature) => (
-            <BlurView key={feature.id} intensity={30} tint="dark" style={{ borderRadius: 16 }}>
+            <BlurView key={feature.id} intensity={30} tint={isDark ? "dark" : "light"} style={{ borderRadius: 16 }}>
               <FeatureCard
                 title={feature.title}
                 description={feature.description}
                 icon={feature.icon}
                 color={feature.color}
+                themeColors={colors}
               />
             </BlurView>
           ))}
         </View>
       </View>
 
-      {/* About Section */}
-      <View style={styles.aboutSection}>
-        <Text style={styles.sectionTitle}>Why Choose BT LED Guitar Dashboard?</Text>
-        <View style={styles.benefitsList}>
-          {[
-            'Easy LED configuration management',
-            'Real-time control and monitoring',
-            'User-friendly interface',
-          ].map((benefit, index) => (
-            <View key={index} style={styles.benefitItem}>
-              <Ionicons name="checkmark-circle" size={20} color={theme.dark.success} />
-              <Text style={styles.benefitText}>{benefit}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
       {/* Quick Actions */}
       <View style={styles.quickActionsSection}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
         <View style={styles.quickActionsGrid}>
-          <TouchableOpacity style={styles.quickActionCard}>
-            <Ionicons name="settings" size={24} color={theme.dark.primary} />
-            <Text style={styles.quickActionText}>Settings</Text>
+          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="settings" size={24} color={colors.primary} />
+            <Text style={[styles.quickActionText, { color: colors.text }]}>Settings</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionCard}>
-            <Ionicons name="analytics" size={24} color={theme.dark.secondary} />
-            <Text style={styles.quickActionText}>Analytics</Text>
+          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="analytics" size={24} color={colors.secondary} />
+            <Text style={[styles.quickActionText, { color: colors.text }]}>Analytics</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionCard}>
-            <Ionicons name="help-circle" size={24} color={theme.dark.warning} />
-            <Text style={styles.quickActionText}>Help</Text>
+          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="help-circle" size={24} color={colors.warning} />
+            <Text style={[styles.quickActionText, { color: colors.text }]}>Help</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -183,7 +169,6 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(0,122,255,0.18)',
     top: -60,
     left: -40,
   },
@@ -192,7 +177,6 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: 'rgba(88,86,214,0.16)',
     top: -20,
     right: -30,
   },
@@ -208,14 +192,10 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: theme.dark.card,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.primary}4D`,
-    } : {
-      shadowColor: theme.dark.primary,
+    ...(Platform.OS === 'web' ? {} : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -225,13 +205,11 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: theme.dark.text,
     textAlign: 'center',
     marginBottom: 8,
   },
   heroSubtitle: {
     fontSize: 16,
-    color: theme.dark.textSecondary,
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 22,
@@ -239,14 +217,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.dark.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.primary}4D`,
-    } : {
-      shadowColor: theme.dark.primary,
+    ...(Platform.OS === 'web' ? {} : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -254,7 +228,6 @@ const styles = StyleSheet.create({
     }),
   },
   primaryButtonText: {
-    color: theme.dark.text,
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
@@ -266,18 +239,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: theme.dark.text,
     marginBottom: 20,
   },
   featuresGrid: {
     gap: 16,
   },
   featureCard: {
-    backgroundColor: theme.dark.card + 'B3',
     padding: 20,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
@@ -295,12 +265,10 @@ const styles = StyleSheet.create({
   featureTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: theme.dark.text,
     marginBottom: 8,
   },
   featureDescription: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     lineHeight: 20,
   },
   aboutSection: {
@@ -316,7 +284,6 @@ const styles = StyleSheet.create({
   },
   benefitText: {
     fontSize: 16,
-    color: theme.dark.text,
     marginLeft: 12,
     flex: 1,
   },
@@ -331,12 +298,10 @@ const styles = StyleSheet.create({
   },
   quickActionCard: {
     flex: 1,
-    backgroundColor: theme.dark.card,
     padding: 20,
     borderRadius: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: theme.dark.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
@@ -346,7 +311,6 @@ const styles = StyleSheet.create({
   quickActionText: {
     fontSize: 14,
     fontWeight: '500',
-    color: theme.dark.text,
     marginTop: 8,
     textAlign: 'center',
   },

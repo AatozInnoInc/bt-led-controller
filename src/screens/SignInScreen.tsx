@@ -5,13 +5,14 @@ import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { theme } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface SignInScreenProps {
   onSignedIn: () => void;
 }
 
 const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
+  const { colors, isDark } = useTheme();
   const [isAppleAvailable, setIsAppleAvailable] = React.useState(false);
 
   React.useEffect(() => {
@@ -45,22 +46,22 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient
-        colors={[ '#0a0a0a', '#0b1736' ]}
+        colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
       <View style={styles.hero}>
-        <View style={styles.logoShadow}> 
+        <View style={[styles.logoShadow, { backgroundColor: colors.card }]}> 
           <Image source={require('../../assets/icon.png')} style={styles.logo} />
         </View>
-        <Text style={styles.appTitle}>BT LED Guitar</Text>
-        <Text style={styles.appSubtitle}>Connect • Control • Play</Text>
+        <Text style={[styles.appTitle, { color: colors.text }]}>BT LED Guitar</Text>
+        <Text style={[styles.appSubtitle, { color: colors.textSecondary }]}>Connect • Control • Play</Text>
       </View>
 
-      <BlurView intensity={40} tint="dark" style={styles.card}>
-        <Text style={styles.cardTitle}>Welcome</Text>
-        <Text style={styles.cardSubtitle}>Sign in to sync profiles across devices</Text>
+      <BlurView intensity={40} tint={isDark ? "dark" : "light"} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>Welcome</Text>
+        <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>Sign in to sync profiles across devices</Text>
 
         {Platform.OS === 'ios' && isAppleAvailable ? (
           <AppleAuthentication.AppleAuthenticationButton
@@ -71,14 +72,14 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
             onPress={handleAppleSignIn}
           />
         ) : (
-          <Text style={styles.helper}>Apple Sign-In is not available on this device.</Text>
+          <Text style={[styles.helper, { color: colors.textSecondary }]}>Apple Sign-In is not available on this device.</Text>
         )}
 
         <TouchableOpacity onPress={onSignedIn} style={styles.secondaryCta}>
-          <Text style={styles.secondaryCtaText}>Skip for now</Text>
+          <Text style={[styles.secondaryCtaText, { color: colors.primary }]}>Skip for now</Text>
         </TouchableOpacity>
 
-        <Text style={styles.termsText}>
+        <Text style={[styles.termsText, { color: colors.textSecondary }]}>
           By continuing you agree to our Terms and Privacy Policy
         </Text>
       </BlurView>
@@ -100,10 +101,8 @@ const styles = StyleSheet.create({
 		width: 96,
 		height: 96,
 		borderRadius: 24,
-		backgroundColor: theme.dark.card,
 		alignItems: 'center',
 		justifyContent: 'center',
-		shadowColor: theme.dark.primary,
 		shadowOffset: { width: 0, height: 8 },
 		shadowOpacity: 0.3,
 		shadowRadius: 16,
@@ -118,31 +117,25 @@ const styles = StyleSheet.create({
 	appTitle: {
 		fontSize: 28,
 		fontWeight: '700',
-		color: theme.dark.text,
 		marginTop: 4,
 	},
 	appSubtitle: {
 		fontSize: 15,
-		color: theme.dark.textSecondary,
 		marginTop: 6,
 	},
 	card: {
-		backgroundColor: theme.dark.card,
 		borderRadius: 16,
 		borderWidth: 1,
-		borderColor: theme.dark.border,
 		padding: 20,
 		alignItems: 'center',
 	},
 	cardTitle: {
 		fontSize: 20,
 		fontWeight: '700',
-		color: theme.dark.text,
 		marginBottom: 6,
 	},
 	cardSubtitle: {
 		fontSize: 14,
-		color: theme.dark.textSecondary,
 		marginBottom: 16,
 		textAlign: 'center',
 	},
@@ -157,18 +150,15 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 12,
 	},
 	secondaryCtaText: {
-		color: theme.dark.primary,
 		fontWeight: '600',
 		fontSize: 15,
 	},
 	termsText: {
 		marginTop: 10,
 		fontSize: 12,
-		color: theme.dark.textSecondary,
 		textAlign: 'center',
 	},
 	helper: {
-		color: theme.dark.textSecondary,
 		marginTop: 8,
 		textAlign: 'center',
 	},

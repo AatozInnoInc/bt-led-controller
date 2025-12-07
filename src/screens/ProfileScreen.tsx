@@ -13,14 +13,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../utils/theme';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
 import { useTheme } from '../contexts/ThemeContext';
 
 const ProfileScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
-  const { isDark, setThemeMode } = useTheme();
+  const { colors, isDark, setThemeMode } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
   
@@ -48,6 +47,7 @@ const ProfileScreen: React.FC = () => {
     showSwitch?: boolean;
     switchValue?: boolean;
     onSwitchChange?: (value: boolean) => void;
+    themeColors: any;
   }> = ({ 
     icon, 
     title, 
@@ -56,20 +56,21 @@ const ProfileScreen: React.FC = () => {
     showArrow = true, 
     showSwitch = false,
     switchValue,
-    onSwitchChange 
+    onSwitchChange,
+    themeColors
   }) => (
     <TouchableOpacity 
-      style={styles.menuItem} 
+      style={[styles.menuItem, { borderBottomColor: themeColors.border }]} 
       onPress={onPress}
       disabled={showSwitch}
     >
       <View style={styles.menuItemLeft}>
         <View style={styles.iconContainer}>
-          <Ionicons name={icon as any} size={20} color={theme.dark.textSecondary} />
+          <Ionicons name={icon as any} size={20} color={themeColors.textSecondary} />
         </View>
         <View style={styles.menuItemContent}>
-          <Text style={styles.menuItemTitle}>{title}</Text>
-          {subtitle && <Text style={styles.menuItemSubtitle}>{subtitle}</Text>}
+          <Text style={[styles.menuItemTitle, { color: themeColors.text }]}>{title}</Text>
+          {subtitle && <Text style={[styles.menuItemSubtitle, { color: themeColors.textSecondary }]}>{subtitle}</Text>}
         </View>
       </View>
       {showSwitch ? (
@@ -81,7 +82,7 @@ const ProfileScreen: React.FC = () => {
           value={switchValue}
         />
       ) : showArrow ? (
-        <Ionicons name="chevron-forward" size={20} color={theme.dark.textSecondary} />
+        <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
       ) : null}
     </TouchableOpacity>
   );
@@ -89,14 +90,14 @@ const ProfileScreen: React.FC = () => {
   return (
     <View style={styles.fullScreen}>
       <LinearGradient
-        colors={[ '#0a0a0a', '#0b1736' ]}
+        colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
       <View style={styles.backgroundDecor}>
-        <View style={styles.blobPrimary} />
-        <View style={styles.blobSecondary} />
+        <View style={[styles.blobPrimary, { backgroundColor: isDark ? 'rgba(0,122,255,0.16)' : 'rgba(0,122,255,0.08)' }]} />
+        <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(255,149,0,0.14)' : 'rgba(255,149,0,0.07)' }]} />
       </View>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView 
@@ -108,46 +109,43 @@ const ProfileScreen: React.FC = () => {
       {/* Profile Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={40} color="#FFFFFF" />
+          <View style={[styles.avatar, { backgroundColor: colors.card, borderColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.1)' }]}>
+            <Ionicons name="person" size={40} color={colors.text} />
           </View>
-          <TouchableOpacity style={styles.editAvatarButton}>
-            <Ionicons name="camera" size={16} color={theme.dark.background} />
+          <TouchableOpacity style={[styles.editAvatarButton, { borderColor: colors.background }]}>
+            <Ionicons name="camera" size={16} color={colors.background} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.userName}>John Doe</Text>
-        <Text style={styles.userEmail}>john.doe@example.com</Text>
-        <TouchableOpacity style={styles.editProfileButton}>
-          <Text style={styles.editProfileText}>Edit Profile</Text>
+        <Text style={[styles.userName, { color: colors.text }]}>John Doe</Text>
+        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>john.doe@example.com</Text>
+        <TouchableOpacity style={[styles.editProfileButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.editProfileText, { color: colors.text }]}>Edit Profile</Text>
         </TouchableOpacity>
       </View>
 
       {/* Account Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+        <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MenuItem
             icon="person-circle"
             title="Personal Information"
             subtitle="Manage your account details"
+            themeColors={colors}
           />
           <MenuItem
             icon="shield-checkmark"
             title="Security"
             subtitle="Password and authentication"
-          />
-          <MenuItem
-            icon="cloud"
-            title="Cloud Storage"
-            subtitle="2.5 GB of 5 GB used"
+            themeColors={colors}
           />
         </BlurView>
       </View>
 
       {/* Preferences Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Preferences</Text>
-        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Preferences</Text>
+        <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MenuItem
             icon="notifications"
             title="Notifications"
@@ -155,6 +153,7 @@ const ProfileScreen: React.FC = () => {
             switchValue={notificationsEnabled}
             onSwitchChange={setNotificationsEnabled}
             showArrow={false}
+            themeColors={colors}
           />
           <MenuItem
             icon="moon"
@@ -163,6 +162,7 @@ const ProfileScreen: React.FC = () => {
             switchValue={isDark}
             onSwitchChange={handleDarkModeToggle}
             showArrow={false}
+            themeColors={colors}
           />
           <MenuItem
             icon="sync"
@@ -172,48 +172,49 @@ const ProfileScreen: React.FC = () => {
             switchValue={autoSyncEnabled}
             onSwitchChange={setAutoSyncEnabled}
             showArrow={false}
-          />
-          <MenuItem
-            icon="language"
-            title="Language"
-            subtitle="English (US)"
+            themeColors={colors}
           />
         </BlurView>
       </View>
 
       {/* Support Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Support</Text>
-        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Support</Text>
+        <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MenuItem
             icon="help-circle"
             title="Help & Support"
             subtitle="Get help with the app"
+            themeColors={colors}
           />
           <MenuItem
             icon="document-text"
             title="Terms of Service"
+            themeColors={colors}
           />
           <MenuItem
             icon="shield"
             title="Privacy Policy"
+            themeColors={colors}
           />
           <MenuItem
             icon="star"
             title="Rate App"
+            themeColors={colors}
           />
         </BlurView>
       </View>
 
       {/* About Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>About</Text>
-        <BlurView intensity={30} tint="dark" style={styles.menuContainer}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
+        <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MenuItem
             icon="information-circle"
             title="App Version"
             subtitle="1.0.0"
             showArrow={false}
+            themeColors={colors}
           />
         </BlurView>
       </View>
@@ -258,7 +259,6 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(0,122,255,0.16)',
     top: -60,
     left: -40,
   },
@@ -267,7 +267,6 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: 'rgba(255,149,0,0.14)',
     top: -10,
     right: -30,
   },
@@ -285,11 +284,9 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: theme.dark.card,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
@@ -307,29 +304,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: theme.dark.background,
   },
   userName: {
     fontSize: 24,
     fontWeight: '700',
-    color: theme.dark.text,
     marginBottom: 4,
   },
   userEmail: {
     fontSize: 16,
-    color: theme.dark.textSecondary,
     marginBottom: 20,
   },
   editProfileButton: {
-    backgroundColor: theme.dark.card,
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: theme.dark.border,
   },
   editProfileText: {
-    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -340,14 +331,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: theme.dark.text,
     marginBottom: 12,
   },
   menuContainer: {
-    backgroundColor: theme.dark.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -362,7 +350,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: theme.dark.border,
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -384,12 +371,10 @@ const styles = StyleSheet.create({
   menuItemTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.dark.text,
     marginBottom: 2,
   },
   menuItemSubtitle: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
   },
   logoutSection: {
     paddingHorizontal: 20,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
-import { theme } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
 import { useBluetooth } from '../hooks/useBluetooth';
@@ -23,11 +23,125 @@ import { configDomainController } from '../domain/configDomainController';
 import { ParameterId } from '../types/commands';
 import { EffectType, LEDConfig, HSVColor } from '../types/config';
 import { BLEError } from '../types/errors';
+import { BluetoothDevice } from '../types/bluetooth';
 import { hsvToRgb, rgbToHsv, hsvToHex, hexToHsv } from '../utils/colorUtils';
+
+// Development mode: Set to true to test UI without a real device connection
+const DEV_MODE = __DEV__; // Automatically true in development builds
+
+// Mock device for development/testing
+const MOCK_DEVICE: BluetoothDevice = {
+  id: 'mock-device-123',
+  name: 'Mock LED Guitar Controller',
+  rssi: -50,
+  isConnected: true,
+  manufacturerData: 'Mock Device',
+};
+
+// SliderControl component - defined outside to prevent recreation on parent re-renders
+interface SliderControlProps {
+  title: string;
+  value: number;
+  onValueChange: (value: number) => void;
+  icon: string;
+  parameterId: ParameterId;
+  themeColors: any;
+  isDark: boolean;
+  onUpdateParameter: (parameterId: ParameterId, value: number, skipStateUpdate?: boolean) => void;
+}
+
+const SliderControl: React.FC<SliderControlProps> = React.memo(({ title, value, onValueChange, icon, parameterId, themeColors, isDark, onUpdateParameter }) => {
+  // Use local state to prevent slider flashing
+  const [localValue, setLocalValue] = useState(value);
+  const isDraggingRef = useRef(false);
+  const lastPropValueRef = useRef(value);
+  const skipNextSyncRef = useRef(false);
+
+  // Only sync with prop value when NOT dragging to prevent flashing
+  useEffect(() => {
+    // Skip sync if we just completed a drag (value will match localValue anyway)
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      lastPropValueRef.current = value;
+      return;
+    }
+    
+    // Only update if prop value changed and we're not dragging
+    if (!isDraggingRef.current && value !== lastPropValueRef.current) {
+      // Only sync if the difference is significant (prevents micro-updates from causing flashes)
+      if (Math.abs(value - localValue) > 0.5) {
+        setLocalValue(value);
+        lastPropValueRef.current = value;
+      }
+    }
+  }, [value, localValue]);
+
+  const handleChange = useCallback((newValue: number) => {
+    setLocalValue(newValue);
+    // Don't update parent state while dragging - only update local state
+    // Parent state will be updated on slide complete
+  }, []);
+
+  const handleSlidingStart = useCallback(() => {
+    isDraggingRef.current = true;
+  }, []);
+
+  const handleSlidingComplete = useCallback((newValue: number) => {
+    isDraggingRef.current = false;
+    lastPropValueRef.current = newValue;
+    skipNextSyncRef.current = true; // Skip next prop sync since we're updating parent state
+    // Update parent state first (slider already has correct local value, so this won't cause flash)
+    onValueChange(newValue);
+    // Then send BLE command (skip state update since we already did it)
+    onUpdateParameter(parameterId, newValue, true);
+  }, [parameterId, onValueChange, onUpdateParameter]);
+
+  // Memoize the slider value text to prevent unnecessary re-renders
+  const valueText = useMemo(() => `${Math.round(localValue)}%`, [localValue]);
+
+  return (
+    <View style={styles.sliderContainer}>
+      <View style={styles.sliderHeader}>
+        <Ionicons name={icon as any} size={20} color={themeColors.text} />
+        <Text style={[styles.sliderTitle, { color: themeColors.text }]}>{title}</Text>
+        <Text style={[styles.sliderValue, { color: themeColors.text }]}>{valueText}</Text>
+      </View>
+      <View style={styles.sliderWrapper}>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={100}
+          value={localValue}
+          onValueChange={handleChange}
+          onSlidingStart={handleSlidingStart}
+          onSlidingComplete={handleSlidingComplete}
+          minimumTrackTintColor={themeColors.text}
+          maximumTrackTintColor={isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'}
+          thumbTintColor={themeColors.text}
+          step={1}
+          tapToSeek={true}
+        />
+      </View>
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if props actually changed
+  // This prevents flashing during rapid state updates
+  return prevProps.value === nextProps.value &&
+         prevProps.title === nextProps.title &&
+         prevProps.icon === nextProps.icon &&
+         prevProps.parameterId === nextProps.parameterId &&
+         prevProps.themeColors === nextProps.themeColors &&
+         prevProps.isDark === nextProps.isDark;
+});
 
 const ConfigScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
-  const { connectedDevice } = useBluetooth();
+  const { colors: themeColors, isDark } = useTheme();
+  const { connectedDevice: realConnectedDevice } = useBluetooth();
+  
+  // Use mock device in dev mode if no real device is connected
+  const connectedDevice = DEV_MODE && !realConnectedDevice ? MOCK_DEVICE : realConnectedDevice;
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -70,7 +184,8 @@ const ConfigScreen: React.FC = () => {
   useEffect(() => {
     if (connectedDevice) {
       initializeConfig();
-    } else {
+    } else if (!DEV_MODE) {
+      // Only reset if not in dev mode (dev mode uses mock device)
       // Clean up debounce timers on disconnect
       parameterDebounceTimers.current.forEach((timer) => clearTimeout(timer));
       parameterDebounceTimers.current.clear();
@@ -105,6 +220,20 @@ const ConfigScreen: React.FC = () => {
     setError(null);
     
     try {
+      // In dev mode with mock device, skip actual BLE initialization
+      if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
+        // Initialize controller with mock device ID (for caching purposes)
+        const defaultConfig = await configDomainController.initializeConfig(connectedDevice.id);
+        setConfig(defaultConfig);
+        setBrightness(defaultConfig.brightness);
+        setSpeed(defaultConfig.speed);
+        setSelectedColor(defaultConfig.color);
+        setEffectType(defaultConfig.effectType);
+        setPowerState(defaultConfig.powerState);
+        setIsLoading(false);
+        return;
+      }
+      
       const loadedConfig = await configDomainController.initializeConfig(connectedDevice.id);
       setConfig(loadedConfig);
       setBrightness(loadedConfig.brightness);
@@ -125,7 +254,7 @@ const ConfigScreen: React.FC = () => {
   const parameterDebounceTimers = useRef<Map<ParameterId, NodeJS.Timeout>>(new Map());
   const colorDebounceTimer = useRef<NodeJS.Timeout | null>(null);
   
-  const updateParameter = useCallback(async (parameterId: ParameterId, value: number) => {
+  const updateParameter = useCallback(async (parameterId: ParameterId, value: number, skipStateUpdate: boolean = false) => {
     if (!connectedDevice || !config) return;
 
     // Clear existing timeout for this specific parameter
@@ -135,21 +264,30 @@ const ConfigScreen: React.FC = () => {
       parameterDebounceTimers.current.delete(parameterId);
     }
 
-    // Update local state immediately for responsive UI
-    switch (parameterId) {
-      case ParameterId.BRIGHTNESS:
-        setBrightness(value);
-        break;
-      case ParameterId.SPEED:
-        setSpeed(value);
-        break;
-      case ParameterId.EFFECT_TYPE:
-        setEffectType(value);
-        break;
-      case ParameterId.POWER_STATE:
-        setPowerState(value > 0);
-        break;
-      // Note: Color components are handled separately via updateColor()
+    // Update local state immediately for responsive UI (unless called from slider which already has correct state)
+    if (!skipStateUpdate) {
+      switch (parameterId) {
+        case ParameterId.BRIGHTNESS:
+          setBrightness(value);
+          break;
+        case ParameterId.SPEED:
+          setSpeed(value);
+          break;
+        case ParameterId.EFFECT_TYPE:
+          setEffectType(value);
+          break;
+        case ParameterId.POWER_STATE:
+          setPowerState(value > 0);
+          break;
+        // Note: Color components are handled separately via updateColor()
+      }
+    }
+
+    // In dev mode with mock device, skip actual BLE commands
+    if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
+      // Just update local state, no BLE communication
+      setError(null);
+      return;
     }
 
     // Debounce BLE command to prevent flooding (per parameter)
@@ -190,6 +328,13 @@ const ConfigScreen: React.FC = () => {
     // Update local state immediately
     setSelectedColor(color);
 
+    // In dev mode with mock device, skip actual BLE commands
+    if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
+      // Just update local state, no BLE communication
+      setError(null);
+      return;
+    }
+
     // Debounce BLE command to prevent flooding
     colorDebounceTimer.current = setTimeout(async () => {
       try {
@@ -221,6 +366,27 @@ const ConfigScreen: React.FC = () => {
     setError(null);
 
     try {
+      // In dev mode with mock device, simulate save
+      if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
+        // Simulate save delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Update config to reflect current state
+        const savedConfig: LEDConfig = {
+          brightness,
+          speed,
+          color: selectedColor,
+          effectType,
+          powerState,
+        };
+        setConfig(savedConfig);
+        setIsInConfigMode(false);
+        
+        Alert.alert('Success', 'Configuration saved successfully! (Mock Mode)');
+        setIsSaving(false);
+        return;
+      }
+
       await configDomainController.saveConfiguration();
       await configDomainController.exitConfigMode();
       setIsInConfigMode(false);
@@ -259,9 +425,9 @@ const ConfigScreen: React.FC = () => {
     
     return (
       <View style={styles.colorPickerContainer}>
-        <Text style={styles.sectionTitle}>Color</Text>
+        <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Color</Text>
         <View style={styles.colorGrid}>
-          {colors.map((hsvColor, index) => {
+          {colors.map((hsvColor: HSVColor, index: number) => {
             // Convert HSV to RGB for display
             const rgbColor = hsvToRgb(hsvColor);
             const isSelected = 
@@ -275,12 +441,12 @@ const ConfigScreen: React.FC = () => {
                 style={[
                   styles.colorOption,
                   { backgroundColor: `rgb(${rgbColor.r}, ${rgbColor.g}, ${rgbColor.b})` },
-                  isSelected && styles.selectedColor,
+                  isSelected && { borderColor: themeColors.text, borderWidth: 2 },
                 ]}
                 onPress={() => handleColorSelect(hsvColor)}
               >
                 {isSelected && (
-                  <Ionicons name="checkmark" size={20} color="white" />
+                  <Ionicons name="checkmark" size={20} color={isDark ? "white" : themeColors.text} />
                 )}
               </TouchableOpacity>
             );
@@ -290,67 +456,22 @@ const ConfigScreen: React.FC = () => {
     );
   };
 
-  interface SliderControlProps {
-    title: string;
-    value: number;
-    onValueChange: (value: number) => void;
-    icon: string;
-    parameterId: ParameterId;
-  }
 
-  const SliderControl: React.FC<SliderControlProps> = ({ title, value, onValueChange, icon, parameterId }) => {
-    // Use local state to prevent slider flashing
-    const [localValue, setLocalValue] = useState(value);
-
-    useEffect(() => {
-      setLocalValue(value);
-    }, [value]);
-
-    const handleChange = (newValue: number) => {
-      setLocalValue(newValue);
-      onValueChange(newValue);
-      updateParameter(parameterId, newValue);
-    };
-
-    return (
-      <View style={styles.sliderContainer}>
-        <View style={styles.sliderHeader}>
-          <Ionicons name={icon as any} size={20} color="#FFFFFF" />
-          <Text style={styles.sliderTitle}>{title}</Text>
-          <Text style={styles.sliderValue}>{Math.round(localValue)}%</Text>
-        </View>
-        <View style={styles.sliderWrapper}>
-          <Slider
-            style={styles.slider}
-            minimumValue={0}
-            maximumValue={100}
-            value={localValue}
-            onValueChange={handleChange}
-            minimumTrackTintColor="#FFFFFF"
-            maximumTrackTintColor="rgba(255,255,255,0.3)"
-            thumbTintColor="#FFFFFF"
-            step={1}
-            tapToSeek={true}
-          />
-        </View>
-      </View>
-    );
-  };
-
-  if (!connectedDevice) {
+  // Only show "no device" screen if not in dev mode
+  if (!connectedDevice && !DEV_MODE) {
     return (
       <View style={styles.fullScreen}>
         <LinearGradient
-          colors={['#0a0a0a', '#0b1736']}
+              colors={[themeColors.gradientStart, themeColors.gradientEnd]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject as any}
         />
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <View style={styles.noDeviceContainer}>
-            <Ionicons name="bluetooth-outline" size={64} color={theme.dark.textSecondary} />
-            <Text style={styles.noDeviceText}>No Device Connected</Text>
-            <Text style={styles.noDeviceSubtext}>
+            <Ionicons name="bluetooth-outline" size={64} color={themeColors.textSecondary} />
+            <Text style={[styles.noDeviceText, { color: themeColors.text }]}>No Device Connected</Text>
+            <Text style={[styles.noDeviceSubtext, { color: themeColors.textSecondary }]}>
               Please connect a device to configure LED settings
             </Text>
           </View>
@@ -363,15 +484,15 @@ const ConfigScreen: React.FC = () => {
     return (
       <View style={styles.fullScreen}>
         <LinearGradient
-          colors={['#0a0a0a', '#0b1736']}
+              colors={[themeColors.gradientStart, themeColors.gradientEnd]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject as any}
         />
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.dark.primary} />
-            <Text style={styles.loadingText}>Loading configuration...</Text>
+            <ActivityIndicator size="large" color={themeColors.primary} />
+            <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading configuration...</Text>
           </View>
         </SafeAreaView>
       </View>
@@ -381,14 +502,14 @@ const ConfigScreen: React.FC = () => {
   return (
     <View style={styles.fullScreen}>
       <LinearGradient
-        colors={['#0a0a0a', '#0b1736']}
+              colors={[themeColors.gradientStart, themeColors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
       <View style={styles.backgroundDecor}>
-        <View style={styles.blobPrimary} />
-        <View style={styles.blobSecondary} />
+        <View style={[styles.blobPrimary, { backgroundColor: isDark ? 'rgba(0,122,255,0.16)' : 'rgba(0,122,255,0.08)' }]} />
+        <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(52,199,89,0.14)' : 'rgba(52,199,89,0.07)' }]} />
       </View>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView
@@ -397,11 +518,19 @@ const ConfigScreen: React.FC = () => {
           scrollIndicatorInsets={{ bottom: tabBarHeight }}
           showsVerticalScrollIndicator={false}
         >
+          {/* Dev Mode Indicator */}
+          {DEV_MODE && connectedDevice?.id === MOCK_DEVICE.id && (
+            <View style={[styles.statusBar, { backgroundColor: 'rgba(255,149,0,0.2)', borderColor: 'rgba(255,149,0,0.3)' }]}>
+              <View style={[styles.statusIndicator, { backgroundColor: '#FF9500' }]} />
+              <Text style={[styles.statusText, { color: '#FF9500' }]}>Development Mode - Mock Device</Text>
+            </View>
+          )}
+
           {/* Status Bar */}
           {isInConfigMode && (
-            <View style={styles.statusBar}>
-              <View style={styles.statusIndicator} />
-              <Text style={styles.statusText}>Configuration Mode Active</Text>
+            <View style={[styles.statusBar, { backgroundColor: isDark ? 'rgba(0,122,255,0.2)' : 'rgba(0,122,255,0.1)', borderColor: isDark ? 'rgba(0,122,255,0.3)' : 'rgba(0,122,255,0.2)' }]}>
+              <View style={[styles.statusIndicator, { backgroundColor: themeColors.primary }]} />
+              <Text style={[styles.statusText, { color: themeColors.primary }]}>Configuration Mode Active</Text>
             </View>
           )}
 
@@ -415,16 +544,16 @@ const ConfigScreen: React.FC = () => {
           {/* Power Control */}
           <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="hardware-chip" size={24} color="#FFFFFF" />
+              <Ionicons name="hardware-chip" size={24} color={themeColors.text} />
               <View style={styles.sectionTitleContainer}>
-                <Text style={styles.sectionTitle}>Microcontroller</Text>
-                <Text style={styles.sectionSubtitle}>Control LED system power and effects</Text>
+                <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Microcontroller</Text>
+                <Text style={[styles.sectionSubtitle, { color: themeColors.textSecondary }]}>Control LED system power and effects</Text>
               </View>
             </View>
-            <BlurView intensity={30} tint="dark" style={styles.powerCard}>
+            <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.powerCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
               <View style={styles.powerInfo}>
-                <Text style={styles.powerTitle}>Guitar LED Controller</Text>
-                <Text style={styles.powerSubtitle}>
+                <Text style={[styles.powerTitle, { color: themeColors.text }]}>Guitar LED Controller</Text>
+                <Text style={[styles.powerSubtitle, { color: themeColors.textSecondary }]}>
                   {powerState ? 'LED system active' : 'LED system disabled'}
                 </Text>
               </View>
@@ -445,31 +574,37 @@ const ConfigScreen: React.FC = () => {
 
           {/* Brightness Control */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Brightness</Text>
+            <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Brightness</Text>
             <SliderControl
               title="Brightness"
               value={brightness}
               onValueChange={setBrightness}
               icon="sunny"
               parameterId={ParameterId.BRIGHTNESS}
+              themeColors={themeColors}
+              isDark={isDark}
+              onUpdateParameter={updateParameter}
             />
           </View>
 
           {/* Speed Control */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Animation Speed</Text>
+            <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Animation Speed</Text>
             <SliderControl
               title="Speed"
               value={speed}
               onValueChange={setSpeed}
               icon="speedometer"
               parameterId={ParameterId.SPEED}
+              themeColors={themeColors}
+              isDark={isDark}
+              onUpdateParameter={updateParameter}
             />
           </View>
 
           {/* Effects */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Effects</Text>
+            <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Effects</Text>
             <View style={styles.effectsGrid}>
               {effects.map((effect) => (
                 <TouchableOpacity
@@ -480,21 +615,23 @@ const ConfigScreen: React.FC = () => {
                 >
                   <BlurView
                     intensity={20}
-                    tint="dark"
+                    tint={isDark ? "dark" : "light"}
                     style={[
                       styles.effectCard,
-                      effectType === effect.id && styles.effectCardSelected,
+                      { backgroundColor: themeColors.card, borderColor: themeColors.border },
+                      effectType === effect.id && { borderColor: themeColors.primary, backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' },
                     ]}
                   >
                     <Ionicons
                       name={effect.icon as any}
                       size={24}
-                      color={effectType === effect.id ? theme.dark.primary : theme.dark.text}
+                      color={effectType === effect.id ? themeColors.primary : themeColors.text}
                     />
                     <Text
                       style={[
                         styles.effectName,
-                        effectType === effect.id && styles.effectNameSelected,
+                        { color: themeColors.text },
+                        effectType === effect.id && { color: themeColors.primary, fontWeight: '600' },
                       ]}
                     >
                       {effect.name}
@@ -546,7 +683,6 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(0,122,255,0.16)',
     top: -50,
     left: -40,
   },
@@ -555,7 +691,6 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: 'rgba(52,199,89,0.14)',
     top: -10,
     right: -30,
   },
@@ -610,13 +745,11 @@ const styles = StyleSheet.create({
   noDeviceText: {
     fontSize: 20,
     fontWeight: '600',
-    color: theme.dark.text,
     marginTop: 16,
     marginBottom: 8,
   },
   noDeviceSubtext: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     textAlign: 'center',
   },
   loadingContainer: {
@@ -627,7 +760,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: theme.dark.textSecondary,
   },
   section: {
     paddingHorizontal: 20,
@@ -641,7 +773,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: theme.dark.text,
   },
   sectionTitleContainer: {
     marginLeft: 12,
@@ -649,18 +780,15 @@ const styles = StyleSheet.create({
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     marginTop: 2,
   },
   powerCard: {
-    backgroundColor: theme.dark.card,
     padding: 20,
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: theme.dark.border,
   },
   powerInfo: {
     flex: 1,
@@ -668,12 +796,10 @@ const styles = StyleSheet.create({
   powerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: theme.dark.text,
     marginBottom: 4,
   },
   powerSubtitle: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
   },
   colorPickerContainer: {
     marginBottom: 8,
@@ -694,7 +820,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   selectedColor: {
-    borderColor: '#FFFFFF',
+    // Border color applied inline
   },
   sliderContainer: {
     marginTop: 12,
@@ -708,14 +834,12 @@ const styles = StyleSheet.create({
   sliderTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: theme.dark.text,
     flex: 1,
     marginLeft: 8,
   },
   sliderValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
   },
   sliderWrapper: {
     // Container for slider
@@ -734,27 +858,22 @@ const styles = StyleSheet.create({
     // Wrapper for effect card
   },
   effectCard: {
-    backgroundColor: theme.dark.card,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
     minWidth: 80,
     borderWidth: 1,
-    borderColor: theme.dark.border,
   },
   effectCardSelected: {
-    borderColor: theme.dark.primary,
-    backgroundColor: 'rgba(0,122,255,0.1)',
+    // Colors applied inline
   },
   effectName: {
     fontSize: 12,
     fontWeight: '500',
-    color: theme.dark.text,
     marginTop: 8,
     textAlign: 'center',
   },
   effectNameSelected: {
-    color: theme.dark.primary,
     fontWeight: '600',
   },
   saveSection: {

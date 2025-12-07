@@ -13,7 +13,7 @@ import {
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothService } from '../utils/bluetoothService';
 import { isPotentialMicrocontroller } from '../utils/bleUtils';
@@ -24,6 +24,7 @@ interface DeviceDiscoveryScreenProps {
 }
 
 const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigation }) => {
+  const { colors, isDark } = useTheme();
   const {
     isScanning,
     isConnecting,
@@ -266,7 +267,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     if (device.isConnected) {
       // For web, use browser's confirm dialog
       if (Platform.OS === 'web') {
-        const shouldDisconnect = window.confirm(
+        const shouldDisconnect = (global as any).window?.confirm(
           `${device.name} is already connected. Would you like to disconnect?`
         );
         if (shouldDisconnect) {
@@ -285,7 +286,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     } else {
       // For web, use browser's confirm dialog
       if (Platform.OS === 'web') {
-        const shouldConnect = window.confirm(`Connect to ${device.name}?`);
+        const shouldConnect = (global as any).window?.confirm(`Connect to ${device.name}?`);
         if (shouldConnect) {
           console.log('Connect confirmed for device:', device.name);
           connect(device);
@@ -315,9 +316,10 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       <TouchableOpacity
         style={[
           styles.deviceCard,
-          item.isConnected && styles.deviceCardConnected,
-          isConnecting && styles.deviceCardConnecting,
-          isMicrocontroller && styles.deviceCardMicrocontroller
+          { backgroundColor: colors.card, borderColor: colors.border },
+          item.isConnected && { borderColor: colors.success, backgroundColor: colors.success + '10' },
+          isConnecting && { borderColor: colors.primary, backgroundColor: colors.primary + '10', opacity: 0.7 },
+          isMicrocontroller && { borderColor: colors.warning, backgroundColor: colors.warning + '10' }
         ]}
         onPress={() => selectDevice(item)}
         activeOpacity={0.7}
@@ -328,37 +330,37 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             <Ionicons 
               name={item.isConnected ? "bluetooth" : (isMicrocontroller ? "hardware-chip" : "bluetooth-outline")} 
               size={24} 
-              color={item.isConnected ? theme.dark.success : (isMicrocontroller ? theme.dark.warning : theme.dark.primary)} 
+              color={item.isConnected ? colors.success : (isMicrocontroller ? colors.warning : colors.primary)} 
             />
-            <Text style={styles.deviceName}>{item.name}</Text>
+            <Text style={[styles.deviceName, { color: colors.text }]}>{item.name}</Text>
             {item.isConnected && (
-              <View style={styles.connectedBadge}>
-                <Text style={styles.connectedText}>Connected</Text>
+              <View style={[styles.connectedBadge, { backgroundColor: colors.success }]}>
+                <Text style={[styles.connectedText, { color: colors.text }]}>Connected</Text>
               </View>
             )}
             {isMicrocontroller && !item.isConnected && (
-              <View style={styles.microcontrollerBadge}>
-                <Text style={styles.microcontrollerText}>MCU</Text>
+              <View style={[styles.microcontrollerBadge, { backgroundColor: colors.warning }]}>
+                <Text style={[styles.microcontrollerText, { color: colors.text }]}>MCU</Text>
               </View>
             )}
             {isConnecting && !item.isConnected && (
-              <View style={styles.connectingBadge}>
-                <ActivityIndicator size="small" color={theme.dark.text} />
-                <Text style={styles.connectingText}>Connecting...</Text>
+              <View style={[styles.connectingBadge, { backgroundColor: colors.primary }]}>
+                <ActivityIndicator size="small" color={colors.text} />
+                <Text style={[styles.connectingText, { color: colors.text }]}>Connecting...</Text>
               </View>
             )}
           </View>
           <View style={styles.deviceDetails}>
-            <Text style={styles.deviceDetail}>
+            <Text style={[styles.deviceDetail, { color: colors.textSecondary }]}>
               Signal: {item.rssi} dBm
             </Text>
             {item.manufacturerData && (
-              <Text style={styles.deviceDetail}>
+              <Text style={[styles.deviceDetail, { color: colors.textSecondary }]}>
                 Manufacturer: {item.manufacturerData}
               </Text>
             )}
             {item.serviceUUIDs && item.serviceUUIDs.length > 0 && (
-              <Text style={styles.deviceDetail}>
+              <Text style={[styles.deviceDetail, { color: colors.textSecondary }]}>
                 Services: {item.serviceUUIDs.length}
               </Text>
             )}
@@ -367,7 +369,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         <Ionicons 
           name="chevron-forward" 
           size={20} 
-          color={theme.dark.textSecondary} 
+          color={colors.textSecondary} 
         />
       </TouchableOpacity>
     );
@@ -378,10 +380,10 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       <Ionicons 
         name="bluetooth-outline" 
         size={64} 
-        color={theme.dark.textSecondary} 
+        color={colors.textSecondary} 
       />
-      <Text style={styles.emptyStateTitle}>No Devices Found</Text>
-      <Text style={styles.emptyStateText}>
+      <Text style={[styles.emptyStateTitle, { color: colors.text }]}>No Devices Found</Text>
+      <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
         {isScanning 
           ? 'Scanning for Bluetooth devices...' 
           : 'Tap "Scan for Devices" to discover nearby Bluetooth devices'
@@ -389,11 +391,11 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       </Text>
       
       {Platform.OS === 'web' ? (
-        <View style={styles.webNotice}>
-          <Text style={styles.webNoticeText}>
+        <View style={[styles.webNotice, { backgroundColor: colors.primary + '20', borderColor: colors.primary }]}>
+          <Text style={[styles.webNoticeText, { color: colors.primary }]}>
             🌐 Using Web Bluetooth API
           </Text>
-          <Text style={styles.webNoticeSubtext}>
+          <Text style={[styles.webNoticeSubtext, { color: colors.textSecondary }]}>
             {isWebBluetoothSupported 
               ? 'Real Bluetooth functionality available in supported browsers'
               : 'Web Bluetooth not supported. Try Chrome or Edge.'
@@ -401,11 +403,11 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           </Text>
         </View>
       ) : (
-        <View style={styles.nativeNotice}>
-          <Text style={styles.nativeNoticeText}>
+        <View style={[styles.nativeNotice, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+          <Text style={[styles.nativeNoticeText, { color: colors.success }]}>
             {bluetoothService.isAvailable() ? '📱 Using Native Bluetooth API' : '⚠️ Expo Go - UI Testing Only'}
           </Text>
-          <Text style={styles.nativeNoticeSubtext}>
+          <Text style={[styles.nativeNoticeSubtext, { color: colors.textSecondary }]}>
             {bluetoothService.isAvailable() 
               ? (isBluetoothInitialized 
                   ? 'Real Bluetooth functionality available'
@@ -421,24 +423,24 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[ '#0a0a0a', '#0b1736' ]}
+        colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
       <View style={styles.backgroundDecor}>
-        <View style={styles.blobPrimary} />
-        <View style={styles.blobSecondary} />
+        <View style={[styles.blobPrimary, { backgroundColor: isDark ? 'rgba(88,86,214,0.18)' : 'rgba(88,86,214,0.09)' }]} />
+        <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(0,122,255,0.14)' : 'rgba(0,122,255,0.07)' }]} />
       </View>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color={theme.dark.text} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Device Discovery</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Device Discovery</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -454,8 +456,11 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
               ? 'Bluetooth Ready'
               : (!bluetoothService.isAvailable() ? 'Expo Go - UI Testing Only' : 'Bluetooth Initializing...'));
         return (
-          <BlurView intensity={25} tint="dark" style={[styles.platformInfo, isPlatformError && styles.platformInfoError]}>
-            <Text style={[styles.platformInfoText, isPlatformError && styles.platformInfoTextError]}>
+          <BlurView intensity={25} tint={isDark ? "dark" : "light"} style={[
+            styles.platformInfo, 
+            { backgroundColor: isPlatformError ? colors.error + '20' : colors.primary + '20', borderColor: isPlatformError ? colors.error : colors.primary }
+          ]}>
+            <Text style={[styles.platformInfoText, { color: isPlatformError ? colors.error : colors.primary }]}>
               {platformIcon} {platformName} Platform - {platformStatusText}
             </Text>
           </BlurView>
@@ -467,22 +472,23 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         <TouchableOpacity
           style={[
             styles.scanButton,
-            isScanning && styles.scanButtonActive,
-            (!isBluetoothInitialized && Platform.OS !== 'web') && styles.scanButtonDisabled
+            { backgroundColor: colors.primary },
+            isScanning && { backgroundColor: colors.secondary },
+            (!isBluetoothInitialized && Platform.OS !== 'web') && { backgroundColor: colors.textSecondary, opacity: 0.5 }
           ]}
           onPress={isScanning ? stopScan : startScan}
           disabled={isScanning || isConnecting || (!isBluetoothInitialized && Platform.OS !== 'web')}
         >
           {isScanning ? (
-            <ActivityIndicator color={theme.dark.text} size="small" />
+            <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <Ionicons 
               name="search" 
               size={20} 
-              color={theme.dark.text} 
+              color="#FFFFFF" 
             />
           )}
-          <Text style={styles.scanButtonText}>
+          <Text style={[styles.scanButtonText, { color: '#FFFFFF' }]}>
             {isScanning ? 'Scanning...' : 
              (!isBluetoothInitialized && Platform.OS !== 'web') ? 
                (!bluetoothService.isAvailable() ? 'Test UI (Mock Data)' : 'Bluetooth Not Ready') : 
@@ -495,18 +501,18 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       {devices.length > 0 && (
         <View style={styles.searchSection}>
           {/* Search Bar */}
-          <BlurView intensity={18} tint="dark" style={styles.searchBar}>
-            <Ionicons name="search" size={20} color={theme.dark.textSecondary} />
+          <BlurView intensity={18} tint={isDark ? "dark" : "light"} style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="search" size={20} color={colors.textSecondary} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search devices..."
-              placeholderTextColor={theme.dark.textSecondary}
+              placeholderTextColor={colors.textSecondary}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={20} color={theme.dark.textSecondary} />
+                <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </BlurView>
@@ -516,13 +522,15 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             <TouchableOpacity
               style={[
                 styles.filterButton,
-                filterType === 'all' && styles.filterButtonActive
+                { backgroundColor: colors.card, borderColor: colors.border },
+                filterType === 'all' && { backgroundColor: colors.primary, borderColor: colors.primary }
               ]}
               onPress={() => setFilterType('all')}
             >
               <Text style={[
                 styles.filterButtonText,
-                filterType === 'all' && styles.filterButtonTextActive
+                { color: colors.textSecondary },
+                filterType === 'all' && { color: '#FFFFFF', fontWeight: '600' }
               ]}>
                 All ({devices.length})
               </Text>
@@ -531,13 +539,15 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             <TouchableOpacity
               style={[
                 styles.filterButton,
-                filterType === 'microcontrollers' && styles.filterButtonActive
+                { backgroundColor: colors.card, borderColor: colors.border },
+                filterType === 'microcontrollers' && { backgroundColor: colors.primary, borderColor: colors.primary }
               ]}
               onPress={() => setFilterType('microcontrollers')}
             >
               <Text style={[
                 styles.filterButtonText,
-                filterType === 'microcontrollers' && styles.filterButtonTextActive
+                { color: colors.textSecondary },
+                filterType === 'microcontrollers' && { color: '#FFFFFF', fontWeight: '600' }
               ]}>
                 Microcontrollers ({devices.filter(d => isPotentialMicrocontroller(d)).length})
               </Text>
@@ -546,13 +556,15 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             <TouchableOpacity
               style={[
                 styles.filterButton,
-                filterType === 'named' && styles.filterButtonActive
+                { backgroundColor: colors.card, borderColor: colors.border },
+                filterType === 'named' && { backgroundColor: colors.primary, borderColor: colors.primary }
               ]}
               onPress={() => setFilterType('named')}
             >
               <Text style={[
                 styles.filterButtonText,
-                filterType === 'named' && styles.filterButtonTextActive
+                { color: colors.textSecondary },
+                filterType === 'named' && { color: '#FFFFFF', fontWeight: '600' }
               ]}>
                 Named ({devices.filter(d => d.name && d.name.trim() !== '').length})
               </Text>
@@ -568,21 +580,22 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             <TouchableOpacity
               style={[
                 styles.sendMessageButton,
-                isSending && styles.sendMessageButtonActive
+                { backgroundColor: colors.success },
+                isSending && { backgroundColor: colors.secondary }
               ]}
               onPress={() => send('Hello World!')}
               disabled={isSending}
             >
               {isSending ? (
-                <ActivityIndicator color={theme.dark.text} size="small" />
+                <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <Ionicons 
                   name="send" 
                   size={20} 
-                  color={theme.dark.text} 
+                  color="#FFFFFF" 
                 />
               )}
-              <Text style={styles.sendMessageButtonText}>
+              <Text style={[styles.sendMessageButtonText, { color: '#FFFFFF' }]}>
                 {isSending ? 'Sending...' : 'Send Message'}
               </Text>
             </TouchableOpacity>
@@ -590,35 +603,36 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
                          <TouchableOpacity
                style={[
                  styles.testFailureButton,
-                 isTestingFailure && styles.testFailureButtonActive
+                 { backgroundColor: colors.warning },
+                 isTestingFailure && { backgroundColor: colors.secondary }
                ]}
                onPress={sendFailureTest}
                disabled={isTestingFailure || isSending}
              >
                {isTestingFailure ? (
-                 <ActivityIndicator color={theme.dark.text} size="small" />
+                 <ActivityIndicator color="#FFFFFF" size="small" />
                ) : (
                  <Ionicons 
                    name="warning" 
                    size={20} 
-                   color={theme.dark.text} 
+                   color="#FFFFFF" 
                  />
                )}
-               <Text style={styles.testFailureButtonText}>
+               <Text style={[styles.testFailureButtonText, { color: '#FFFFFF' }]}>
                  {isTestingFailure ? 'Testing...' : 'Test Failure'}
                </Text>
              </TouchableOpacity>
           </View>
           
-          <Text style={styles.connectedDeviceText}>
+          <Text style={[styles.connectedDeviceText, { color: colors.textSecondary }]}>
             Connected to: {connectedDevice.name}
           </Text>
 
           {/* Response Display */}
           {lastResponse && (
-            <View style={styles.responseContainer}>
-              <Text style={styles.responseTitle}>Device Response:</Text>
-              <Text style={styles.responseText}>{lastResponse}</Text>
+            <View style={[styles.responseContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.responseTitle, { color: colors.text }]}>Device Response:</Text>
+              <Text style={[styles.responseText, { color: colors.textSecondary }]}>{lastResponse}</Text>
             </View>
           )}
         </View>
@@ -636,8 +650,8 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
       {/* Error Message */}
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={[styles.errorContainer, { backgroundColor: colors.error + '20', borderColor: colors.error }]}>
+          <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
         </View>
       )}
     </View>
@@ -661,7 +675,6 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(88,86,214,0.18)',
     top: -50,
     left: -40,
   },
@@ -670,7 +683,6 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: 'rgba(0,122,255,0.14)',
     top: -10,
     right: -30,
   },
@@ -681,7 +693,6 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: theme.dark.border,
   },
   backButton: {
     padding: 8,
@@ -690,33 +701,28 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '600',
-    color: theme.dark.text,
     textAlign: 'center',
   },
   headerSpacer: {
     width: 40,
   },
   platformInfo: {
-    backgroundColor: theme.dark.primary + '20',
     padding: 12,
     marginHorizontal: 20,
     marginTop: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: theme.dark.primary,
   },
   platformInfoText: {
-    color: theme.dark.primary,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   platformInfoError: {
-    backgroundColor: theme.dark.error + '20',
-    borderColor: theme.dark.error,
+    // Applied inline
   },
   platformInfoTextError: {
-    color: theme.dark.error,
+    // Applied inline
   },
   scanSection: {
     paddingHorizontal: 20,
@@ -726,14 +732,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.dark.primary,
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.primary}4D`,
-    } : {
-      shadowColor: theme.dark.primary,
+    ...(Platform.OS === 'web' ? {} : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -741,11 +743,10 @@ const styles = StyleSheet.create({
     }),
   },
   scanButtonActive: {
-    backgroundColor: theme.dark.secondary,
+    // Applied inline
   },
   scanButtonDisabled: {
-    backgroundColor: theme.dark.textSecondary,
-    opacity: 0.5,
+    // Applied inline
   },
   searchSection: {
     paddingHorizontal: 20,
@@ -754,17 +755,14 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.dark.card,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: theme.dark.border,
   },
   searchInput: {
     flex: 1,
-    color: theme.dark.text,
     fontSize: 16,
     marginLeft: 8,
   },
@@ -774,29 +772,23 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     flex: 1,
-    backgroundColor: theme.dark.card,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     alignItems: 'center',
   },
   filterButtonActive: {
-    backgroundColor: theme.dark.primary,
-    borderColor: theme.dark.primary,
+    // Applied inline
   },
   filterButtonText: {
-    color: theme.dark.textSecondary,
     fontSize: 12,
     fontWeight: '500',
   },
   filterButtonTextActive: {
-    color: theme.dark.text,
-    fontWeight: '600',
+    // Applied inline
   },
   scanButtonText: {
-    color: theme.dark.text,
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
@@ -809,15 +801,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.dark.success,
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
     marginBottom: 8,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.success}4D`,
-    } : {
-      shadowColor: theme.dark.success,
+    ...(Platform.OS === 'web' ? {} : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -825,10 +813,9 @@ const styles = StyleSheet.create({
     }),
   },
   sendMessageButtonActive: {
-    backgroundColor: theme.dark.secondary,
+    // Applied inline
   },
   sendMessageButtonText: {
-    color: theme.dark.text,
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
@@ -842,15 +829,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.dark.warning,
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
     flex: 1,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.warning}4D`,
-    } : {
-      shadowColor: theme.dark.warning,
+    ...(Platform.OS === 'web' ? {} : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -858,36 +841,30 @@ const styles = StyleSheet.create({
     }),
   },
   testFailureButtonActive: {
-    backgroundColor: theme.dark.secondary,
+    // Applied inline
   },
   testFailureButtonText: {
-    color: theme.dark.text,
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
   },
   connectedDeviceText: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     textAlign: 'center',
   },
   responseContainer: {
-    backgroundColor: theme.dark.card,
     padding: 16,
     borderRadius: 12,
     marginTop: 12,
     borderWidth: 1,
-    borderColor: theme.dark.border,
   },
   responseTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: theme.dark.text,
     marginBottom: 8,
   },
   responseText: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     lineHeight: 20,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
@@ -898,12 +875,10 @@ const styles = StyleSheet.create({
   deviceCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.dark.card,
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
@@ -911,17 +886,13 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   deviceCardConnected: {
-    borderColor: theme.dark.success,
-    backgroundColor: theme.dark.success + '10',
+    // Applied inline
   },
   deviceCardConnecting: {
-    borderColor: theme.dark.primary,
-    backgroundColor: theme.dark.primary + '10',
-    opacity: 0.7,
+    // Applied inline
   },
   deviceCardMicrocontroller: {
-    borderColor: theme.dark.warning,
-    backgroundColor: theme.dark.warning + '10',
+    // Applied inline
   },
   deviceInfo: {
     flex: 1,
@@ -934,23 +905,19 @@ const styles = StyleSheet.create({
   deviceName: {
     fontSize: 16,
     fontWeight: '600',
-    color: theme.dark.text,
     marginLeft: 12,
     flex: 1,
   },
   connectedBadge: {
-    backgroundColor: theme.dark.success,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
   },
   connectedText: {
     fontSize: 12,
-    color: theme.dark.text,
     fontWeight: '600',
   },
   connectingBadge: {
-    backgroundColor: theme.dark.primary,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -959,19 +926,16 @@ const styles = StyleSheet.create({
   },
   connectingText: {
     fontSize: 12,
-    color: theme.dark.text,
     fontWeight: '600',
     marginLeft: 4,
   },
   microcontrollerBadge: {
-    backgroundColor: theme.dark.warning,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
   },
   microcontrollerText: {
     fontSize: 12,
-    color: theme.dark.text,
     fontWeight: '600',
   },
   deviceDetails: {
@@ -979,7 +943,6 @@ const styles = StyleSheet.create({
   },
   deviceDetail: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     marginBottom: 2,
   },
   emptyState: {
@@ -991,88 +954,71 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: theme.dark.text,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 16,
-    color: theme.dark.textSecondary,
     textAlign: 'center',
     paddingHorizontal: 40,
     lineHeight: 22,
     marginBottom: 20,
   },
   webNotice: {
-    backgroundColor: theme.dark.primary + '20',
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: theme.dark.primary,
     marginTop: 20,
   },
   webNoticeText: {
-    color: theme.dark.primary,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   webNoticeSubtext: {
-    color: theme.dark.textSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
   },
   mockNotice: {
-    backgroundColor: theme.dark.warning + '20',
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: theme.dark.warning,
     marginTop: 20,
   },
   mockNoticeText: {
-    color: theme.dark.warning,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   mockNoticeSubtext: {
-    color: theme.dark.textSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
   },
   nativeNotice: {
-    backgroundColor: theme.dark.success + '20',
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: theme.dark.success,
     marginTop: 20,
   },
   nativeNoticeText: {
-    color: theme.dark.success,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   nativeNoticeSubtext: {
-    color: theme.dark.textSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
   },
   errorContainer: {
-    backgroundColor: theme.dark.error + '20',
     padding: 16,
     margin: 20,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: theme.dark.error,
   },
   errorText: {
-    color: theme.dark.error,
     fontSize: 14,
     textAlign: 'center',
   },

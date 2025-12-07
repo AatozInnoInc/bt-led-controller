@@ -12,7 +12,7 @@ import {
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../utils/theme';
+import { useTheme } from '../contexts/ThemeContext';
 import { BluetoothDevice, DeviceProfile, LEDConfiguration } from '../types/bluetooth';
 
 interface CreateProfileScreenProps {
@@ -25,6 +25,7 @@ interface CreateProfileScreenProps {
 }
 
 const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, route }) => {
+  const { colors, isDark } = useTheme();
   const { device } = route.params;
   
   const [profileName, setProfileName] = useState('');
@@ -98,39 +99,39 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
   };
 
   const renderLEDConfig = (config: LEDConfiguration) => (
-    <View key={config.id} style={styles.ledConfigCard}>
+    <View key={config.id} style={[styles.ledConfigCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.ledConfigHeader}>
         <TextInput
-          style={styles.ledNameInput}
+          style={[styles.ledNameInput, { color: colors.text }]}
           value={config.name}
           onChangeText={(text) => updateLEDConfig(config.id, { name: text })}
           placeholder="LED Name"
-          placeholderTextColor={theme.dark.textSecondary}
+          placeholderTextColor={colors.textSecondary}
         />
         <TouchableOpacity
           style={styles.removeButton}
           onPress={() => removeLEDConfig(config.id)}
         >
-          <Ionicons name="trash-outline" size={20} color={theme.dark.error} />
+          <Ionicons name="trash-outline" size={20} color={colors.error} />
         </TouchableOpacity>
       </View>
 
       {/* Brightness Control */}
       <View style={styles.controlGroup}>
-        <Text style={styles.controlLabel}>Brightness</Text>
+        <Text style={[styles.controlLabel, { color: colors.text }]}>Brightness</Text>
         <View style={styles.sliderContainer}>
-          <Text style={styles.sliderValue}>{config.brightness}%</Text>
-          <View style={styles.sliderTrack}>
+          <Text style={[styles.sliderValue, { color: colors.textSecondary }]}>{config.brightness}%</Text>
+          <View style={[styles.sliderTrack, { backgroundColor: colors.border }]}>
             <View 
               style={[
                 styles.sliderFill, 
-                { width: `${config.brightness}%` }
+                { width: `${config.brightness}%`, backgroundColor: colors.primary }
               ]} 
             />
             <TouchableOpacity
               style={[
                 styles.sliderThumb,
-                { left: `${config.brightness}%` }
+                { left: `${config.brightness}%`, backgroundColor: colors.primary }
               ]}
               onPress={() => {
                 // In a real app, this would be a proper slider
@@ -144,7 +145,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
 
       {/* Color Selection */}
       <View style={styles.controlGroup}>
-        <Text style={styles.controlLabel}>Color</Text>
+        <Text style={[styles.controlLabel, { color: colors.text }]}>Color</Text>
         <View style={styles.colorGrid}>
           {['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'].map((color) => (
             <TouchableOpacity
@@ -152,12 +153,12 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
               style={[
                 styles.colorOption,
                 { backgroundColor: color },
-                config.color === color && styles.colorOptionSelected
+                config.color === color && { borderColor: colors.text, borderWidth: 2 }
               ]}
               onPress={() => updateLEDConfig(config.id, { color })}
             >
               {config.color === color && (
-                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                <Ionicons name="checkmark" size={16} color={isDark ? "#FFFFFF" : "#000000"} />
               )}
             </TouchableOpacity>
           ))}
@@ -166,20 +167,22 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
 
       {/* Pattern Selection */}
       <View style={styles.controlGroup}>
-        <Text style={styles.controlLabel}>Pattern</Text>
+        <Text style={[styles.controlLabel, { color: colors.text }]}>Pattern</Text>
         <View style={styles.patternGrid}>
           {['solid', 'pulse', 'rainbow', 'custom'].map((pattern) => (
             <TouchableOpacity
               key={pattern}
               style={[
                 styles.patternOption,
-                config.pattern === pattern && styles.patternOptionSelected
+                { backgroundColor: colors.card, borderColor: colors.border },
+                config.pattern === pattern && { borderColor: colors.primary, backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' }
               ]}
               onPress={() => updateLEDConfig(config.id, { pattern: pattern as any })}
             >
               <Text style={[
                 styles.patternText,
-                config.pattern === pattern && styles.patternTextSelected
+                { color: colors.text },
+                config.pattern === pattern && { color: colors.primary, fontWeight: '600' }
               ]}>
                 {pattern.charAt(0).toUpperCase() + pattern.slice(1)}
               </Text>
@@ -190,20 +193,20 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
 
       {/* Speed Control */}
       <View style={styles.controlGroup}>
-        <Text style={styles.controlLabel}>Speed</Text>
+        <Text style={[styles.controlLabel, { color: colors.text }]}>Speed</Text>
         <View style={styles.sliderContainer}>
-          <Text style={styles.sliderValue}>{config.speed}%</Text>
-          <View style={styles.sliderTrack}>
+          <Text style={[styles.sliderValue, { color: colors.textSecondary }]}>{config.speed}%</Text>
+          <View style={[styles.sliderTrack, { backgroundColor: colors.border }]}>
             <View 
               style={[
                 styles.sliderFill, 
-                { width: `${config.speed}%` }
+                { width: `${config.speed}%`, backgroundColor: colors.primary }
               ]} 
             />
             <TouchableOpacity
               style={[
                 styles.sliderThumb,
-                { left: `${config.speed}%` }
+                { left: `${config.speed}%`, backgroundColor: colors.primary }
               ]}
               onPress={() => {
                 const newValue = config.speed === 100 ? 0 : config.speed + 25;
@@ -219,58 +222,58 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[ '#0a0a0a', '#0b1736' ]}
+        colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
       <View style={styles.backgroundDecor}>
-        <View style={styles.blobPrimary} />
-        <View style={styles.blobSecondary} />
+        <View style={[styles.blobPrimary, { backgroundColor: isDark ? 'rgba(0,122,255,0.16)' : 'rgba(0,122,255,0.08)' }]} />
+        <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(88,86,214,0.14)' : 'rgba(88,86,214,0.07)' }]} />
       </View>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color={theme.dark.text} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Profile</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Create Profile</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Device Info */}
-        <BlurView intensity={25} tint="dark" style={styles.deviceInfoCard}>
-          <Ionicons name="bluetooth" size={24} color={theme.dark.primary} />
+        <BlurView intensity={25} tint={isDark ? "dark" : "light"} style={[styles.deviceInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="bluetooth" size={24} color={colors.primary} />
           <View style={styles.deviceInfo}>
-            <Text style={styles.deviceName}>{device.name}</Text>
-            <Text style={styles.deviceDetail}>Signal: {device.rssi} dBm</Text>
+            <Text style={[styles.deviceName, { color: colors.text }]}>{device.name}</Text>
+            <Text style={[styles.deviceDetail, { color: colors.textSecondary }]}>Signal: {device.rssi} dBm</Text>
           </View>
         </BlurView>
 
         {/* Profile Name */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Profile Name</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Profile Name</Text>
           <TextInput
-            style={styles.profileNameInput}
+            style={[styles.profileNameInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
             value={profileName}
             onChangeText={setProfileName}
             placeholder="Enter profile name"
-            placeholderTextColor={theme.dark.textSecondary}
+            placeholderTextColor={colors.textSecondary}
           />
         </View>
 
         {/* LED Configurations */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>LED Configurations</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>LED Configurations</Text>
             <TouchableOpacity
               style={styles.addButton}
               onPress={addLEDConfig}
             >
-              <Ionicons name="add" size={20} color={theme.dark.primary} />
+              <Ionicons name="add" size={20} color={colors.primary} />
             </TouchableOpacity>
           </View>
           
@@ -279,13 +282,13 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
       </ScrollView>
 
       {/* Save Button */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { borderTopColor: colors.border }]}>
         <TouchableOpacity
-          style={styles.saveButton}
+          style={[styles.saveButton, { backgroundColor: colors.primary }]}
           onPress={saveProfile}
         >
-          <Ionicons name="save" size={20} color={theme.dark.text} />
-          <Text style={styles.saveButtonText}>Create Profile</Text>
+          <Ionicons name="save" size={20} color="#FFFFFF" />
+          <Text style={[styles.saveButtonText, { color: '#FFFFFF' }]}>Create Profile</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -309,7 +312,6 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(0,122,255,0.16)',
     top: -50,
     left: -40,
   },
@@ -318,7 +320,6 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: 'rgba(175,82,222,0.14)',
     top: -10,
     right: -30,
   },
@@ -329,7 +330,6 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: theme.dark.border,
   },
   backButton: {
     padding: 8,
@@ -338,7 +338,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '600',
-    color: theme.dark.text,
     textAlign: 'center',
   },
   headerSpacer: {
@@ -351,13 +350,11 @@ const styles = StyleSheet.create({
   deviceInfoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.dark.card,
     padding: 16,
     borderRadius: 12,
     marginTop: 20,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
@@ -370,11 +367,9 @@ const styles = StyleSheet.create({
   deviceName: {
     fontSize: 16,
     fontWeight: '600',
-    color: theme.dark.text,
   },
   deviceDetail: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     marginTop: 2,
   },
   section: {
@@ -389,27 +384,21 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: theme.dark.text,
   },
   addButton: {
     padding: 8,
   },
   profileNameInput: {
-    backgroundColor: theme.dark.card,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: theme.dark.text,
   },
   ledConfigCard: {
-    backgroundColor: theme.dark.card,
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
@@ -425,7 +414,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: theme.dark.text,
   },
   removeButton: {
     padding: 8,
@@ -436,7 +424,6 @@ const styles = StyleSheet.create({
   controlLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: theme.dark.text,
     marginBottom: 8,
   },
   sliderContainer: {
@@ -445,20 +432,17 @@ const styles = StyleSheet.create({
   },
   sliderValue: {
     fontSize: 14,
-    color: theme.dark.textSecondary,
     width: 40,
   },
   sliderTrack: {
     flex: 1,
     height: 4,
-    backgroundColor: theme.dark.border,
     borderRadius: 2,
     marginLeft: 12,
     position: 'relative',
   },
   sliderFill: {
     height: '100%',
-    backgroundColor: theme.dark.primary,
     borderRadius: 2,
   },
   sliderThumb: {
@@ -466,7 +450,6 @@ const styles = StyleSheet.create({
     top: -6,
     width: 16,
     height: 16,
-    backgroundColor: theme.dark.primary,
     borderRadius: 8,
     marginLeft: -8,
   },
@@ -485,7 +468,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   colorOptionSelected: {
-    borderColor: theme.dark.text,
+    // Applied inline
   },
   patternGrid: {
     flexDirection: 'row',
@@ -497,39 +480,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: theme.dark.border,
     alignItems: 'center',
   },
   patternOptionSelected: {
-    backgroundColor: theme.dark.primary,
-    borderColor: theme.dark.primary,
+    // Applied inline
   },
   patternText: {
     fontSize: 14,
-    color: theme.dark.text,
   },
   patternTextSelected: {
-    color: theme.dark.text,
     fontWeight: '600',
   },
   footer: {
     paddingHorizontal: 20,
     paddingVertical: 20,
     borderTopWidth: 1,
-    borderTopColor: theme.dark.border,
   },
   saveButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.dark.primary,
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: `0 4px 8px ${theme.dark.primary}4D`,
-    } : {
-      shadowColor: theme.dark.primary,
+    ...(Platform.OS === 'web' ? {} : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -537,7 +511,6 @@ const styles = StyleSheet.create({
     }),
   },
   saveButtonText: {
-    color: theme.dark.text,
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
