@@ -1,6 +1,9 @@
 import { Platform } from 'react-native';
 import { BluetoothDevice, BLEConnection } from '../types/bluetooth';
-import { NUS_SERVICE_UUID, NUS_WRITE_CHAR_UUID, isUuidLikelyUart } from './bleConstants';
+import { NUS_SERVICE_UUID, NUS_WRITE_CHAR_UUID, NUS_NOTIFY_CHAR_UUID, isUuidLikelyUart } from './bleConstants';
+import { CommandResponse } from '../types/commands';
+import { ErrorEnvelope, BLEError, ErrorCode } from '../types/errors';
+import { BLECommandEncoder } from './bleCommandEncoder';
 
 // Only import react-native-ble-plx on native platforms
 let BleManager: any, Device: any, State: any;
@@ -18,6 +21,9 @@ if (Platform.OS !== 'web') {
 class BluetoothService {
   private manager: any;
   private isInitialized: boolean = false;
+  private connectedDevices: Map<string, any> = new Map();
+  private notificationSubscriptions: Map<string, any> = new Map();
+  private responseCallbacks: Map<string, (response: CommandResponse | ErrorEnvelope) => void> = new Map();
 
   constructor() {
     if (Platform.OS !== 'web' && BleManager) {
@@ -134,6 +140,13 @@ class BluetoothService {
       const device = await this.manager.connectToDevice(deviceId);
       await device.discoverAllServicesAndCharacteristics();
       console.log('Successfully connected to device:', device.name || deviceId);
+      
+      // Store connected device
+      this.connectedDevices.set(deviceId, device);
+      
+      // Setup notification listener
+      await this.setupNotifications(deviceId, device);
+      
       return device;
     } catch (error) {
       console.error('Failed to connect to device:', error);
@@ -141,11 +154,188 @@ class BluetoothService {
     }
   }
 
+  /**
+   * Setup notification listener for device responses
+   */
+  private async setupNotifications(deviceId: string, device: any): Promise<void> {
+    try {
+      const services = await device.services();
+      const uartService = services.find((service: any) => isUuidLikelyUart(service.uuid));
+      
+      if (!uartService) {
+        console.warn('UART service not found for notifications');
+        return;
+      }
+
+      const characteristics = await uartService.characteristics();
+      const notifyCharacteristic = characteristics.find((char: any) => {
+        const uuid = char.uuid.toLowerCase();
+        return uuid === NUS_NOTIFY_CHAR_UUID || uuid.includes('6e400003');
+      });
+
+      if (!notifyCharacteristic) {
+        console.warn('Notify characteristic not found');
+        return;
+      }
+
+      // Subscribe to notifications
+      const subscription = notifyCharacteristic.monitor((error: any, characteristic: any) => {
+        if (error) {
+          console.error('Notification error:', error);
+          return;
+        }
+
+        if (characteristic && characteristic.value) {
+          // Decode base64 response
+          const base64Value = characteristic.value;
+          const binaryString = atob(base64Value);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          // Decode response
+          try {
+            const response = BLECommandEncoder.decodeResponse(bytes);
+            
+            // Find callback for this device (if any)
+            const callback = this.responseCallbacks.get(deviceId);
+            if (callback) {
+              callback(response);
+              this.responseCallbacks.delete(deviceId);
+            }
+          } catch (error) {
+            console.error('Failed to decode response:', error);
+            
+            // Pass the error to the callback so the promise can reject immediately
+            const callback = this.responseCallbacks.get(deviceId);
+            if (callback) {
+              // If it's a BLEError, pass it as an ErrorEnvelope
+              if (error instanceof BLEError) {
+                callback(error.envelope);
+              } else {
+                // For other errors, wrap in ErrorEnvelope
+                callback({
+                  code: ErrorCode.UNKNOWN_ERROR,
+                  message: (error as Error).message || 'Failed to decode response',
+                });
+              }
+              this.responseCallbacks.delete(deviceId);
+            }
+          }
+        }
+      });
+
+      this.notificationSubscriptions.set(deviceId, subscription);
+    } catch (error) {
+      console.error('Failed to setup notifications:', error);
+    }
+  }
+
   async disconnectDevice(deviceId: string): Promise<void> {
     try {
+      // Remove notification subscription
+      const subscription = this.notificationSubscriptions.get(deviceId);
+      if (subscription) {
+        subscription.remove();
+        this.notificationSubscriptions.delete(deviceId);
+      }
+      
+      // Remove response callback
+      this.responseCallbacks.delete(deviceId);
+      
+      // Remove from connected devices
+      this.connectedDevices.delete(deviceId);
+      
       await this.manager.cancelDeviceConnection(deviceId);
     } catch (error) {
       console.error('Failed to disconnect device:', error);
+    }
+  }
+
+  /**
+   * Send a BLE command and wait for response
+   */
+  async sendCommand(deviceId: string, command: Uint8Array, timeout: number = 5000): Promise<CommandResponse> {
+    return new Promise((resolve, reject) => {
+      const device = this.connectedDevices.get(deviceId);
+      if (!device) {
+        reject(new Error('Device not connected'));
+        return;
+      }
+
+      // Setup timeout
+      const timeoutId = setTimeout(() => {
+        this.responseCallbacks.delete(deviceId);
+        reject(new Error('Command timeout'));
+      }, timeout);
+
+      // Setup response callback
+      this.responseCallbacks.set(deviceId, (response: CommandResponse | ErrorEnvelope) => {
+        clearTimeout(timeoutId);
+        
+        if ('code' in response) {
+          // It's an ErrorEnvelope
+          reject(new BLEError(response));
+        } else {
+          // It's a CommandResponse
+          resolve(response);
+        }
+      });
+
+      // Send command
+      this.sendCommandData(deviceId, command).catch((error) => {
+        clearTimeout(timeoutId);
+        this.responseCallbacks.delete(deviceId);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Send command data to device
+   */
+  private async sendCommandData(deviceId: string, data: Uint8Array): Promise<void> {
+    const device = this.connectedDevices.get(deviceId);
+    if (!device) {
+      throw new Error('Device not connected');
+    }
+
+    if (!device.isConnected()) {
+      throw new Error('Device not connected');
+    }
+
+    try {
+      const services = await device.services();
+      const uartService = services.find((service: any) => isUuidLikelyUart(service.uuid));
+
+      if (!uartService) {
+        throw new Error('UART service not found');
+      }
+
+      const characteristics = await uartService.characteristics();
+      const writeCharacteristic = characteristics.find((char: any) => {
+        const uuid = char.uuid.toLowerCase();
+        return uuid === NUS_WRITE_CHAR_UUID || uuid.includes('6e400002');
+      });
+
+      if (!writeCharacteristic) {
+        throw new Error('Write characteristic not found');
+      }
+
+      // Convert Uint8Array to base64
+      const binaryString = String.fromCharCode(...Array.from(data));
+      const base64Message = btoa(binaryString);
+
+      // Try writeWithoutResponse first (faster), then writeWithResponse
+      try {
+        await writeCharacteristic.writeWithoutResponse(base64Message);
+      } catch (error) {
+        await writeCharacteristic.writeWithResponse(base64Message);
+      }
+    } catch (error) {
+      console.error('Failed to send command data:', error);
+      throw new Error(`Send failed: ${(error as Error).message}`);
     }
   }
 

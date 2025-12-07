@@ -22,6 +22,7 @@ import { theme } from './src/utils/theme';
 // Import custom tab bar
 import CustomTabBar from './src/components/CustomTabBar';
 import SignInScreen from './src/screens/SignInScreen';
+import { ThemeProvider } from './src/contexts/ThemeContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -74,23 +75,24 @@ export default function App() {
   const [isSignedIn, setIsSignedIn] = React.useState(false);
 
   return (
-    <SafeAreaProvider>
-      <View style={styles.container}>
-        <StatusBar style="light" />
-        {Platform.OS === 'ios' && !isSignedIn ? (
-          <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
-        ) : (
-        <NavigationContainer theme={{
-          dark: true,
-          colors: {
-            primary: theme.dark.primary,
-            background: 'transparent',
-            card: theme.dark.surface,
-            text: theme.dark.text,
-            border: theme.dark.border,
-            notification: theme.dark.error,
-          },
-        }}>
+    <ThemeProvider>
+      <SafeAreaProvider>
+        <View style={styles.container}>
+          <StatusBar style="light" />
+          {Platform.OS === 'ios' && !isSignedIn ? (
+            <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
+          ) : (
+          <NavigationContainer theme={{
+            dark: true,
+            colors: {
+              primary: theme.dark.primary,
+              background: 'transparent',
+              card: theme.dark.surface,
+              text: theme.dark.text,
+              border: theme.dark.border,
+              notification: theme.dark.error,
+            },
+          }}>
           <Stack.Navigator screenOptions={{ headerBackTitleVisible: false }}>
             <Stack.Screen 
               name="Main" 
@@ -130,6 +132,7 @@ export default function App() {
         )}
       </View>
     </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 

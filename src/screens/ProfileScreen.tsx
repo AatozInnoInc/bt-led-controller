@@ -16,12 +16,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../utils/theme';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
+import { useTheme } from '../contexts/ThemeContext';
 
 const ProfileScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
+  const { isDark, setThemeMode } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
-  const [darkModeEnabled, setDarkModeEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
+  
+  const handleDarkModeToggle = (value: boolean) => {
+    setThemeMode(value ? 'dark' : 'light');
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -69,8 +74,9 @@ const ProfileScreen: React.FC = () => {
       </View>
       {showSwitch ? (
         <Switch
-          trackColor={{ false: theme.dark.border, true: 'rgba(255,255,255,0.3)' }}
-          thumbColor={switchValue ? '#FFFFFF' : theme.dark.textSecondary}
+          trackColor={{ false: '#3A3A3C', true: 'rgba(0,122,255,0.5)' }}
+          thumbColor={switchValue ? '#007AFF' : '#FFFFFF'}
+          ios_backgroundColor="#3A3A3C"
           onValueChange={onSwitchChange}
           value={switchValue}
         />
@@ -154,8 +160,8 @@ const ProfileScreen: React.FC = () => {
             icon="moon"
             title="Dark Mode"
             showSwitch={true}
-            switchValue={darkModeEnabled}
-            onSwitchChange={setDarkModeEnabled}
+            switchValue={isDark}
+            onSwitchChange={handleDarkModeToggle}
             showArrow={false}
           />
           <MenuItem
