@@ -129,7 +129,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             <Ionicons name="settings" size={24} color={colors.primary} />
             <Text style={[styles.quickActionText, { color: colors.text }]}>Settings</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <TouchableOpacity 
+            style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => navigation.navigate('Analytics')}
+          >
             <Ionicons name="analytics" size={24} color={colors.secondary} />
             <Text style={[styles.quickActionText, { color: colors.text }]}>Analytics</Text>
           </TouchableOpacity>
