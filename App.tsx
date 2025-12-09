@@ -76,23 +76,23 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <SafeAreaProvider>
-        <View style={styles.container}>
-          <StatusBar style="light" />
-          {Platform.OS === 'ios' && !isSignedIn ? (
-            <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
-          ) : (
-          <NavigationContainer theme={{
-            dark: true,
-            colors: {
-              primary: theme.dark.primary,
-              background: 'transparent',
-              card: theme.dark.surface,
-              text: theme.dark.text,
-              border: theme.dark.border,
-              notification: theme.dark.error,
-            },
-          }}>
+    <SafeAreaProvider>
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        {Platform.OS === 'ios' && !isSignedIn ? (
+          <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
+        ) : (
+        <NavigationContainer theme={{
+          dark: true,
+          colors: {
+            primary: theme.dark.primary,
+            background: 'transparent',
+            card: theme.dark.surface,
+            text: theme.dark.text,
+            border: theme.dark.border,
+            notification: theme.dark.error,
+          },
+        }}>
           <Stack.Navigator screenOptions={{ headerBackTitleVisible: false }}>
             <Stack.Screen 
               name="Main" 

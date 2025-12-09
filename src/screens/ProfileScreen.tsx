@@ -8,6 +8,8 @@ import {
   Switch,
   Alert,
   Platform,
+  TextInput,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
@@ -22,6 +24,10 @@ const ProfileScreen: React.FC = () => {
   const { colors, isDark, setThemeMode } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
+  const [firstName, setFirstName] = React.useState('John');
+  const [lastName, setLastName] = React.useState('Doe');
+  const [email] = React.useState('john.doe@example.com'); // Apple-managed
+  const [isEditingPersonal, setIsEditingPersonal] = React.useState(false);
   
   const handleDarkModeToggle = (value: boolean) => {
     setThemeMode(value ? 'dark' : 'light');
@@ -36,6 +42,17 @@ const ProfileScreen: React.FC = () => {
         { text: 'Logout', style: 'destructive', onPress: () => console.log('Logout') },
       ]
     );
+  };
+
+  const handleSavePersonal = () => {
+    // In a real app, sync this to backend profile (still Apple-authenticated)
+    setIsEditingPersonal(false);
+  };
+
+  const openAppleAccount = () => {
+    Linking.openURL('https://appleid.apple.com/').catch(() => {
+      Alert.alert('Unable to open', 'Please manage your Apple ID from device settings or appleid.apple.com.');
+    });
   };
 
   const MenuItem: React.FC<{
@@ -75,9 +92,9 @@ const ProfileScreen: React.FC = () => {
       </View>
       {showSwitch ? (
         <Switch
-          trackColor={{ false: '#3A3A3C', true: 'rgba(0,122,255,0.5)' }}
-          thumbColor={switchValue ? '#007AFF' : '#FFFFFF'}
-          ios_backgroundColor="#3A3A3C"
+          trackColor={{ false: '#C6C6C8', true: '#34C759' }}
+          thumbColor="#FFFFFF"
+          ios_backgroundColor="#C6C6C8"
           onValueChange={onSwitchChange}
           value={switchValue}
         />
@@ -116,8 +133,8 @@ const ProfileScreen: React.FC = () => {
             <Ionicons name="camera" size={16} color={colors.background} />
           </TouchableOpacity>
         </View>
-        <Text style={[styles.userName, { color: colors.text }]}>John Doe</Text>
-        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>john.doe@example.com</Text>
+        <Text style={[styles.userName, { color: colors.text }]}>{`${firstName} ${lastName}`}</Text>
+        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{email}</Text>
         <TouchableOpacity style={[styles.editProfileButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.editProfileText, { color: colors.text }]}>Edit Profile</Text>
         </TouchableOpacity>
@@ -131,12 +148,47 @@ const ProfileScreen: React.FC = () => {
             icon="person-circle"
             title="Personal Information"
             subtitle="Manage your account details"
+            onPress={() => setIsEditingPersonal((prev) => !prev)}
             themeColors={colors}
           />
+          {isEditingPersonal && (
+            <View style={[styles.editCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <Text style={[styles.editLabel, { color: colors.textSecondary }]}>First Name</Text>
+              <TextInput
+                value={firstName}
+                onChangeText={setFirstName}
+                style={[styles.editInput, { color: colors.text, borderColor: colors.border }]}
+                placeholder="First name"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="words"
+              />
+              <Text style={[styles.editLabel, { color: colors.textSecondary }]}>Last Name</Text>
+              <TextInput
+                value={lastName}
+                onChangeText={setLastName}
+                style={[styles.editInput, { color: colors.text, borderColor: colors.border }]}
+                placeholder="Last name"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="words"
+              />
+              <Text style={[styles.editHelper, { color: colors.textSecondary }]}>
+                Your sign-in is managed by Apple ID. Email and authentication are controlled via Apple.
+              </Text>
+              <View style={styles.editActions}>
+                <TouchableOpacity onPress={() => setIsEditingPersonal(false)} style={[styles.ghostButton, { borderColor: colors.border }]}>
+                  <Text style={[styles.ghostButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleSavePersonal} style={[styles.primarySmallButton, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.primarySmallButtonText, { color: '#FFFFFF' }]}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
           <MenuItem
-            icon="shield-checkmark"
-            title="Security"
-            subtitle="Password and authentication"
+            icon="lock-closed"
+            title="Manage Apple Account"
+            subtitle="Password, 2FA, recovery are handled by Apple"
+            onPress={openAppleAccount}
             themeColors={colors}
           />
         </BlurView>
@@ -375,6 +427,52 @@ const styles = StyleSheet.create({
   },
   menuItemSubtitle: {
     fontSize: 14,
+  },
+  editCard: {
+    margin: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  editLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  editInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+  },
+  editHelper: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  ghostButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  ghostButtonText: {
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  primarySmallButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  primarySmallButtonText: {
+    fontWeight: '700',
+    fontSize: 15,
   },
   logoutSection: {
     paddingHorizontal: 20,

@@ -181,7 +181,7 @@ const ConfigScreen: React.FC = () => {
   ];
 
   // Initialize config when device connects
-  useEffect(() => {
+    useEffect(() => {
     if (connectedDevice) {
       initializeConfig();
     } else if (!DEV_MODE) {
@@ -202,7 +202,7 @@ const ConfigScreen: React.FC = () => {
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => {
+        return () => {
       // Clear all debounce timers on unmount
       parameterDebounceTimers.current.forEach((timer) => clearTimeout(timer));
       parameterDebounceTimers.current.clear();
@@ -210,7 +210,7 @@ const ConfigScreen: React.FC = () => {
         clearTimeout(colorDebounceTimer.current);
         colorDebounceTimer.current = null;
       }
-    };
+        };
   }, []);
 
   const initializeConfig = async () => {
@@ -424,9 +424,9 @@ const ConfigScreen: React.FC = () => {
     const selectedRgb = hsvToRgb(selectedColor);
     
     return (
-      <View style={styles.colorPickerContainer}>
+    <View style={styles.colorPickerContainer}>
         <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Color</Text>
-        <View style={styles.colorGrid}>
+      <View style={styles.colorGrid}>
           {colors.map((hsvColor: HSVColor, index: number) => {
             // Convert HSV to RGB for display
             const rgbColor = hsvToRgb(hsvColor);
@@ -436,19 +436,19 @@ const ConfigScreen: React.FC = () => {
               selectedColor.v === hsvColor.v;
             
             return (
-              <TouchableOpacity
+          <TouchableOpacity
                 key={index}
-                style={[
-                  styles.colorOption,
+            style={[
+              styles.colorOption,
                   { backgroundColor: `rgb(${rgbColor.r}, ${rgbColor.g}, ${rgbColor.b})` },
                   isSelected && { borderColor: themeColors.text, borderWidth: 2 },
-                ]}
+            ]}
                 onPress={() => handleColorSelect(hsvColor)}
-              >
+          >
                 {isSelected && (
                   <Ionicons name="checkmark" size={20} color={isDark ? "white" : themeColors.text} />
-                )}
-              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
             );
           })}
         </View>
@@ -512,8 +512,8 @@ const ConfigScreen: React.FC = () => {
         <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(52,199,89,0.14)' : 'rgba(52,199,89,0.07)' }]} />
       </View>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <ScrollView
-          style={styles.container}
+        <ScrollView 
+          style={styles.container} 
           contentInsetAdjustmentBehavior="never"
           scrollIndicatorInsets={{ bottom: tabBarHeight }}
           showsVerticalScrollIndicator={false}
@@ -541,72 +541,72 @@ const ConfigScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Power Control */}
-          <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
-            <View style={styles.sectionHeader}>
+      {/* Power Control */}
+      <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+        <View style={styles.sectionHeader}>
               <Ionicons name="hardware-chip" size={24} color={themeColors.text} />
-              <View style={styles.sectionTitleContainer}>
+          <View style={styles.sectionTitleContainer}>
                 <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Microcontroller</Text>
                 <Text style={[styles.sectionSubtitle, { color: themeColors.textSecondary }]}>Control LED system power and effects</Text>
-              </View>
-            </View>
+          </View>
+        </View>
             <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.powerCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
-              <View style={styles.powerInfo}>
+          <View style={styles.powerInfo}>
                 <Text style={[styles.powerTitle, { color: themeColors.text }]}>Guitar LED Controller</Text>
                 <Text style={[styles.powerSubtitle, { color: themeColors.textSecondary }]}>
                   {powerState ? 'LED system active' : 'LED system disabled'}
-                </Text>
-              </View>
-              <Switch
+            </Text>
+          </View>
+          <Switch
                 trackColor={{ false: '#3A3A3C', true: 'rgba(0,122,255,0.5)' }}
                 thumbColor={powerState ? '#007AFF' : '#FFFFFF'}
                 ios_backgroundColor="#3A3A3C"
                 onValueChange={handlePowerToggle}
                 value={powerState}
-              />
-            </BlurView>
-          </View>
+          />
+        </BlurView>
+      </View>
 
-          {/* Color Picker */}
-          <View style={styles.section}>
-            <ColorPicker />
-          </View>
+      {/* Color Picker */}
+      <View style={styles.section}>
+        <ColorPicker />
+      </View>
 
-          {/* Brightness Control */}
-          <View style={styles.section}>
+      {/* Brightness Control */}
+      <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Brightness</Text>
-            <SliderControl
-              title="Brightness"
-              value={brightness}
-              onValueChange={setBrightness}
-              icon="sunny"
+        <SliderControl
+          title="Brightness"
+          value={brightness}
+          onValueChange={setBrightness}
+          icon="sunny"
               parameterId={ParameterId.BRIGHTNESS}
               themeColors={themeColors}
               isDark={isDark}
               onUpdateParameter={updateParameter}
-            />
-          </View>
+        />
+      </View>
 
-          {/* Speed Control */}
-          <View style={styles.section}>
+      {/* Speed Control */}
+      <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Animation Speed</Text>
-            <SliderControl
-              title="Speed"
-              value={speed}
-              onValueChange={setSpeed}
-              icon="speedometer"
+        <SliderControl
+          title="Speed"
+          value={speed}
+          onValueChange={setSpeed}
+          icon="speedometer"
               parameterId={ParameterId.SPEED}
               themeColors={themeColors}
               isDark={isDark}
               onUpdateParameter={updateParameter}
-            />
-          </View>
+        />
+      </View>
 
-          {/* Effects */}
-          <View style={styles.section}>
+      {/* Effects */}
+      <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Effects</Text>
-            <View style={styles.effectsGrid}>
-              {effects.map((effect) => (
+        <View style={styles.effectsGrid}>
+          {effects.map((effect) => (
                 <TouchableOpacity
                   key={effect.id}
                   activeOpacity={0.7}
@@ -636,24 +636,24 @@ const ConfigScreen: React.FC = () => {
                     >
                       {effect.name}
                     </Text>
-                  </BlurView>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+              </BlurView>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
-          {/* Save Button */}
-          <View style={styles.saveSection}>
-            <GradientButton
+      {/* Save Button */}
+      <View style={styles.saveSection}>
+        <GradientButton
               text={isSaving ? 'Saving...' : 'Save Configuration'}
-              onPress={handleSave}
-              colors={['#2F7CFF', 'rgba(0,86,204,0.85)']}
-              glossColors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.00)']}
-              iconName="save"
-              style={styles.saveButton}
+          onPress={handleSave}
+          colors={['#2F7CFF', 'rgba(0,86,204,0.85)']}
+          glossColors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.00)']}
+          iconName="save"
+          style={styles.saveButton}
               disabled={isSaving}
-            />
-          </View>
+        />
+      </View>
         </ScrollView>
       </SafeAreaView>
     </View>
