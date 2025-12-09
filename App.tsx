@@ -15,6 +15,7 @@ import ConfigScreen from './src/screens/ConfigScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import DeviceDiscoveryScreen from './src/screens/DeviceDiscoveryScreen';
 import CreateProfileScreen from './src/screens/CreateProfileScreen';
+import AnalyticsScreen from './src/screens/AnalyticsScreen';
 
 // Import theme
 import { theme } from './src/utils/theme';
@@ -124,6 +125,20 @@ export default function App() {
                   <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
                 ),
                 headerTitle: 'Create Profile',
+                headerTintColor: theme.dark.text,
+              }}
+            />
+            <Stack.Screen 
+              name="Analytics" 
+              component={AnalyticsScreen as any}
+              options={{ 
+                headerShown: Platform.OS !== 'web',
+                presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                headerTransparent: true,
+                headerBackground: () => (
+                  <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+                ),
+                headerTitle: 'Analytics',
                 headerTintColor: theme.dark.text,
               }}
             />

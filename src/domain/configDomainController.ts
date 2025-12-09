@@ -39,7 +39,19 @@ export class ConfigDomainController {
    */
   async enterConfigMode(): Promise<boolean> {
     if (!this.deviceId) {
-      throw new Error('No device connected');
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'No device connected',
+      });
+    }
+
+    // Check if device is actually connected before entering config mode
+    const isConnected = await bluetoothService.isDeviceConnected(this.deviceId);
+    if (!isConnected) {
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'Device is not connected. Please reconnect and try again.',
+      });
     }
 
     if (configurationModule.isInConfigMode()) {

@@ -19,10 +19,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
 import { useBluetooth } from '../hooks/useBluetooth';
+import { useAnalytics } from '../hooks/useAnalytics';
 import { configDomainController } from '../domain/configDomainController';
 import { ParameterId } from '../types/commands';
 import { EffectType, LEDConfig, HSVColor } from '../types/config';
-import { BLEError } from '../types/errors';
+import { BLEError, ErrorEnvelope, ErrorCode } from '../types/errors';
+import { ErrorHandler } from '../utils/errorEnvelope';
+import { validateParameter, validateColor } from '../utils/parameterValidation';
 import { BluetoothDevice } from '../types/bluetooth';
 import { hsvToRgb, rgbToHsv, hsvToHex, hexToHsv } from '../utils/colorUtils';
 
@@ -139,6 +142,7 @@ const ConfigScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
   const { colors: themeColors, isDark } = useTheme();
   const { connectedDevice: realConnectedDevice } = useBluetooth();
+  const { trackConfigChange } = useAnalytics();
   
   // Use mock device in dev mode if no real device is connected
   const connectedDevice = DEV_MODE && !realConnectedDevice ? MOCK_DEVICE : realConnectedDevice;
@@ -146,6 +150,9 @@ const ConfigScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorSeverity, setErrorSeverity] = useState<'error' | 'warning' | 'info'>('error');
+  const [errorEnvelope, setErrorEnvelope] = useState<ErrorEnvelope | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [config, setConfig] = useState<LEDConfig | null>(null);
   const [isInConfigMode, setIsInConfigMode] = useState(false);
   
@@ -181,24 +188,54 @@ const ConfigScreen: React.FC = () => {
   ];
 
   // Initialize config when device connects
-    useEffect(() => {
+  useEffect(() => {
     if (connectedDevice) {
       initializeConfig();
+      
+      // Setup disconnection listener for graceful handling
+      if (Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id) {
+        const { bluetoothService } = require('../utils/bluetoothService');
+        bluetoothService.onDisconnection(connectedDevice.id, (deviceId: string) => {
+          handleDisconnection();
+        });
+      }
     } else if (!DEV_MODE) {
       // Only reset if not in dev mode (dev mode uses mock device)
-      // Clean up debounce timers on disconnect
-      parameterDebounceTimers.current.forEach((timer) => clearTimeout(timer));
-      parameterDebounceTimers.current.clear();
-      if (colorDebounceTimer.current) {
-        clearTimeout(colorDebounceTimer.current);
-        colorDebounceTimer.current = null;
-      }
-      
-      configDomainController.reset();
-      setConfig(null);
-      setIsInConfigMode(false);
+      handleDisconnection();
     }
+    
+    // Cleanup disconnection listener on unmount or device change
+    return () => {
+      if (connectedDevice && Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id) {
+        const { bluetoothService } = require('../utils/bluetoothService');
+        bluetoothService.removeDisconnectionListener(connectedDevice.id);
+      }
+    };
   }, [connectedDevice]);
+
+  // Handle graceful disconnection
+  const handleDisconnection = useCallback(() => {
+    // Clean up debounce timers
+    parameterDebounceTimers.current.forEach((timer) => clearTimeout(timer));
+    parameterDebounceTimers.current.clear();
+    if (colorDebounceTimer.current) {
+      clearTimeout(colorDebounceTimer.current);
+      colorDebounceTimer.current = null;
+    }
+    
+    // Reset config state
+    configDomainController.reset();
+    setConfig(null);
+    setIsInConfigMode(false);
+    setError('Device disconnected. Please reconnect to continue.');
+    
+    // Show alert
+    Alert.alert(
+      'Device Disconnected',
+      'The device has been disconnected. Please reconnect to continue configuring.',
+      [{ text: 'OK' }]
+    );
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -242,9 +279,33 @@ const ConfigScreen: React.FC = () => {
       setEffectType(loadedConfig.effectType);
       setPowerState(loadedConfig.powerState);
     } catch (err) {
-      const message = err instanceof BLEError ? err.message : 'Failed to initialize configuration';
-      setError(message);
-      Alert.alert('Error', message);
+      if (err instanceof BLEError) {
+        const envelope = ErrorHandler.fromError(err);
+        const message = ErrorHandler.processError(envelope);
+        const severity = ErrorHandler.getSeverity(envelope);
+        setErrorEnvelope(envelope);
+        setErrorSeverity(severity);
+        setError(message);
+        
+        // Show alert with recovery option if recoverable
+        if (ErrorHandler.isRecoverable(envelope)) {
+          Alert.alert(
+            severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Info',
+            message,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Retry', onPress: () => initializeConfig() },
+            ]
+          );
+        } else {
+          Alert.alert('Error', message);
+        }
+      } else {
+        setError('Failed to initialize configuration');
+        setErrorSeverity('error');
+        setErrorEnvelope(null);
+        Alert.alert('Error', 'Failed to initialize configuration');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -256,6 +317,59 @@ const ConfigScreen: React.FC = () => {
   
   const updateParameter = useCallback(async (parameterId: ParameterId, value: number, skipStateUpdate: boolean = false) => {
     if (!connectedDevice || !config) return;
+
+    // Validate parameter before sending
+    const validation = validateParameter(parameterId, value);
+    if (!validation.isValid) {
+      setValidationError(validation.error || 'Invalid parameter value');
+      // Use corrected value if available
+      if (validation.correctedValue !== undefined) {
+        // Update with corrected value
+        const correctedValue = validation.correctedValue;
+        if (!skipStateUpdate) {
+          switch (parameterId) {
+            case ParameterId.BRIGHTNESS:
+              setBrightness(correctedValue);
+              break;
+            case ParameterId.SPEED:
+              setSpeed(correctedValue);
+              break;
+            case ParameterId.EFFECT_TYPE:
+              setEffectType(correctedValue);
+              break;
+            case ParameterId.POWER_STATE:
+              setPowerState(correctedValue > 0);
+              break;
+          }
+        }
+        // Clear validation error after a moment
+        setTimeout(() => setValidationError(null), 2000);
+        // Continue with corrected value
+        value = correctedValue;
+      } else {
+        // Invalid and no correction available - don't send
+        return;
+      }
+    } else {
+      setValidationError(null);
+    }
+
+    // Get old value for analytics
+    let oldValue: number | undefined;
+    switch (parameterId) {
+      case ParameterId.BRIGHTNESS:
+        oldValue = brightness;
+        break;
+      case ParameterId.SPEED:
+        oldValue = speed;
+        break;
+      case ParameterId.EFFECT_TYPE:
+        oldValue = effectType;
+        break;
+      case ParameterId.POWER_STATE:
+        oldValue = powerState ? 1 : 0;
+        break;
+    }
 
     // Clear existing timeout for this specific parameter
     const existingTimer = parameterDebounceTimers.current.get(parameterId);
@@ -283,6 +397,12 @@ const ConfigScreen: React.FC = () => {
       }
     }
 
+    // Track analytics (only if value actually changed)
+    if (oldValue !== undefined && oldValue !== value) {
+      const parameterName = ParameterId[parameterId] || `parameter_${parameterId}`;
+      trackConfigChange(parameterName, oldValue, value, connectedDevice.id);
+    }
+
     // In dev mode with mock device, skip actual BLE commands
     if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
       // Just update local state, no BLE communication
@@ -293,6 +413,16 @@ const ConfigScreen: React.FC = () => {
     // Debounce BLE command to prevent flooding (per parameter)
     const timer = setTimeout(async () => {
       try {
+        // Check connection before proceeding
+        if (!connectedDevice || (Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id)) {
+          const { bluetoothService } = require('../utils/bluetoothService');
+          const isConnected = await bluetoothService.isDeviceConnected(connectedDevice.id);
+          if (!isConnected) {
+            handleDisconnection();
+            return;
+          }
+        }
+
         // Ensure we're in config mode
         if (!isInConfigMode) {
           await configDomainController.enterConfigMode();
@@ -301,9 +431,41 @@ const ConfigScreen: React.FC = () => {
 
         await configDomainController.updateParameter(parameterId, value);
         setError(null);
+        setErrorEnvelope(null);
       } catch (err) {
-        const message = err instanceof BLEError ? err.message : 'Failed to update parameter';
-        setError(message);
+        if (err instanceof BLEError) {
+          const envelope = ErrorHandler.fromError(err);
+          const message = ErrorHandler.processError(envelope);
+          const severity = ErrorHandler.getSeverity(envelope);
+          setErrorEnvelope(envelope);
+          setErrorSeverity(severity);
+          setError(message);
+          
+          // If connection error, handle disconnection
+          if (err.message.includes('not connected')) {
+            handleDisconnection();
+          }
+          
+          // Auto-recover for recoverable errors
+          if (ErrorHandler.isRecoverable(envelope) && envelope.code === ErrorCode.NOT_IN_CONFIG_MODE) {
+            // Try to re-enter config mode and retry
+            setTimeout(async () => {
+              try {
+                await configDomainController.enterConfigMode();
+                setIsInConfigMode(true);
+                await configDomainController.updateParameter(parameterId, value);
+                setError(null);
+                setErrorEnvelope(null);
+              } catch (retryErr) {
+                console.error('Auto-recovery failed:', retryErr);
+              }
+            }, 500);
+          }
+        } else {
+          setError('Failed to update parameter');
+          setErrorSeverity('error');
+          setErrorEnvelope(null);
+        }
         console.error('Parameter update error:', err);
       } finally {
         // Clean up timer reference
@@ -313,11 +475,18 @@ const ConfigScreen: React.FC = () => {
 
     // Store timer reference for this parameter
     parameterDebounceTimers.current.set(parameterId, timer);
-  }, [connectedDevice, config, isInConfigMode]);
+  }, [connectedDevice, config, isInConfigMode, brightness, speed, effectType, powerState, trackConfigChange]);
 
   // Update color as a whole HSV value
   const updateColor = useCallback(async (color: HSVColor) => {
     if (!connectedDevice || !config) return;
+
+    // Get old color for analytics
+    const oldColor = selectedColor;
+    const colorChanged = 
+      oldColor.h !== color.h || 
+      oldColor.s !== color.s || 
+      oldColor.v !== color.v;
 
     // Clear existing timeout
     if (colorDebounceTimer.current) {
@@ -327,6 +496,11 @@ const ConfigScreen: React.FC = () => {
 
     // Update local state immediately
     setSelectedColor(color);
+
+    // Track analytics if color actually changed
+    if (colorChanged) {
+      trackConfigChange('color', oldColor, color, connectedDevice.id);
+    }
 
     // In dev mode with mock device, skip actual BLE commands
     if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
@@ -346,15 +520,26 @@ const ConfigScreen: React.FC = () => {
 
         await configDomainController.updateColor(color);
         setError(null);
+        setErrorEnvelope(null);
       } catch (err) {
-        const message = err instanceof BLEError ? err.message : 'Failed to update color';
-        setError(message);
+        if (err instanceof BLEError) {
+          const envelope = ErrorHandler.fromError(err);
+          const message = ErrorHandler.processError(envelope);
+          const severity = ErrorHandler.getSeverity(envelope);
+          setErrorEnvelope(envelope);
+          setErrorSeverity(severity);
+          setError(message);
+        } else {
+          setError('Failed to update color');
+          setErrorSeverity('error');
+          setErrorEnvelope(null);
+        }
         console.error('Color update error:', err);
       } finally {
         colorDebounceTimer.current = null;
       }
     }, 150); // 150ms debounce
-  }, [connectedDevice, config, isInConfigMode]);
+  }, [connectedDevice, config, isInConfigMode, selectedColor, trackConfigChange]);
 
   const handleSave = async () => {
     if (!connectedDevice) {
@@ -396,10 +581,36 @@ const ConfigScreen: React.FC = () => {
       setConfig(savedConfig);
       
       Alert.alert('Success', 'Configuration saved successfully!');
+      setError(null);
+      setErrorEnvelope(null);
     } catch (err) {
-      const message = err instanceof BLEError ? err.message : 'Failed to save configuration';
-      setError(message);
-      Alert.alert('Error', message);
+      if (err instanceof BLEError) {
+        const envelope = ErrorHandler.fromError(err);
+        const message = ErrorHandler.processError(envelope);
+        const severity = ErrorHandler.getSeverity(envelope);
+        setErrorEnvelope(envelope);
+        setErrorSeverity(severity);
+        setError(message);
+        
+        // Show alert with recovery option if recoverable
+        if (ErrorHandler.isRecoverable(envelope)) {
+          Alert.alert(
+            severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Info',
+            message,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Retry', onPress: () => handleSave() },
+            ]
+          );
+        } else {
+          Alert.alert('Error', message);
+        }
+      } else {
+        setError('Failed to save configuration');
+        setErrorSeverity('error');
+        setErrorEnvelope(null);
+        Alert.alert('Error', 'Failed to save configuration');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -526,6 +737,16 @@ const ConfigScreen: React.FC = () => {
             </View>
           )}
 
+          {/* Connection Status Indicator */}
+          {connectedDevice && (
+            <View style={[styles.statusBar, { backgroundColor: isDark ? 'rgba(52,199,89,0.2)' : 'rgba(52,199,89,0.1)', borderColor: isDark ? 'rgba(52,199,89,0.3)' : 'rgba(52,199,89,0.2)' }]}>
+              <View style={[styles.statusIndicator, { backgroundColor: themeColors.success }]} />
+              <Text style={[styles.statusText, { color: themeColors.success }]}>
+                Connected: {connectedDevice.name || 'Unknown Device'}
+              </Text>
+            </View>
+          )}
+
           {/* Status Bar */}
           {isInConfigMode && (
             <View style={[styles.statusBar, { backgroundColor: isDark ? 'rgba(0,122,255,0.2)' : 'rgba(0,122,255,0.1)', borderColor: isDark ? 'rgba(0,122,255,0.3)' : 'rgba(0,122,255,0.2)' }]}>
@@ -534,10 +755,52 @@ const ConfigScreen: React.FC = () => {
             </View>
           )}
 
+          {validationError && (
+            <View style={[styles.errorBar, { backgroundColor: isDark ? 'rgba(255,149,0,0.2)' : 'rgba(255,149,0,0.1)', borderColor: isDark ? 'rgba(255,149,0,0.3)' : 'rgba(255,149,0,0.2)' }]}>
+              <Ionicons name="warning" size={16} color={themeColors.warning} />
+              <Text style={[styles.errorText, { color: themeColors.warning }]}>
+                {validationError}
+              </Text>
+            </View>
+          )}
+
           {error && (
-            <View style={styles.errorBar}>
-              <Ionicons name="alert-circle" size={16} color="#FF3B30" />
-              <Text style={styles.errorText}>{error}</Text>
+            <View style={[
+              styles.errorBar,
+              errorSeverity === 'warning' && { backgroundColor: isDark ? 'rgba(255,149,0,0.2)' : 'rgba(255,149,0,0.1)', borderColor: isDark ? 'rgba(255,149,0,0.3)' : 'rgba(255,149,0,0.2)' },
+              errorSeverity === 'info' && { backgroundColor: isDark ? 'rgba(0,122,255,0.2)' : 'rgba(0,122,255,0.1)', borderColor: isDark ? 'rgba(0,122,255,0.3)' : 'rgba(0,122,255,0.2)' },
+              errorSeverity === 'error' && { backgroundColor: isDark ? 'rgba(255,59,48,0.2)' : 'rgba(255,59,48,0.1)', borderColor: isDark ? 'rgba(255,59,48,0.3)' : 'rgba(255,59,48,0.2)' },
+            ]}>
+              <Ionicons 
+                name={errorSeverity === 'warning' ? 'warning' : errorSeverity === 'info' ? 'information-circle' : 'alert-circle'} 
+                size={16} 
+                color={errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error} 
+              />
+              <Text style={[
+                styles.errorText,
+                { color: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }
+              ]}>
+                {error}
+              </Text>
+              {errorEnvelope && ErrorHandler.isRecoverable(errorEnvelope) && (
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (errorEnvelope.code === ErrorCode.NOT_IN_CONFIG_MODE) {
+                      try {
+                        await configDomainController.enterConfigMode();
+                        setIsInConfigMode(true);
+                        setError(null);
+                        setErrorEnvelope(null);
+                      } catch (retryErr) {
+                        console.error('Recovery failed:', retryErr);
+                      }
+                    }
+                  }}
+                  style={styles.recoveryButton}
+                >
+                  <Text style={[styles.recoveryButtonText, { color: themeColors.primary }]}>Retry</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -721,20 +984,28 @@ const styles = StyleSheet.create({
   errorBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,59,48,0.2)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     marginHorizontal: 20,
     marginTop: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,59,48,0.3)',
   },
   errorText: {
-    color: '#FF3B30',
     fontSize: 12,
     marginLeft: 8,
     flex: 1,
+  },
+  recoveryButton: {
+    marginLeft: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,122,255,0.1)',
+  },
+  recoveryButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   noDeviceContainer: {
     flex: 1,

@@ -4,10 +4,13 @@ import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothWebService } from '../utils/bluetoothWebService';
 import { bluetoothService } from '../utils/bluetoothService';
 import { getDeviceDisplayName } from '../utils/bleUtils';
+import { useAnalytics } from './useAnalytics';
+import { AnalyticsEventType } from '../types/analytics';
 
 export type FilterType = 'all' | 'microcontrollers' | 'named';
 
 export const useBluetooth = () => {
+  const { trackConnection } = useAnalytics();
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -127,6 +130,14 @@ export const useBluetooth = () => {
       setIsConnecting(true);
       setError(null);
 
+      await trackConnection(
+        AnalyticsEventType.CONNECTION_STARTED,
+        device.id,
+        device.name,
+        undefined,
+        device.rssi
+      );
+
       if (Platform.OS === 'web') {
         if (!bluetoothWebService.hasSelectedDevice()) {
           throw new Error('Please scan for devices first to select a device');
@@ -138,27 +149,57 @@ export const useBluetooth = () => {
 
       setConnectedDevice({ ...device, isConnected: true });
       setDevices(prev => prev.map(d => (d.id === device.id ? { ...d, isConnected: true } : d)));
+      
+      await trackConnection(
+        AnalyticsEventType.CONNECTION_SUCCESS,
+        device.id,
+        device.name,
+        undefined,
+        device.rssi
+      );
     } catch (err) {
-      setError(`Failed to connect to device: ${(err as Error).message}`);
+      const errorMessage = `Failed to connect to device: ${(err as Error).message}`;
+      setError(errorMessage);
+      await trackConnection(
+        AnalyticsEventType.CONNECTION_FAILED,
+        device.id,
+        device.name,
+        errorMessage,
+        device.rssi
+      );
     } finally {
       setIsConnecting(false);
     }
-  }, []);
+  }, [trackConnection]);
 
   const disconnect = useCallback(async () => {
     if (!connectedDevice) return;
+    const deviceId = connectedDevice.id;
+    const deviceName = connectedDevice.name;
     try {
       if (Platform.OS === 'web') {
-        await bluetoothWebService.disconnectDevice(connectedDevice.id);
+        await bluetoothWebService.disconnectDevice(deviceId);
       } else {
-        await bluetoothService.disconnectDevice(connectedDevice.id);
+        await bluetoothService.disconnectDevice(deviceId);
       }
-      setDevices(prev => prev.map(d => (d.id === connectedDevice.id ? { ...d, isConnected: false } : d)));
+      setDevices(prev => prev.map(d => (d.id === deviceId ? { ...d, isConnected: false } : d)));
       setConnectedDevice(null);
+      
+      await trackConnection(
+        AnalyticsEventType.CONNECTION_DISCONNECTED,
+        deviceId,
+        deviceName
+      );
     } catch (err) {
       setError('Failed to disconnect device');
+      await trackConnection(
+        AnalyticsEventType.CONNECTION_DISCONNECTED,
+        deviceId,
+        deviceName,
+        (err as Error).message
+      );
     }
-  }, [connectedDevice]);
+  }, [connectedDevice, trackConnection]);
 
   const send = useCallback(async (message: string) => {
     if (!connectedDevice) {

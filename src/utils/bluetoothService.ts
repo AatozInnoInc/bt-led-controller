@@ -24,6 +24,7 @@ class BluetoothService {
   private connectedDevices: Map<string, any> = new Map();
   private notificationSubscriptions: Map<string, any> = new Map();
   private responseCallbacks: Map<string, (response: CommandResponse | ErrorEnvelope) => void> = new Map();
+  private disconnectionListeners: Map<string, (deviceId: string) => void> = new Map();
 
   constructor() {
     if (Platform.OS !== 'web' && BleManager) {
@@ -144,6 +145,12 @@ class BluetoothService {
       // Store connected device
       this.connectedDevices.set(deviceId, device);
       
+      // Setup disconnection listener
+      device.onDisconnected((error: any, device: any) => {
+        console.log('Device disconnected:', deviceId, error);
+        this.handleDisconnection(deviceId);
+      });
+      
       // Setup notification listener
       await this.setupNotifications(deviceId, device);
       
@@ -152,6 +159,61 @@ class BluetoothService {
       console.error('Failed to connect to device:', error);
       throw new Error(`Connection failed: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Check if a device is currently connected
+   */
+  async isDeviceConnected(deviceId: string): Promise<boolean> {
+    try {
+      const device = this.connectedDevices.get(deviceId);
+      if (!device) {
+        return false;
+      }
+      // Check if device is still connected
+      return device.isConnected();
+    } catch (error) {
+      console.error('Failed to check device connection:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Handle device disconnection
+   */
+  private handleDisconnection(deviceId: string): void {
+    // Remove notification subscription
+    const subscription = this.notificationSubscriptions.get(deviceId);
+    if (subscription) {
+      subscription.remove();
+      this.notificationSubscriptions.delete(deviceId);
+    }
+    
+    // Remove response callback
+    this.responseCallbacks.delete(deviceId);
+    
+    // Remove from connected devices
+    this.connectedDevices.delete(deviceId);
+    
+    // Notify listeners
+    const listener = this.disconnectionListeners.get(deviceId);
+    if (listener) {
+      listener(deviceId);
+    }
+  }
+
+  /**
+   * Register a disconnection listener for a device
+   */
+  onDisconnection(deviceId: string, callback: (deviceId: string) => void): void {
+    this.disconnectionListeners.set(deviceId, callback);
+  }
+
+  /**
+   * Remove a disconnection listener
+   */
+  removeDisconnectionListener(deviceId: string): void {
+    this.disconnectionListeners.delete(deviceId);
   }
 
   /**
