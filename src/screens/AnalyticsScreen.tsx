@@ -9,7 +9,6 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +16,11 @@ import { useTheme } from '../contexts/ThemeContext';
 import { analyticsRepository } from '../repositories/analyticsRepository';
 import { AnalyticsSummary } from '../types/analytics';
 
-const AnalyticsScreen: React.FC = () => {
+interface AnalyticsScreenProps {
+  navigation: any;
+}
+
+const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ navigation }) => {
   const { colors, isDark } = useTheme();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -96,61 +99,63 @@ const AnalyticsScreen: React.FC = () => {
 
   if (!summary) {
     return (
-      <View style={styles.fullScreen}>
+      <View style={styles.container}>
         <LinearGradient
           colors={[colors.gradientStart, colors.gradientEnd]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject as any}
         />
-        <SafeAreaView edges={['top']} style={styles.safeArea}>
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading analytics...</Text>
-          </View>
-        </SafeAreaView>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Analytics</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading analytics...</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.fullScreen}>
+    <View style={styles.container}>
       <LinearGradient
         colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject as any}
       />
-      <View style={styles.backgroundDecor}>
-        <View style={[styles.blobPrimary, { backgroundColor: isDark ? 'rgba(0,122,255,0.18)' : 'rgba(0,122,255,0.09)' }]} />
-        <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(88,86,214,0.16)' : 'rgba(88,86,214,0.08)' }]} />
+      
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Analytics</Text>
+        <TouchableOpacity
+          style={styles.clearButton}
+          onPress={handleClearData}
+        >
+          <Ionicons name="trash-outline" size={20} color={colors.error} />
+        </TouchableOpacity>
       </View>
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+
+      {/* ScrollView */}
+      <View style={styles.scrollContainer}>
         <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.scrollContent}
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled={Platform.OS === 'web'}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>Analytics</Text>
-              <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-                Usage insights and statistics
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.clearButton, { backgroundColor: colors.error + '20', borderColor: colors.error }]}
-              onPress={handleClearData}
-            >
-              <Ionicons name="trash-outline" size={18} color={colors.error} />
-            </TouchableOpacity>
-          </View>
-
           {/* Time Range Selector */}
           <View style={styles.timeRangeContainer}>
             {(['all', 'week', 'month'] as const).map((range) => (
@@ -209,6 +214,40 @@ const AnalyticsScreen: React.FC = () => {
             </View>
           </View>
 
+          {/* Parameter Changes */}
+          {summary.totalParameterChanges > 0 && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Parameter Changes</Text>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={{ borderRadius: 16 }}>
+                <View style={[styles.infoCard, { backgroundColor: colors.card + 'B3', borderColor: colors.border }]}>
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoLeft}>
+                      <Ionicons name="settings" size={20} color={colors.primary} />
+                      <Text style={[styles.infoLabel, { color: colors.text }]}>Total Changes</Text>
+                    </View>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>{summary.totalParameterChanges}</Text>
+                  </View>
+                  {summary.mostChangedParameter && (
+                    <View style={[styles.infoRow, { marginTop: 12 }]}>
+                      <View style={styles.infoLeft}>
+                        <Ionicons name="trending-up" size={20} color={colors.warning} />
+                        <Text style={[styles.infoLabel, { color: colors.text }]}>Most Changed</Text>
+                      </View>
+                      <View style={styles.infoRight}>
+                        <Text style={[styles.infoValue, { color: colors.text }]}>
+                          {summary.mostChangedParameter.parameter}
+                        </Text>
+                        <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
+                          {summary.mostChangedParameter.changeCount} times
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </BlurView>
+            </View>
+          )}
+
           {/* Connection Stats */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Connections</Text>
@@ -264,27 +303,7 @@ const AnalyticsScreen: React.FC = () => {
                 </View>
               </BlurView>
             )}
-            {summary.mostChangedParameter && (
-              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={{ borderRadius: 16 }}>
-                <View style={[styles.infoCard, { backgroundColor: colors.card + 'B3', borderColor: colors.border }]}>
-                  <View style={styles.infoRow}>
-                    <View style={styles.infoLeft}>
-                      <Ionicons name="settings" size={20} color={colors.primary} />
-                      <Text style={[styles.infoLabel, { color: colors.text }]}>Most Changed Setting</Text>
-                    </View>
-                    <View style={styles.infoRight}>
-                      <Text style={[styles.infoValue, { color: colors.text }]}>
-                        {summary.mostChangedParameter.parameter}
-                      </Text>
-                      <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-                        {summary.mostChangedParameter.changeCount} changes
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </BlurView>
-            )}
-            {!summary.mostUsedProfile && !summary.mostChangedParameter && (
+            {!summary.mostUsedProfile && summary.totalParameterChanges === 0 && (
               <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={{ borderRadius: 16 }}>
                 <View style={[styles.infoCard, { backgroundColor: colors.card + 'B3', borderColor: colors.border }]}>
                   <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -294,6 +313,67 @@ const AnalyticsScreen: React.FC = () => {
               </BlurView>
             )}
           </View>
+
+          {/* Microcontroller Telemetry (when available) */}
+          {(summary.totalFlashReads !== undefined || summary.totalFlashWrites !== undefined || 
+            summary.totalErrors !== undefined || summary.averagePowerConsumption !== undefined) && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Controller Telemetry</Text>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={{ borderRadius: 16 }}>
+                <View style={[styles.infoCard, { backgroundColor: colors.card + 'B3', borderColor: colors.border }]}>
+                  {summary.totalFlashReads !== undefined && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLeft}>
+                        <Ionicons name="document-text" size={20} color={colors.primary} />
+                        <Text style={[styles.infoLabel, { color: colors.text }]}>Flash Reads</Text>
+                      </View>
+                      <Text style={[styles.infoValue, { color: colors.text }]}>{summary.totalFlashReads}</Text>
+                    </View>
+                  )}
+                  {summary.totalFlashWrites !== undefined && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLeft}>
+                        <Ionicons name="create" size={20} color={colors.secondary} />
+                        <Text style={[styles.infoLabel, { color: colors.text }]}>Flash Writes</Text>
+                      </View>
+                      <Text style={[styles.infoValue, { color: colors.text }]}>{summary.totalFlashWrites}</Text>
+                    </View>
+                  )}
+                  {summary.totalErrors !== undefined && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLeft}>
+                        <Ionicons name="warning" size={20} color={colors.error} />
+                        <Text style={[styles.infoLabel, { color: colors.text }]}>Errors</Text>
+                      </View>
+                      <Text style={[styles.infoValue, { color: colors.text }]}>{summary.totalErrors}</Text>
+                    </View>
+                  )}
+                  {summary.averagePowerConsumption !== undefined && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLeft}>
+                        <Ionicons name="battery-charging" size={20} color={colors.warning} />
+                        <Text style={[styles.infoLabel, { color: colors.text }]}>Avg Power</Text>
+                      </View>
+                      <Text style={[styles.infoValue, { color: colors.text }]}>
+                        {summary.averagePowerConsumption.toFixed(0)}mA
+                      </Text>
+                    </View>
+                  )}
+                  {summary.peakPowerConsumption !== undefined && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLeft}>
+                        <Ionicons name="flash" size={20} color={colors.error} />
+                        <Text style={[styles.infoLabel, { color: colors.text }]}>Peak Power</Text>
+                      </View>
+                      <Text style={[styles.infoValue, { color: colors.text }]}>
+                        {summary.peakPowerConsumption.toFixed(0)}mA
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </BlurView>
+            </View>
+          )}
 
           {/* Last Session */}
           {summary.lastSessionDuration && (
@@ -315,60 +395,43 @@ const AnalyticsScreen: React.FC = () => {
             </View>
           )}
 
+          <View style={{ height: 40 }} />
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  fullScreen: {
+  container: {
     flex: 1,
+    position: 'relative',
   },
-  safeArea: {
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
     flex: 1,
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
   },
-  container: Platform.select({
-    web: {
-      flex: 1,
-      overflow: 'scroll',
-      height: '100%',
-    },
-    default: {
-      flex: 1,
-    },
-  }),
-  scrollContent: {
-    paddingBottom: 100,
-    ...(Platform.OS === 'web' ? {
-      minHeight: '100%',
-    } : {
-      flexGrow: 1,
-    }),
+  headerSpacer: {
+    width: 40,
   },
-  backgroundDecor: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 200,
-    overflow: 'visible',
+  clearButton: {
+    padding: 8,
   },
-  blobPrimary: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    top: -60,
-    left: -40,
-  },
-  blobSecondary: {
-    position: 'absolute',
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    top: -20,
-    right: -30,
+  scrollContainer: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -378,33 +441,10 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 16,
-    paddingBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-  },
-  clearButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   timeRangeContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
+    marginTop: 20,
     marginBottom: 24,
     gap: 8,
   },
@@ -433,7 +473,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 0,
   },
   statCard: {
     width: '100%',
@@ -466,14 +505,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     textAlign: 'center',
-    lineHeight: 18,
     height: 36,
     marginBottom: 4,
   },
   statSubtitle: {
     fontSize: 11,
     textAlign: 'center',
-    lineHeight: 16,
     height: 16,
   },
   infoCard: {

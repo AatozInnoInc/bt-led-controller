@@ -13,11 +13,15 @@ import {
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { useAnalytics } from '../hooks/useAnalytics';
 import { useTheme } from '../contexts/ThemeContext';
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothService } from '../utils/bluetoothService';
 import { isPotentialMicrocontroller } from '../utils/bleUtils';
 import { useBluetooth } from '../hooks/useBluetooth';
+
+// Type declaration for web platform window object
+declare const window: { confirm?: (message?: string) => boolean } | undefined;
 
 interface DeviceDiscoveryScreenProps {
   navigation: any;
@@ -266,8 +270,8 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     
     if (device.isConnected) {
       // For web, use browser's confirm dialog
-      if (Platform.OS === 'web') {
-        const shouldDisconnect = (global as any).window?.confirm(
+      if (Platform.OS === 'web' && window?.confirm) {
+        const shouldDisconnect = window.confirm!(
           `${device.name} is already connected. Would you like to disconnect?`
         );
         if (shouldDisconnect) {
@@ -285,8 +289,8 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       }
     } else {
       // For web, use browser's confirm dialog
-      if (Platform.OS === 'web') {
-        const shouldConnect = (global as any).window?.confirm(`Connect to ${device.name}?`);
+      if (Platform.OS === 'web' && window?.confirm) {
+        const shouldConnect = window.confirm!(`Connect to ${device.name}?`);
         if (shouldConnect) {
           console.log('Connect confirmed for device:', device.name);
           connect(device);

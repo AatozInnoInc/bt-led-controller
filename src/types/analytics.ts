@@ -69,6 +69,25 @@ export interface CommandEvent extends BaseAnalyticsEvent {
 export interface TelemetryEvent extends BaseAnalyticsEvent {
   type: AnalyticsEventType.TELEMETRY_RECEIVED;
   data: {
+    // Session data
+    turnedOn?: boolean;
+    turnedOff?: boolean;
+    sessionDuration?: number; // milliseconds
+    
+    // Flash operations
+    flashReads?: number;
+    flashWrites?: number;
+    
+    // Errors
+    errorCount?: number;
+    lastError?: string;
+    
+    // Power consumption
+    powerConsumption?: number; // mA
+    averagePower?: number; // mA
+    peakPower?: number; // mA
+    
+    // Legacy fields
     batteryLevel?: number;
     temperature?: number;
     uptime?: number;
@@ -114,6 +133,17 @@ export interface AnalyticsSummary {
   failedConnections: number;
   lastConnected?: number;
   lastSessionDuration?: number;
+  
+  // Parameter statistics
+  totalParameterChanges: number;
+  parameterChangeCounts?: Map<string, number>;
+  
+  // Microcontroller telemetry (when available)
+  totalFlashReads?: number;
+  totalFlashWrites?: number;
+  totalErrors?: number;
+  averagePowerConsumption?: number;
+  peakPowerConsumption?: number;
 }
 
 export interface AnalyticsTimeRange {

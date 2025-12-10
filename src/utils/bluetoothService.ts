@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { BluetoothDevice, BLEConnection } from '../types/bluetooth';
 import { NUS_SERVICE_UUID, NUS_WRITE_CHAR_UUID, NUS_NOTIFY_CHAR_UUID, isUuidLikelyUart } from './bleConstants';
-import { CommandResponse } from '../types/commands';
+import { CommandResponse, AnalyticsBatch, ResponseType } from '../types/commands';
 import { ErrorEnvelope, BLEError, ErrorCode } from '../types/errors';
 import { BLECommandEncoder } from './bleCommandEncoder';
 
@@ -23,7 +23,9 @@ class BluetoothService {
   private isInitialized: boolean = false;
   private connectedDevices: Map<string, any> = new Map();
   private notificationSubscriptions: Map<string, any> = new Map();
-  private responseCallbacks: Map<string, (response: CommandResponse | ErrorEnvelope) => void> = new Map();
+  private responseCallbacks: Map<string, (response: CommandResponse | ErrorEnvelope | AnalyticsBatch) => void> = new Map();
+  private analyticsCallbacks: Map<string, (batch: AnalyticsBatch) => void> = new Map();
+  private analyticsBuffers: Map<string, Uint8Array> = new Map(); // Buffer for multi-chunk analytics batches
   private disconnectionListeners: Map<string, (deviceId: string) => void> = new Map();
 
   constructor() {
@@ -189,8 +191,10 @@ class BluetoothService {
       this.notificationSubscriptions.delete(deviceId);
     }
     
-    // Remove response callback
+    // Remove callbacks and buffers
     this.responseCallbacks.delete(deviceId);
+    this.analyticsCallbacks.delete(deviceId);
+    this.analyticsBuffers.delete(deviceId);
     
     // Remove from connected devices
     this.connectedDevices.delete(deviceId);
@@ -258,6 +262,31 @@ class BluetoothService {
 
           // Decode response
           try {
+            // Check if this is an analytics batch (starts with RESP_ANALYTICS_BATCH)
+            if (bytes[0] === ResponseType.ANALYTICS_BATCH) {
+              // Buffer analytics data (may come in multiple chunks)
+              const existingBuffer = this.analyticsBuffers.get(deviceId);
+              const combinedBuffer = existingBuffer 
+                ? new Uint8Array([...existingBuffer, ...bytes])
+                : bytes;
+              
+              // Try to decode (may need more chunks)
+              try {
+                const batch = BLECommandEncoder.decodeAnalyticsBatch(combinedBuffer);
+                // Successfully decoded - clear buffer and call callback
+                this.analyticsBuffers.delete(deviceId);
+                const analyticsCallback = this.analyticsCallbacks.get(deviceId);
+                if (analyticsCallback) {
+                  analyticsCallback(batch);
+                  this.analyticsCallbacks.delete(deviceId);
+                }
+              } catch (decodeError) {
+                // Not enough data yet - buffer it
+                this.analyticsBuffers.set(deviceId, combinedBuffer);
+              }
+              return;
+            }
+            
             const response = BLECommandEncoder.decodeResponse(bytes);
             
             // Find callback for this device (if any)
@@ -292,6 +321,47 @@ class BluetoothService {
     } catch (error) {
       console.error('Failed to setup notifications:', error);
     }
+  }
+
+  /**
+   * Set callback for analytics batches
+   */
+  setAnalyticsCallback(deviceId: string, callback: (batch: AnalyticsBatch) => void): void {
+    this.analyticsCallbacks.set(deviceId, callback);
+  }
+
+  /**
+   * Request analytics batch from device
+   */
+  async requestAnalytics(deviceId: string): Promise<AnalyticsBatch> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.analyticsCallbacks.delete(deviceId);
+        this.analyticsBuffers.delete(deviceId);
+        reject(new Error('Analytics request timeout'));
+      }, 10000); // 10 second timeout
+
+      this.setAnalyticsCallback(deviceId, (batch) => {
+        clearTimeout(timeout);
+        resolve(batch);
+      });
+
+      const command = BLECommandEncoder.encodeRequestAnalytics();
+      this.sendCommand(deviceId, command).catch((error) => {
+        clearTimeout(timeout);
+        this.analyticsCallbacks.delete(deviceId);
+        this.analyticsBuffers.delete(deviceId);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Confirm receipt of analytics batch
+   */
+  async confirmAnalytics(deviceId: string, batchId: number): Promise<CommandResponse> {
+    const command = BLECommandEncoder.encodeConfirmAnalytics(batchId);
+    return this.sendCommand(deviceId, command);
   }
 
   async disconnectDevice(deviceId: string): Promise<void> {
@@ -333,15 +403,20 @@ class BluetoothService {
       }, timeout);
 
       // Setup response callback
-      this.responseCallbacks.set(deviceId, (response: CommandResponse | ErrorEnvelope) => {
+      this.responseCallbacks.set(deviceId, (response: CommandResponse | ErrorEnvelope | AnalyticsBatch) => {
         clearTimeout(timeoutId);
         
         if ('code' in response) {
           // It's an ErrorEnvelope
           reject(new BLEError(response));
-        } else {
+        } else if ('batchId' in response) {
+          // It's an AnalyticsBatch (shouldn't happen here, but handle for type safety)
+          reject(new Error('Analytics batch received in command response callback'));
+        } else if ('type' in response && 'isSuccess' in response) {
           // It's a CommandResponse
-          resolve(response);
+          resolve(response as CommandResponse);
+        } else {
+          reject(new Error('Unknown response type'));
         }
       });
 

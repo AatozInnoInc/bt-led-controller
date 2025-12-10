@@ -25,7 +25,7 @@ import { ParameterId } from '../types/commands';
 import { EffectType, LEDConfig, HSVColor } from '../types/config';
 import { BLEError, ErrorEnvelope, ErrorCode } from '../types/errors';
 import { ErrorHandler } from '../utils/errorEnvelope';
-import { validateParameter, validateColor } from '../utils/parameterValidation';
+import { validateParameter, validateColor, validateColorAndPower, calculateTotalCurrent } from '../utils/parameterValidation';
 import { BluetoothDevice } from '../types/bluetooth';
 import { hsvToRgb, rgbToHsv, hsvToHex, hexToHsv } from '../utils/colorUtils';
 
@@ -354,7 +354,7 @@ const ConfigScreen: React.FC = () => {
       setValidationError(null);
     }
 
-    // Get old value for analytics
+    // Get old value for analytics (before potential revert)
     let oldValue: number | undefined;
     switch (parameterId) {
       case ParameterId.BRIGHTNESS:
@@ -369,6 +369,31 @@ const ConfigScreen: React.FC = () => {
       case ParameterId.POWER_STATE:
         oldValue = powerState ? 1 : 0;
         break;
+    }
+
+    // Validate power consumption if brightness or power state is changing
+    if (parameterId === ParameterId.BRIGHTNESS || parameterId === ParameterId.POWER_STATE) {
+      const testBrightness = parameterId === ParameterId.BRIGHTNESS ? value : brightness;
+      const testPowerState = parameterId === ParameterId.POWER_STATE ? (value > 0) : powerState;
+      
+      const powerValidation = validateColorAndPower(selectedColor, testBrightness, testPowerState);
+      if (!powerValidation.isValid) {
+        setValidationError(powerValidation.error || 'Power consumption too high');
+        // Revert to previous safe value
+        if (!skipStateUpdate && oldValue !== undefined) {
+          if (parameterId === ParameterId.BRIGHTNESS) {
+            setBrightness(oldValue);
+          } else if (parameterId === ParameterId.POWER_STATE) {
+            setPowerState(oldValue > 0);
+          }
+        }
+        // Do not send the command
+        return;
+      } else if (powerValidation.error) {
+        // Warning (high but still safe)
+        setValidationError(powerValidation.error);
+        setTimeout(() => setValidationError(null), 3000);
+      }
     }
 
     // Clear existing timeout for this specific parameter
@@ -480,6 +505,33 @@ const ConfigScreen: React.FC = () => {
   // Update color as a whole HSV value
   const updateColor = useCallback(async (color: HSVColor) => {
     if (!connectedDevice || !config) return;
+
+    // Validate color before sending
+    const validation = validateColor(color);
+    if (!validation.isValid) {
+      setValidationError(validation.error || 'Invalid color value');
+      // Clear validation error after a moment
+      setTimeout(() => setValidationError(null), 2000);
+      // Don't send invalid color
+      return;
+    } else {
+      setValidationError(null);
+    }
+
+    // Validate power consumption if power is on
+    if (powerState) {
+      const powerValidation = validateColorAndPower(color, brightness, powerState);
+      if (!powerValidation.isValid) {
+        setValidationError(powerValidation.error || 'Power consumption too high');
+        // Revert to previous safe color
+        setSelectedColor(selectedColor);
+        return; // Block sending
+      } else if (powerValidation.error) {
+        // Warning (high but still safe)
+        setValidationError(powerValidation.error);
+        setTimeout(() => setValidationError(null), 3000);
+      }
+    }
 
     // Get old color for analytics
     const oldColor = selectedColor;
@@ -745,6 +797,38 @@ const ConfigScreen: React.FC = () => {
                 Connected: {connectedDevice.name || 'Unknown Device'}
               </Text>
             </View>
+          )}
+
+          {/* Power Consumption Indicator */}
+          {powerState && config && (
+            (() => {
+              const currentDraw = calculateTotalCurrent(selectedColor, brightness);
+              const percentage = (currentDraw / 400) * 100; // Percentage of safe limit
+              const isHigh = currentDraw > 400 * 0.8; // Above 80% of safe limit
+              const isOverLimit = currentDraw > 400;
+              
+              return (
+                <View style={[
+                  styles.statusBar,
+                  isOverLimit
+                    ? { backgroundColor: isDark ? 'rgba(255,59,48,0.2)' : 'rgba(255,59,48,0.1)', borderColor: isDark ? 'rgba(255,59,48,0.3)' : 'rgba(255,59,48,0.2)' }
+                    : isHigh
+                    ? { backgroundColor: isDark ? 'rgba(255,149,0,0.2)' : 'rgba(255,149,0,0.1)', borderColor: isDark ? 'rgba(255,149,0,0.3)' : 'rgba(255,149,0,0.2)' }
+                    : { backgroundColor: isDark ? 'rgba(52,199,89,0.2)' : 'rgba(52,199,89,0.1)', borderColor: isDark ? 'rgba(52,199,89,0.3)' : 'rgba(52,199,89,0.2)' }
+                ]}>
+                  <View style={[
+                    styles.statusIndicator,
+                    { backgroundColor: isOverLimit ? themeColors.error : isHigh ? themeColors.warning : themeColors.success }
+                  ]} />
+                  <Text style={[
+                    styles.statusText,
+                    { color: isOverLimit ? themeColors.error : isHigh ? themeColors.warning : themeColors.success }
+                  ]}>
+                    Power: {currentDraw.toFixed(0)}mA / {400}mA ({percentage.toFixed(0)}%)
+                  </Text>
+                </View>
+              );
+            })()
           )}
 
           {/* Status Bar */}

@@ -140,6 +140,7 @@ export default function App() {
                 ),
                 headerTitle: 'Analytics',
                 headerTintColor: theme.dark.text,
+                cardStyle: { flex: 1 },
               }}
             />
           </Stack.Navigator>

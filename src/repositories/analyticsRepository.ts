@@ -186,6 +186,42 @@ export class AnalyticsRepository {
     const lastSession = completedSessions
       .sort((a, b) => (b.endTime || 0) - (a.endTime || 0))[0];
 
+    // Total parameter changes
+    const totalParameterChanges = events.filter(e => e.type === 'config_changed').length;
+    
+    // Parameter change counts map
+    const parameterChangeCounts = new Map<string, number>();
+    events.forEach(event => {
+      if (event.type === 'config_changed' && 'parameter' in event && event.parameter) {
+        const count = parameterChangeCounts.get(event.parameter) || 0;
+        parameterChangeCounts.set(event.parameter, count + 1);
+      }
+    });
+
+    // Microcontroller telemetry (from telemetry events)
+    const telemetryEvents = events.filter(e => e.type === 'telemetry_received') as any[];
+    let totalFlashReads = 0;
+    let totalFlashWrites = 0;
+    let totalErrors = 0;
+    const powerReadings: number[] = [];
+    
+    telemetryEvents.forEach(event => {
+      if (event.data) {
+        if (event.data.flashReads) totalFlashReads += event.data.flashReads;
+        if (event.data.flashWrites) totalFlashWrites += event.data.flashWrites;
+        if (event.data.errorCount) totalErrors += event.data.errorCount;
+        if (event.data.powerConsumption) powerReadings.push(event.data.powerConsumption);
+        if (event.data.averagePower) powerReadings.push(event.data.averagePower);
+      }
+    });
+    
+    const averagePowerConsumption = powerReadings.length > 0
+      ? powerReadings.reduce((sum, p) => sum + p, 0) / powerReadings.length
+      : undefined;
+    const peakPowerConsumption = powerReadings.length > 0
+      ? Math.max(...powerReadings)
+      : undefined;
+
     return {
       totalSessions,
       totalConnectionTime,
@@ -198,6 +234,13 @@ export class AnalyticsRepository {
       failedConnections,
       lastConnected: lastConnectionEvent?.timestamp,
       lastSessionDuration: lastSession?.duration,
+      totalParameterChanges,
+      parameterChangeCounts: parameterChangeCounts.size > 0 ? parameterChangeCounts : undefined,
+      totalFlashReads: totalFlashReads > 0 ? totalFlashReads : undefined,
+      totalFlashWrites: totalFlashWrites > 0 ? totalFlashWrites : undefined,
+      totalErrors: totalErrors > 0 ? totalErrors : undefined,
+      averagePowerConsumption,
+      peakPowerConsumption,
     };
   }
 

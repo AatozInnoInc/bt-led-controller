@@ -6,11 +6,12 @@ import { bluetoothService } from '../utils/bluetoothService';
 import { getDeviceDisplayName } from '../utils/bleUtils';
 import { useAnalytics } from './useAnalytics';
 import { AnalyticsEventType } from '../types/analytics';
+import { BLECommandEncoder } from '../utils/bleCommandEncoder';
 
 export type FilterType = 'all' | 'microcontrollers' | 'named';
 
 export const useBluetooth = () => {
-  const { trackConnection } = useAnalytics();
+  const { trackConnection, processAnalyticsBatch } = useAnalytics();
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -157,6 +158,38 @@ export const useBluetooth = () => {
         undefined,
         device.rssi
       );
+
+      // Request analytics batch from microcontroller (if available)
+      // The microcontroller will auto-send on connection, but we can also request explicitly
+      if (Platform.OS !== 'web') {
+        try {
+          // Set up analytics callback
+          bluetoothService.setAnalyticsCallback(device.id, async (batch) => {
+            await processAnalyticsBatch(batch, device.id, device.name);
+            // Confirm receipt
+            try {
+              await bluetoothService.confirmAnalytics(device.id, batch.batchId);
+            } catch (confirmError) {
+              console.error('Failed to confirm analytics:', confirmError);
+            }
+          });
+          
+          // Request analytics (microcontroller may have already sent it, but this ensures we get it)
+          setTimeout(async () => {
+            try {
+              const batch = await bluetoothService.requestAnalytics(device.id);
+              await processAnalyticsBatch(batch, device.id, device.name);
+              await bluetoothService.confirmAnalytics(device.id, batch.batchId);
+            } catch (analyticsError) {
+              // Analytics not available or no data - this is OK
+              console.log('No analytics available:', analyticsError);
+            }
+          }, 1000); // Wait 1 second for connection to stabilize
+        } catch (analyticsError) {
+          // Analytics not supported or failed - continue normally
+          console.log('Analytics request failed (non-critical):', analyticsError);
+        }
+      }
     } catch (err) {
       const errorMessage = `Failed to connect to device: ${(err as Error).message}`;
       setError(errorMessage);

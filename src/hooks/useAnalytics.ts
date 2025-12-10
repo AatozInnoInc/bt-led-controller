@@ -4,8 +4,9 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import { AnalyticsEvent, AnalyticsEventType, AnalyticsSession } from '../types/analytics';
+import { AnalyticsEvent, AnalyticsEventType, AnalyticsSession, TelemetryEvent } from '../types/analytics';
 import { analyticsRepository } from '../repositories/analyticsRepository';
+import { AnalyticsBatch } from '../types/commands';
 
 export const useAnalytics = () => {
   const activeSessionRef = useRef<AnalyticsSession | null>(null);
@@ -36,6 +37,40 @@ export const useAnalytics = () => {
   }, []);
 
   /**
+   * End the current session
+   */
+  const endSession = useCallback(async () => {
+    try {
+      if (!activeSessionRef.current) {
+        return;
+      }
+
+      const session = activeSessionRef.current;
+      const endTime = Date.now();
+      const duration = endTime - session.startTime;
+
+      session.endTime = endTime;
+      session.duration = duration;
+
+      await analyticsRepository.updateActiveSession({
+        endTime,
+        duration,
+      });
+
+      await trackEvent({
+        type: AnalyticsEventType.SESSION_ENDED,
+        deviceId: session.deviceId,
+        deviceName: session.deviceName,
+        data: { duration },
+      } as any);
+
+      activeSessionRef.current = null;
+    } catch (error) {
+      console.error('Failed to end analytics session:', error);
+    }
+  }, [trackEvent]);
+
+  /**
    * Start a new session
    */
   const startSession = useCallback(async (deviceId?: string, deviceName?: string) => {
@@ -63,41 +98,7 @@ export const useAnalytics = () => {
     } catch (error) {
       console.error('Failed to start analytics session:', error);
     }
-  }, []);
-
-  /**
-   * End the current session
-   */
-  const endSession = useCallback(async () => {
-    try {
-      if (!activeSessionRef.current) {
-        return;
-      }
-
-      const session = activeSessionRef.current;
-      const endTime = Date.now();
-      const duration = endTime - session.startTime;
-
-      session.endTime = endTime;
-      session.duration = duration;
-
-      await analyticsRepository.updateActiveSession({
-        endTime,
-        duration,
-      });
-
-      await trackEvent({
-        type: AnalyticsEventType.SESSION_ENDED,
-        deviceId: session.deviceId,
-        deviceName: session.deviceName,
-        duration,
-      });
-
-      activeSessionRef.current = null;
-    } catch (error) {
-      console.error('Failed to end analytics session:', error);
-    }
-  }, []);
+  }, [trackEvent, endSession]);
 
   /**
    * Track connection events
@@ -144,11 +145,8 @@ export const useAnalytics = () => {
     await trackEvent({
       type: AnalyticsEventType.CONFIG_CHANGED,
       deviceId,
-      parameter,
-      oldValue,
-      newValue,
-      profileId,
-    });
+      data: { parameter, oldValue, newValue, profileId },
+    } as any);
   }, [trackEvent]);
 
   /**
@@ -164,10 +162,9 @@ export const useAnalytics = () => {
   ) => {
     await trackEvent({
       type,
-      profileId,
-      profileName,
       deviceId,
-    });
+      data: { profileId, profileName },
+    } as any);
   }, [trackEvent]);
 
   /**
@@ -183,8 +180,78 @@ export const useAnalytics = () => {
       deviceId,
       commandType,
       success,
-    });
+    } as any);
   }, [trackEvent]);
+
+  /**
+   * Translate error code to human-readable message
+   */
+  const getErrorMessage = useCallback((errorCode: number): string => {
+    switch (errorCode) {
+      case 0x01: return 'Invalid command';
+      case 0x02: return 'Invalid parameter';
+      case 0x03: return 'Parameter value out of range';
+      case 0x04: return 'Device not in configuration mode';
+      case 0x05: return 'Device already in configuration mode';
+      case 0x06: return 'Failed to write to flash memory';
+      case 0x07: return 'Configuration validation failed';
+      case 0xFF: return 'Unknown error';
+      default: return `Error code: 0x${errorCode.toString(16)}`;
+    }
+  }, []);
+
+  /**
+   * Process analytics batch from microcontroller
+   */
+  const processAnalyticsBatch = useCallback(async (batch: AnalyticsBatch, deviceId?: string, deviceName?: string) => {
+    try {
+      // Convert microcontroller sessions to telemetry events
+      for (const session of batch.sessions) {
+        const telemetryEvent: TelemetryEvent = {
+          id: `telemetry-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: session.startTime * 1000, // Convert Unix seconds to milliseconds
+          type: AnalyticsEventType.TELEMETRY_RECEIVED,
+          deviceId,
+          deviceName,
+          data: {
+            turnedOn: session.turnedOn,
+            turnedOff: session.turnedOff,
+            sessionDuration: session.duration,
+            flashReads: batch.flashReads,
+            flashWrites: batch.flashWrites,
+            errorCount: batch.errorCount,
+            lastError: batch.lastErrorCode ? getErrorMessage(batch.lastErrorCode) : undefined,
+            averagePowerConsumption: batch.averagePowerConsumption,
+            peakPowerConsumption: batch.peakPowerConsumption,
+          },
+        };
+        
+        await analyticsRepository.saveEvent(telemetryEvent);
+      }
+      
+      // Also create a summary event for the batch
+      const batchEvent: TelemetryEvent = {
+        id: `telemetry-batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: Date.now(),
+        type: AnalyticsEventType.TELEMETRY_RECEIVED,
+        deviceId,
+        deviceName,
+        data: {
+          batchId: batch.batchId,
+          sessionCount: batch.sessionCount,
+          flashReads: batch.flashReads,
+          flashWrites: batch.flashWrites,
+          errorCount: batch.errorCount,
+          lastError: batch.lastErrorCode ? getErrorMessage(batch.lastErrorCode) : undefined,
+          averagePowerConsumption: batch.averagePowerConsumption,
+          peakPowerConsumption: batch.peakPowerConsumption,
+        },
+      };
+      await analyticsRepository.saveEvent(batchEvent);
+    } catch (error) {
+      console.error('Failed to process analytics batch:', error);
+    }
+  }, [getErrorMessage]);
 
   /**
    * Load active session on mount
@@ -211,5 +278,6 @@ export const useAnalytics = () => {
     trackConfigChange,
     trackProfileEvent,
     trackCommand,
+    processAnalyticsBatch,
   };
 };
