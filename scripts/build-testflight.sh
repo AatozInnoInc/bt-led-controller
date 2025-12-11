@@ -85,7 +85,6 @@ update_build_number() {
     print_info "Updating build number to: $NEW_BUILD"
     
     # Update app.json (works on both macOS and Linux)
-    # Note: Expo/EAS will automatically set CFBundleVersion in Info.plist from this value
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
         sed -i '' "s/\"buildNumber\": \"[^\"]*\"/\"buildNumber\": \"$NEW_BUILD\"/" app.json
@@ -94,7 +93,29 @@ update_build_number() {
         sed -i "s/\"buildNumber\": \"[^\"]*\"/\"buildNumber\": \"$NEW_BUILD\"/" app.json
     fi
     
-    print_success "Build number updated to $NEW_BUILD (Expo will set CFBundleVersion automatically)"
+    # Also update Info.plist CFBundleVersion to keep them in sync
+    # Note: CFBundleVersion is required in Info.plist for App Store submission
+    INFO_PLIST="ios/MyLedGuitarApp/Info.plist"
+    if [ -f "$INFO_PLIST" ]; then
+        print_info "Updating CFBundleVersion in Info.plist..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS - use plutil if available, otherwise sed with context
+            if command -v plutil &> /dev/null; then
+                plutil -replace CFBundleVersion -string "$NEW_BUILD" "$INFO_PLIST"
+            else
+                # Use sed with context to match CFBundleVersion specifically
+                sed -i '' "/<key>CFBundleVersion<\/key>/,/<\/string>/s/<string>[0-9]*<\/string>/<string>$NEW_BUILD<\/string>/" "$INFO_PLIST"
+            fi
+        else
+            # Linux - use sed with context to match CFBundleVersion specifically
+            sed -i "/<key>CFBundleVersion<\/key>/,/<\/string>/s/<string>[0-9]*<\/string>/<string>$NEW_BUILD<\/string>/" "$INFO_PLIST"
+        fi
+        print_success "Info.plist CFBundleVersion updated to $NEW_BUILD"
+    else
+        print_warning "Info.plist not found at $INFO_PLIST, skipping CFBundleVersion update"
+    fi
+    
+    print_success "Build number updated to $NEW_BUILD"
 }
 
 # Build the app
