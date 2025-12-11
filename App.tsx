@@ -113,6 +113,8 @@ const AppContent = () => {
                 options={{ 
                   headerShown: Platform.OS !== 'web',
                   presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                  gestureEnabled: Platform.OS === 'ios',
+                  gestureDirection: 'horizontal',
                   headerTransparent: true,
                   headerBackground: () => (
                     <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
@@ -127,6 +129,8 @@ const AppContent = () => {
                 options={{ 
                   headerShown: Platform.OS !== 'web',
                   presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                  gestureEnabled: Platform.OS === 'ios',
+                  gestureDirection: 'horizontal',
                   headerTransparent: true,
                   headerBackground: () => (
                     <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
@@ -141,6 +145,8 @@ const AppContent = () => {
                 options={{ 
                   headerShown: Platform.OS !== 'web',
                   presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                  gestureEnabled: Platform.OS === 'ios',
+                  gestureDirection: 'horizontal',
                   headerTransparent: true,
                   headerBackground: () => (
                     <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />

@@ -160,7 +160,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Check if user needs to complete their profile (signed in but missing name/email)
-  const needsProfileCompletion = !!user && (!user.firstName || !user.lastName || !user.email);
+  const needsProfileCompletion = !!user && (!user.firstName || !user.lastName);
 
   return (
     <UserContext.Provider
