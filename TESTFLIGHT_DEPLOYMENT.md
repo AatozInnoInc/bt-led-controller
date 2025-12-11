@@ -21,7 +21,7 @@ This guide walks you through the process of building and publishing your app to 
    ```
 
 2. **Apple Developer Account**: You need:
-   - An active Apple Developer Program membership ($99/year)
+   - An active Apple Developer Program membership
    - App Store Connect access
    - Your app registered in App Store Connect
 
@@ -103,11 +103,11 @@ npm run build:testflight
 ```
 
 This script will:
-1. ✅ Check EAS CLI installation
-2. ✅ Verify you're logged in
-3. ✅ Auto-increment build number
-4. ✅ Build the iOS app
-5. ✅ Prompt to submit to TestFlight
+1. Check EAS CLI installation
+2. Verify you're logged in
+3. Auto-increment build number
+4. Build the iOS app
+5. Prompt to submit to TestFlight
 
 ### Manual Process
 
@@ -119,7 +119,7 @@ The build script does this automatically, but you can manually update `app.json`
 
 ```json
 "ios": {
-  "buildNumber": "3"  // Increment this for each build
+  "buildNumber": "1"  // Increment this for each build
 }
 ```
 
