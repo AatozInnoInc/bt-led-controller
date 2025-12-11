@@ -85,6 +85,37 @@ The app requires Bluetooth permissions to function:
 - **Android**: Full native Bluetooth Low Energy support (requires development build)
 - **Web**: Web Bluetooth API support for testing and development
 
+## TestFlight Deployment
+
+This app is configured for TestFlight deployment using EAS (Expo Application Services).
+
+### Quick Start
+
+1. **First-time setup:**
+   ```bash
+   npm run eas:login
+   npx eas-cli build:configure
+   ```
+
+2. **Build and submit to TestFlight:**
+   ```bash
+   npm run build:testflight
+   ```
+
+### Available Commands
+
+- `npm run build:testflight` - Build and submit to TestFlight (automated)
+- `npm run build:testflight:no-submit` - Build only, don't submit
+- `npm run build:internal` - Build for internal distribution (standalone, no dev client)
+- `npm run eas:build:ios` - Manual iOS production build
+- `npm run eas:build:ios:internal` - Manual iOS internal distribution build
+- `npm run eas:submit` - Submit existing build to TestFlight
+- `npm run eas:whoami` - Check EAS login status
+
+### Documentation
+
+For detailed instructions, see [TESTFLIGHT_DEPLOYMENT.md](./TESTFLIGHT_DEPLOYMENT.md)
+
 ## Development
 
 ### Project Structure
