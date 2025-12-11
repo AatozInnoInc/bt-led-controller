@@ -85,6 +85,7 @@ update_build_number() {
     print_info "Updating build number to: $NEW_BUILD"
     
     # Update app.json (works on both macOS and Linux)
+    # Note: Expo/EAS will automatically set CFBundleVersion in Info.plist from this value
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
         sed -i '' "s/\"buildNumber\": \"[^\"]*\"/\"buildNumber\": \"$NEW_BUILD\"/" app.json
@@ -93,7 +94,7 @@ update_build_number() {
         sed -i "s/\"buildNumber\": \"[^\"]*\"/\"buildNumber\": \"$NEW_BUILD\"/" app.json
     fi
     
-    print_success "Build number updated to $NEW_BUILD"
+    print_success "Build number updated to $NEW_BUILD (Expo will set CFBundleVersion automatically)"
 }
 
 # Build the app
