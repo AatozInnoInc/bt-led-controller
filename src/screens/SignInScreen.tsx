@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Image, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useTheme } from '../contexts/ThemeContext';
+import { useUser } from '../contexts/UserContext';
 
 interface SignInScreenProps {
   onSignedIn: () => void;
@@ -13,7 +14,9 @@ interface SignInScreenProps {
 
 const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
   const { colors, isDark } = useTheme();
+  const { setUser } = useUser();
   const [isAppleAvailable, setIsAppleAvailable] = React.useState(false);
+  const [rememberMe, setRememberMe] = React.useState(true);
 
   React.useEffect(() => {
     if (Platform.OS === 'ios') {
@@ -33,6 +36,20 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
+      
+      console.log('Apple Sign-In credential received:', {
+        userId: credential.user,
+        email: credential.email === null ? 'null' : (credential.email === undefined ? 'undefined' : credential.email),
+        emailType: credential.email === null ? 'null' : (credential.email === undefined ? 'undefined' : 'string'),
+        fullName: credential.fullName === null ? 'null' : (credential.fullName === undefined ? 'undefined' : {
+          givenName: credential.fullName.givenName === null ? 'null' : (credential.fullName.givenName || 'empty string'),
+          familyName: credential.fullName.familyName === null ? 'null' : (credential.fullName.familyName || 'empty string'),
+        }),
+        fullNameType: credential.fullName === null ? 'null' : (credential.fullName === undefined ? 'undefined' : 'object'),
+      });
+      
+      // Save user data to context
+      await setUser(credential, { remember: rememberMe });
       // You could verify credential.identityToken on a server here.
       onSignedIn();
     } catch (error: any) {
@@ -75,7 +92,21 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
           <Text style={[styles.helper, { color: colors.textSecondary }]}>Apple Sign-In is not available on this device.</Text>
         )}
 
-        <TouchableOpacity onPress={onSignedIn} style={styles.secondaryCta}>
+        <View style={styles.rememberRow}>
+          <Text style={[styles.rememberLabel, { color: colors.text }]}>Keep me signed in</Text>
+          <Switch
+            value={rememberMe}
+            onValueChange={setRememberMe}
+            thumbColor={rememberMe ? colors.primary : isDark ? '#333' : '#ccc'}
+            trackColor={{ true: colors.primary, false: isDark ? '#555' : '#ddd' }}
+          />
+        </View>
+
+        <TouchableOpacity onPress={async () => {
+          // "Skip for now" - don't set user data, just proceed
+          console.log('User skipped sign-in');
+          onSignedIn();
+        }} style={styles.secondaryCta}>
           <Text style={[styles.secondaryCtaText, { color: colors.primary }]}>Skip for now</Text>
         </TouchableOpacity>
 
@@ -162,6 +193,17 @@ const styles = StyleSheet.create({
 		marginTop: 8,
 		textAlign: 'center',
 	},
+  rememberRow: {
+    marginTop: 16,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rememberLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });
 
 export default SignInScreen;

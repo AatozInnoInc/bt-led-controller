@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, View, Platform, Text } from 'react-native';
+import { StyleSheet, View, Platform, Text, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Import screens
@@ -24,6 +24,7 @@ import { theme } from './src/utils/theme';
 import CustomTabBar from './src/components/CustomTabBar';
 import SignInScreen from './src/screens/SignInScreen';
 import { ThemeProvider } from './src/contexts/ThemeContext';
+import { UserProvider, useUser } from './src/contexts/UserContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -72,82 +73,97 @@ function TabNavigator() {
   );
 }
 
-export default function App() {
-  const [isSignedIn, setIsSignedIn] = React.useState(false);
+const AppContent = () => {
+  const { isSignedIn, isReady } = useUser();
+  const [hasBypassedSignIn, setHasBypassedSignIn] = React.useState(false);
+
+  const shouldShowSignIn = Platform.OS === 'ios' && !isSignedIn && !hasBypassedSignIn;
 
   return (
-    <ThemeProvider>
     <SafeAreaProvider>
       <View style={styles.container}>
         <StatusBar style="light" />
-        {Platform.OS === 'ios' && !isSignedIn ? (
-          <SignInScreen onSignedIn={() => setIsSignedIn(true)} />
+        {!isReady ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.dark.primary} />
+          </View>
+        ) : shouldShowSignIn ? (
+          <SignInScreen onSignedIn={() => setHasBypassedSignIn(true)} />
         ) : (
-        <NavigationContainer theme={{
-          dark: true,
-          colors: {
-            primary: theme.dark.primary,
-            background: 'transparent',
-            card: theme.dark.surface,
-            text: theme.dark.text,
-            border: theme.dark.border,
-            notification: theme.dark.error,
-          },
-        }}>
-          <Stack.Navigator screenOptions={{ headerBackTitleVisible: false }}>
-            <Stack.Screen 
-              name="Main" 
-              component={TabNavigator} 
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen 
-              name="DeviceDiscovery" 
-              component={DeviceDiscoveryScreen as any}
-              options={{ 
-                headerShown: Platform.OS !== 'web',
-                presentation: Platform.OS === 'ios' ? 'modal' : 'card',
-                headerTransparent: true,
-                headerBackground: () => (
-                  <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
-                ),
-                headerTitle: 'Device Discovery',
-                headerTintColor: theme.dark.text,
-              }}
-            />
-            <Stack.Screen 
-              name="CreateProfile" 
-              component={CreateProfileScreen as any}
-              options={{ 
-                headerShown: Platform.OS !== 'web',
-                presentation: Platform.OS === 'ios' ? 'modal' : 'card',
-                headerTransparent: true,
-                headerBackground: () => (
-                  <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
-                ),
-                headerTitle: 'Create Profile',
-                headerTintColor: theme.dark.text,
-              }}
-            />
-            <Stack.Screen 
-              name="Analytics" 
-              component={AnalyticsScreen as any}
-              options={{ 
-                headerShown: Platform.OS !== 'web',
-                presentation: Platform.OS === 'ios' ? 'modal' : 'card',
-                headerTransparent: true,
-                headerBackground: () => (
-                  <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
-                ),
-                headerTitle: 'Analytics',
-                headerTintColor: theme.dark.text,
-                cardStyle: { flex: 1 },
-              }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
+          <NavigationContainer theme={{
+            dark: true,
+            colors: {
+              primary: theme.dark.primary,
+              background: 'transparent',
+              card: theme.dark.surface,
+              text: theme.dark.text,
+              border: theme.dark.border,
+              notification: theme.dark.error,
+            },
+          }}>
+            <Stack.Navigator screenOptions={{ headerBackTitleVisible: false }}>
+              <Stack.Screen 
+                name="Main" 
+                component={TabNavigator} 
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen 
+                name="DeviceDiscovery" 
+                component={DeviceDiscoveryScreen as any}
+                options={{ 
+                  headerShown: Platform.OS !== 'web',
+                  presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                  headerTransparent: true,
+                  headerBackground: () => (
+                    <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+                  ),
+                  headerTitle: 'Device Discovery',
+                  headerTintColor: theme.dark.text,
+                }}
+              />
+              <Stack.Screen 
+                name="CreateProfile" 
+                component={CreateProfileScreen as any}
+                options={{ 
+                  headerShown: Platform.OS !== 'web',
+                  presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                  headerTransparent: true,
+                  headerBackground: () => (
+                    <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+                  ),
+                  headerTitle: 'Create Profile',
+                  headerTintColor: theme.dark.text,
+                }}
+              />
+              <Stack.Screen 
+                name="Analytics" 
+                component={AnalyticsScreen as any}
+                options={{ 
+                  headerShown: Platform.OS !== 'web',
+                  presentation: Platform.OS === 'ios' ? 'modal' : 'card',
+                  headerTransparent: true,
+                  headerBackground: () => (
+                    <BlurView intensity={30} tint="dark" style={{ flex: 1 }} />
+                  ),
+                  headerTitle: 'Analytics',
+                  headerTintColor: theme.dark.text,
+                  cardStyle: { flex: 1 },
+                }}
+              />
+            </Stack.Navigator>
+          </NavigationContainer>
         )}
       </View>
     </SafeAreaProvider>
+  );
+};
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <UserProvider>
+        <AppContent />
+      </UserProvider>
     </ThemeProvider>
   );
 }
@@ -156,6 +172,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0a0a0a', // Set a dark default background
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
   },
 
   webHeader: {

@@ -21,7 +21,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.aatozinnovations.myledguitar",
-      "buildNumber": "2",
+      "buildNumber": "10",
       "supportsTablet": true,
       "icon": "./assets/icon.png",
       "usesAppleSignIn": true,
@@ -57,7 +57,8 @@
     "extra": {
       "eas": {
         "projectId": "3e9eae45-7e71-4e9a-b521-17f55238f77d"
-      }
+      },
+      "forceDevMode": true
     },
     "owner": "aatoz"
   }

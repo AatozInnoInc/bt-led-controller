@@ -10,6 +10,7 @@ import {
   Platform,
   TextInput,
   Linking,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
@@ -18,16 +19,45 @@ import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
 import { useTheme } from '../contexts/ThemeContext';
+import { useUser } from '../contexts/UserContext';
 
 const ProfileScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
   const { colors, isDark, setThemeMode } = useTheme();
+  const { user, updateName, clearUser, needsProfileCompletion } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
-  const [firstName, setFirstName] = React.useState('John');
-  const [lastName, setLastName] = React.useState('Doe');
-  const [email] = React.useState('john.doe@example.com'); // Apple-managed
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
   const [isEditingPersonal, setIsEditingPersonal] = React.useState(false);
+  const scrollViewRef = React.useRef<ScrollView>(null);
+  const firstNameInputRef = React.useRef<TextInput>(null);
+  const lastNameInputRef = React.useRef<TextInput>(null);
+  const editCardRef = React.useRef<View>(null);
+
+  // Update local state when user data changes
+  React.useEffect(() => {
+    if (user) {
+      console.log('ProfileScreen: User data updated', {
+        firstName: user.firstName || 'null',
+        lastName: user.lastName || 'null',
+        email: user.email || 'null',
+      });
+      setFirstName(user.firstName || '');
+      setLastName(user.lastName || '');
+      
+      // Auto-open edit form if profile is incomplete
+      if (needsProfileCompletion && !isEditingPersonal) {
+        setIsEditingPersonal(true);
+      }
+    } else {
+      console.log('ProfileScreen: No user data available');
+      setFirstName('');
+      setLastName('');
+    }
+  }, [user, needsProfileCompletion]);
+
+  const email = user?.email || '';
   
   const handleDarkModeToggle = (value: boolean) => {
     setThemeMode(value ? 'dark' : 'light');
@@ -39,20 +69,85 @@ const ProfileScreen: React.FC = () => {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: () => console.log('Logout') },
+        { 
+          text: 'Logout', 
+          style: 'destructive', 
+          onPress: async () => {
+            await clearUser();
+            // In a real app, you might navigate back to SignInScreen here
+            console.log('User logged out');
+          }
+        },
       ]
     );
   };
 
-  const handleSavePersonal = () => {
-    // In a real app, sync this to backend profile (still Apple-authenticated)
+  const handleSavePersonal = async () => {
+    // Save name changes to user context
+    await updateName(firstName.trim(), lastName.trim());
     setIsEditingPersonal(false);
   };
 
-  const openAppleAccount = () => {
-    Linking.openURL('https://appleid.apple.com/').catch(() => {
-      Alert.alert('Unable to open', 'Please manage your Apple ID from device settings or appleid.apple.com.');
-    });
+  const openAppleAccount = async () => {
+    if (Platform.OS === 'ios') {
+      // On iOS, try to open Settings > Passwords
+      // Note: App-Prefs: URLs are deprecated but may still work on some iOS versions
+      // For iOS 18+, users can access Passwords via the dedicated Passwords app
+      try {
+        // Try the Settings deep link first
+        const passwordsURL = 'App-Prefs:root=PASSWORDS';
+        const canOpen = await Linking.canOpenURL(passwordsURL);
+        if (canOpen) {
+          await Linking.openURL(passwordsURL);
+        } else {
+          // If Settings link doesn't work, show instructions
+          Alert.alert(
+            'Manage Apple Account',
+            'To manage your Apple ID password and security:\n\n1. Open the Passwords app (iOS 18+)\n2. Or go to Settings > [Your Name] > Sign-In & Security\n\nAlternatively, you can visit appleid.apple.com in Safari.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Open Safari', 
+                onPress: () => Linking.openURL('https://appleid.apple.com/')
+              }
+            ]
+          );
+        }
+      } catch (error) {
+        // Fallback to web
+        Linking.openURL('https://appleid.apple.com/').catch(() => {
+          Alert.alert('Unable to open', 'Please manage your Apple ID from device settings or appleid.apple.com.');
+        });
+      }
+    } else {
+      // On other platforms, open web
+      Linking.openURL('https://appleid.apple.com/').catch(() => {
+        Alert.alert('Unable to open', 'Please manage your Apple ID from device settings or appleid.apple.com.');
+      });
+    }
+  };
+
+  // Scroll to edit form when it opens
+  React.useEffect(() => {
+    if (isEditingPersonal && scrollViewRef.current && editCardRef.current) {
+      // Small delay to ensure the form is rendered
+      setTimeout(() => {
+        editCardRef.current?.measure((x, y, width, height, pageX, pageY) => {
+          scrollViewRef.current?.scrollTo({ y: pageY - 100, animated: true });
+        });
+      }, 300);
+    }
+  }, [isEditingPersonal]);
+
+  // Scroll to input when focused
+  const handleInputFocus = (inputRef: React.RefObject<TextInput>) => {
+    setTimeout(() => {
+      if (scrollViewRef.current && inputRef.current) {
+        inputRef.current.measure((x, y, width, height, pageX, pageY) => {
+          scrollViewRef.current?.scrollTo({ y: pageY - 150, animated: true });
+        });
+      }
+    }, 100);
   };
 
   const MenuItem: React.FC<{
@@ -117,10 +212,17 @@ const ProfileScreen: React.FC = () => {
         <View style={[styles.blobSecondary, { backgroundColor: isDark ? 'rgba(255,149,0,0.14)' : 'rgba(255,149,0,0.07)' }]} />
       </View>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
         <ScrollView 
+          ref={scrollViewRef}
           style={styles.container} 
           contentInsetAdjustmentBehavior="never"
           scrollIndicatorInsets={{ bottom: tabBarHeight }}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
       {/* Profile Header */}
@@ -133,8 +235,12 @@ const ProfileScreen: React.FC = () => {
             <Ionicons name="camera" size={16} color={colors.background} />
           </TouchableOpacity>
         </View>
-        <Text style={[styles.userName, { color: colors.text }]}>{`${firstName} ${lastName}`}</Text>
-        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{email}</Text>
+        <Text style={[styles.userName, { color: colors.text }]}>
+          {firstName || lastName ? `${firstName} ${lastName}`.trim() : 'User'}
+        </Text>
+        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
+          {email || 'Email not available'}
+        </Text>
         <TouchableOpacity style={[styles.editProfileButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.editProfileText, { color: colors.text }]}>Edit Profile</Text>
         </TouchableOpacity>
@@ -143,11 +249,19 @@ const ProfileScreen: React.FC = () => {
       {/* Account Section */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+        {needsProfileCompletion && (
+          <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.infoBanner, { backgroundColor: colors.warning || '#FFA500', borderColor: colors.border }]}>
+            <Ionicons name="information-circle" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={[styles.infoBannerText, { color: '#FFFFFF' }]}>
+              Apple only provides your name and email on first sign-in. Please complete your profile below.
+            </Text>
+          </BlurView>
+        )}
         <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MenuItem
             icon="person-circle"
             title="Personal Information"
-            subtitle="Manage your account details"
+            subtitle={needsProfileCompletion ? "Complete your profile" : "Manage your account details"}
             onPress={() => setIsEditingPersonal((prev) => !prev)}
             themeColors={colors}
           />
@@ -283,6 +397,7 @@ const ProfileScreen: React.FC = () => {
         />
       </View>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
@@ -427,6 +542,19 @@ const styles = StyleSheet.create({
   },
   menuItemSubtitle: {
     fontSize: 14,
+  },
+  infoBanner: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   editCard: {
     margin: 16,

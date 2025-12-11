@@ -15,6 +15,7 @@ import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
+import Constants from 'expo-constants';
 import { useTheme } from '../contexts/ThemeContext';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
@@ -30,7 +31,8 @@ import { BluetoothDevice } from '../types/bluetooth';
 import { hsvToRgb, rgbToHsv, hsvToHex, hexToHsv } from '../utils/colorUtils';
 
 // Development mode: Set to true to test UI without a real device connection
-const DEV_MODE = __DEV__; // Automatically true in development builds
+const forceDevMode = Constants.expoConfig?.extra?.forceDevMode === true;
+const DEV_MODE = __DEV__ || forceDevMode; // Enable in dev and TestFlight (via config)
 
 // Mock device for development/testing
 const MOCK_DEVICE: BluetoothDevice = {

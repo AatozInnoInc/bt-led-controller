@@ -10,7 +10,17 @@
     "prebuild": "expo prebuild",
     "build:ios": "expo run:ios",
     "build:android": "expo run:android",
-    "clean": "expo prebuild --clean"
+    "clean": "expo prebuild --clean",
+    "build:testflight": "./scripts/build-testflight.sh",
+    "build:testflight:no-submit": "./scripts/build-testflight.sh --no-submit",
+    "build:internal": "./scripts/build-testflight.sh --profile preview --no-submit",
+    "eas:build:ios": "npx eas-cli build --platform ios --profile production",
+    "eas:build:ios:preview": "npx eas-cli build --platform ios --profile preview",
+    "eas:build:ios:internal": "npx eas-cli build --platform ios --profile preview",
+    "eas:submit": "npx eas-cli submit --platform ios --profile production",
+    "eas:whoami": "npx eas-cli whoami",
+    "eas:login": "npx eas-cli login",
+    "eas:install": "npm install -g eas-cli"
   },
   "dependencies": {
     "@expo/cli": "^0.24.20",
