@@ -21,7 +21,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.aatozinnovations.myledguitar",
-      "buildNumber": "12",
+      "buildNumber": "13",
       "supportsTablet": true,
       "icon": "./assets/icon.png",
       "usesAppleSignIn": true,
