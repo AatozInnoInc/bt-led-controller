@@ -21,11 +21,12 @@
     },
     "ios": {
       "bundleIdentifier": "com.aatozinnovations.myledguitar",
-      "buildNumber": "10",
+      "buildNumber": "12",
       "supportsTablet": true,
       "icon": "./assets/icon.png",
       "usesAppleSignIn": true,
       "infoPlist": {
+        "CFBundleDisplayName": "My LED Guitar",
         "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to your LED guitar controller",
         "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to your LED guitar controller",
         "ITSAppUsesNonExemptEncryption": false
