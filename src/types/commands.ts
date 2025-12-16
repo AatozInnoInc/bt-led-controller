@@ -4,13 +4,16 @@
  */
 
 export enum CommandType {
-  ENTER_CONFIG = 0x10,
-  EXIT_CONFIG = 0x11,
-  COMMIT_CONFIG = 0x12,
-  UPDATE_PARAM = 0x02,
-  UPDATE_COLOR = 0x03, // Update HSV color as single command (payload: [H, S, V])
-  REQUEST_ANALYTICS = 0x20, // Request analytics batch from controller
-  CONFIRM_ANALYTICS = 0x21, // Confirm receipt of analytics batch
+  ENTER_CONFIG        = 0x10,
+  EXIT_CONFIG         = 0x11,
+  COMMIT_CONFIG       = 0x12,
+  CLAIM_DEVICE        = 0x13, // Claim device ownership (one-time, sets owner)
+  VERIFY_OWNERSHIP    = 0x14, // Verify user can access device (per-session)
+  UNCLAIM_DEVICE      = 0x15, // Unclaim device ownership (removes owner)
+  UPDATE_PARAM        = 0x02,
+  UPDATE_COLOR        = 0x03, // Update HSV color as single command (payload: [H, S, V])
+  REQUEST_ANALYTICS   = 0x20, // Request analytics batch from controller
+  CONFIRM_ANALYTICS   = 0x21, // Confirm receipt of analytics batch
 }
 
 export enum ResponseType {

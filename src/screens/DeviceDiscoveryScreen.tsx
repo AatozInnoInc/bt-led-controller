@@ -19,6 +19,8 @@ import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothService } from '../utils/bluetoothService';
 import { isPotentialMicrocontroller } from '../utils/bleUtils';
 import { useBluetooth } from '../hooks/useBluetooth';
+import { getUserPairedDevices, isDevicePaired, getDeviceOwner } from '../utils/devicePairing';
+import { useUser } from '../contexts/UserContext';
 
 // Type declaration for web platform window object
 declare const window: { confirm?: (message?: string) => boolean } | undefined;
@@ -29,6 +31,7 @@ interface DeviceDiscoveryScreenProps {
 
 const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigation }) => {
   const { colors, isDark } = useTheme();
+  const { user } = useUser();
   const {
     isScanning,
     isConnecting,
@@ -51,6 +54,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   // moved into useBluetooth hook
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('all');
+  const [pairedDeviceIds, setPairedDeviceIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     initialize();
@@ -61,12 +65,35 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     };
   }, []);
 
+  // Load paired devices on mount and when user changes
+  useEffect(() => {
+    const loadPairedDevices = async () => {
+      if (user?.userId) {
+        try {
+          const paired = await getUserPairedDevices(user.userId);
+          const deviceIds = new Set(paired.map(d => d.deviceId));
+          setPairedDeviceIds(deviceIds);
+        } catch (error) {
+          console.error('Failed to load paired devices:', error);
+        }
+      } else {
+        setPairedDeviceIds(new Set());
+      }
+    };
+    loadPairedDevices();
+  }, [user?.userId]);
+
   // moved to useBluetooth hook
 
   // moved to utils/bleUtils
 
   const getFilteredDevices = (): BluetoothDevice[] => {
     let filtered = devices;
+    
+    // Filter out devices already paired to current user (they will auto-connect)
+    if (user?.userId) {
+      filtered = filtered.filter(device => !pairedDeviceIds.has(device.id));
+    }
     
     // Apply search filter
     if (searchQuery) {

@@ -11,6 +11,8 @@ export enum ErrorCode {
   ALREADY_IN_CONFIG_MODE = 0x05,
   FLASH_WRITE_FAILED = 0x06,
   VALIDATION_FAILED = 0x07,
+  NOT_OWNER = 0x08, // User is not the owner and not a developer/test user
+  ALREADY_CLAIMED = 0x09, // Device already has an owner
   UNKNOWN_ERROR = 0xFF,
 }
 

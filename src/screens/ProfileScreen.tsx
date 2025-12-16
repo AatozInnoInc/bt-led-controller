@@ -88,7 +88,7 @@ const ProfileScreen: React.FC = () => {
     setIsEditingPersonal(false);
   };
 
-  const openAppleAccount = async () => {
+  const openAccountManagement = async () => {
     if (Platform.OS === 'ios') {
       // On iOS, try to open Settings > Passwords
       // Note: App-Prefs: URLs are deprecated but may still work on some iOS versions
@@ -102,7 +102,7 @@ const ProfileScreen: React.FC = () => {
         } else {
           // If Settings link doesn't work, show instructions
           Alert.alert(
-            'Manage Apple Account',
+            user?.authProvider === 'apple' ? 'Manage Apple Account' : 'Manage Google Account',
             'To manage your Apple ID password and security:\n\n1. Open the Passwords app (iOS 18+)\n2. Or go to Settings > [Your Name] > Sign-In & Security\n\nAlternatively, you can visit appleid.apple.com in Safari.',
             [
               { text: 'Cancel', style: 'cancel' },
@@ -241,6 +241,11 @@ const ProfileScreen: React.FC = () => {
         <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
           {email || 'Email not available'}
         </Text>
+        {user?.authProvider && (
+          <Text style={[styles.authProvider, { color: colors.textSecondary }]}>
+            Signed in with {user.authProvider === 'apple' ? 'Apple' : 'Google'}
+          </Text>
+        )}
         <TouchableOpacity style={[styles.editProfileButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.editProfileText, { color: colors.text }]}>Edit Profile</Text>
         </TouchableOpacity>
@@ -300,9 +305,9 @@ const ProfileScreen: React.FC = () => {
           )}
           <MenuItem
             icon="lock-closed"
-            title="Manage Apple Account"
-            subtitle="Password, 2FA, recovery are handled by Apple"
-            onPress={openAppleAccount}
+            title={user?.authProvider === 'apple' ? 'Manage Apple Account' : 'Manage Google Account'}
+            subtitle={`Password, 2FA, recovery are handled by ${user?.authProvider === 'apple' ? 'Apple' : 'Google'}`}
+            onPress={openAccountManagement}
             themeColors={colors}
           />
         </BlurView>
@@ -479,7 +484,12 @@ const styles = StyleSheet.create({
   },
   userEmail: {
     fontSize: 16,
+    marginBottom: 8,
+  },
+  authProvider: {
+    fontSize: 13,
     marginBottom: 20,
+    fontStyle: 'italic',
   },
   editProfileButton: {
     paddingHorizontal: 20,

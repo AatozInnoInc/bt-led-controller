@@ -7,6 +7,9 @@ import { CommandType, ResponseType, ParameterId, BLECommand, CommandResponse, Up
 import { ErrorEnvelope, ErrorCode, BLEError } from '../types/errors';
 import { HSVColor } from '../types/config';
 
+// TODO: This class has a lot of data arrangement and some code duplication.
+// We need to set up tests for every command
+// We also may want to incorporate an ACL
 export class BLECommandEncoder {
   /**
    * Encode a command to Uint8Array for BLE transmission
@@ -86,6 +89,59 @@ export class BLECommandEncoder {
     payload[0] = Math.max(0, Math.min(255, batchId));
     return this.encodeCommand({
       type: CommandType.CONFIRM_ANALYTICS,
+      payload,
+    });
+  }
+
+  /**
+   * Helper to encode user ID into payload format: [userId_length, userId_bytes...]
+   * Returns the payload array
+   */
+  private static encodeUserIdPayload(userId: string): Uint8Array {
+    const userIdBytes = new TextEncoder().encode(userId);
+    if (userIdBytes.length > 64) {
+      throw new Error('User ID too long (max 64 bytes)');
+    }
+    
+    const payload = new Uint8Array(1 + userIdBytes.length);
+    payload[0] = userIdBytes.length;
+    payload.set(userIdBytes, 1);
+    
+    return payload;
+  }
+
+  /**
+   * Encode Claim Device command
+   * Payload: [userId_length, userId_bytes...]
+   */
+  static encodeClaimDevice(userId: string): Uint8Array {
+    const payload = this.encodeUserIdPayload(userId);
+    return this.encodeCommand({
+      type: CommandType.CLAIM_DEVICE,
+      payload,
+    });
+  }
+
+  /**
+   * Encode Verify Ownership command
+   * Payload: [userId_length, userId_bytes...]
+   */
+  static encodeVerifyOwnership(userId: string): Uint8Array {
+    const payload = this.encodeUserIdPayload(userId);
+    return this.encodeCommand({
+      type: CommandType.VERIFY_OWNERSHIP,
+      payload,
+    });
+  }
+
+  /**
+   * Encode Unclaim Device command
+   * Payload: [userId_length, userId_bytes...]
+   */
+  static encodeUnclaimDevice(userId: string): Uint8Array {
+    const payload = this.encodeUserIdPayload(userId);
+    return this.encodeCommand({
+      type: CommandType.UNCLAIM_DEVICE,
       payload,
     });
   }
@@ -259,6 +315,10 @@ export class BLECommandEncoder {
         return 'Failed to write to flash memory';
       case ErrorCode.VALIDATION_FAILED:
         return 'Configuration validation failed';
+      case ErrorCode.NOT_OWNER:
+        return 'You are not the owner of this device';
+      case ErrorCode.ALREADY_CLAIMED:
+        return 'Device is already claimed by another user';
       default:
         return 'Unknown error';
     }

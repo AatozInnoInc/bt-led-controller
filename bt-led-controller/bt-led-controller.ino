@@ -33,6 +33,9 @@ enum CommandType : uint8_t {
   CMD_UPDATE_COLOR  = 0x03,
   CMD_REQUEST_ANALYTICS = 0x20,
   CMD_CONFIRM_ANALYTICS  = 0x21,
+  CMD_CLAIM_DEVICE = 0x13,      // Claim device ownership (one-time, sets owner)
+  CMD_VERIFY_OWNERSHIP = 0x14,  // Verify user can access device (per-session)
+  CMD_UNCLAIM_DEVICE = 0x15,    // Unclaim device ownership (removes owner)
 };
 
 enum ResponseType : uint8_t {
@@ -52,14 +55,16 @@ enum ParameterId : uint8_t {
 };
 
 enum ErrorCode : uint8_t {
-  ERR_INVALID_COMMAND     = 0x01,
-  ERR_INVALID_PARAMETER   = 0x02,
-  ERR_OUT_OF_RANGE        = 0x03,
-  ERR_NOT_IN_CONFIG_MODE  = 0x04,
-  ERR_ALREADY_IN_CONFIG   = 0x05,
-  ERR_FLASH_WRITE_FAILED  = 0x06,
-  ERR_VALIDATION_FAILED   = 0x07,
-  ERR_UNKNOWN             = 0xFF,
+  ERR_INVALID_COMMAND      = 0x01,
+  ERR_INVALID_PARAMETER    = 0x02,
+  ERR_OUT_OF_RANGE         = 0x03,
+  ERR_NOT_IN_CONFIG_MODE   = 0x04,
+  ERR_ALREADY_IN_CONFIG    = 0x05,
+  ERR_FLASH_WRITE_FAILED   = 0x06,
+  ERR_VALIDATION_FAILED    = 0x07,
+  ERR_NOT_OWNER            = 0x08,  // User is not the owner and not a developer/test user
+  ERR_ALREADY_CLAIMED      = 0x09,  // Device already has an owner
+  ERR_UNKNOWN              = 0xFF,
 };
 
 // --------- Config Structures ---------
@@ -76,6 +81,12 @@ struct Config {
   uint8_t effectType; // 0-5
   bool powerState;    // on/off
 };
+
+// --------- Ownership Structures ---------
+#define MAX_USER_ID_LENGTH 64  // Maximum length for user ID string
+char ownerUserId[MAX_USER_ID_LENGTH + 1] = {0};  // Owner user ID (null-terminated string)
+char verifiedUserId[MAX_USER_ID_LENGTH + 1] = {0}; // Verified user ID for current session (cleared on disconnect)
+bool hasOwner = false;  // True if device has been claimed
 
 // --------- Analytics Structures ---------
 struct AnalyticsSession {
@@ -100,10 +111,12 @@ struct AnalyticsData {
   bool hasData;                     // True if this batch has data to send
 };
 
-// Combined storage structure (bundled config + analytics to minimize flash ops)
+// Combined storage structure (bundled config + analytics + owner to minimize flash ops)
 struct PersistentData {
   Config config;
   AnalyticsData analytics;
+  char ownerUserId[MAX_USER_ID_LENGTH + 1]; // Owner user ID (null-terminated string)
+  bool hasOwner;  // True if device has been claimed
   uint8_t magic; // Magic number to verify data integrity (0xAA)
 };
 
@@ -118,6 +131,21 @@ Config currentConfig = {
 
 Config pendingConfig = currentConfig;
 bool inConfigMode = false;
+
+// --------- Ownership & Security ---------
+
+// Developer/test user IDs (hardcoded for now, can be read from config file)
+// These users can ALWAYS access the device, even if not the owner
+const char* DEVELOPER_USER_IDS[] = {
+  // Add developer user IDs here (comma-separated, max 10)
+  // Example: "000705.a1f264ac9b024361b8d829d3724dea86.2039",
+  nullptr  // Terminator
+};
+
+const char* TEST_USER_IDS[] = {
+  // Add test user IDs here (comma-separated, max 10)
+  nullptr  // Terminator
+};
 
 // --------- Analytics State ---------
 AnalyticsData currentAnalytics = {0};
@@ -152,13 +180,91 @@ BLEDfu  bledfu;
 BLEDis  bledis;
 BLEUart bleuart;
 
-// Connection callback to auto-send analytics
+// Check if user ID is a developer or test user
+bool isDeveloperOrTestUser(const char* userId) {
+  if (!userId || strlen(userId) == 0) return false;
+  
+  // Check developer list
+  for (int i = 0; DEVELOPER_USER_IDS[i] != nullptr; i++) {
+    if (strcmp(userId, DEVELOPER_USER_IDS[i]) == 0) {
+      return true;
+    }
+  }
+  
+  // Check test list
+  for (int i = 0; TEST_USER_IDS[i] != nullptr; i++) {
+    if (strcmp(userId, TEST_USER_IDS[i]) == 0) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Check if user has verified ownership for this session
+bool isOwnershipVerified() {
+  return strlen(verifiedUserId) > 0;
+}
+
+// Helper function to read user ID from BLE (DRY)
+// Returns true if successful, false on error (error already sent)
+bool readUserIdFromBle(char* userId, uint8_t maxLen) {
+  if (!bleuart.available()) {
+    sendError(ERR_INVALID_PARAMETER);
+    return false;
+  }
+  
+  // Read user ID length (1 byte)
+  uint8_t userIdLen = bleuart.read();
+  if (userIdLen == 0 || userIdLen > maxLen) {
+    sendError(ERR_INVALID_PARAMETER);
+    return false;
+  }
+  
+  // Read user ID bytes
+  memset(userId, 0, maxLen + 1);
+  for (uint8_t i = 0; i < userIdLen; i++) {
+    if (!bleuart.available()) {
+      sendError(ERR_INVALID_PARAMETER);
+      return false;
+    }
+    userId[i] = (char)bleuart.read();
+  }
+  userId[userIdLen] = '\0';
+  
+  return true;
+}
+
+// Helper macro to check ownership at start of command handlers
+// Returns early if ownership check fails
+#define CHECK_OWNERSHIP_OR_RETURN() \
+  do { \
+    if (hasOwner && !isOwnershipVerified()) { \
+      sendError(ERR_NOT_OWNER); \
+      return; \
+    } \
+  } while(0)
+
+// Clear session ownership (called on disconnect)
+void clearSessionOwnership() {
+  memset(verifiedUserId, 0, sizeof(verifiedUserId));
+}
+
+// Connection callback to auto-send analytics and clear session ownership
 void connect_callback(uint16_t conn_handle) {
+  // Clear previous session ownership
+  clearSessionOwnership();
+  
   // Auto-send analytics on connection if there are completed sessions
   delay(500); // Wait for connection to stabilize
   if (currentAnalytics.hasData && currentAnalytics.sessionCount > 0) {
     sendAnalyticsBatch();
   }
+}
+
+// Disconnection callback to clear session ownership
+void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
+  clearSessionOwnership();
 }
 
 // --------- Helpers ---------
@@ -283,6 +389,8 @@ void sendError(ErrorCode code) {
     case ERR_ALREADY_IN_CONFIG: Serial.print("ALREADY_IN_CONFIG"); break;
     case ERR_FLASH_WRITE_FAILED: Serial.print("FLASH_WRITE_FAILED"); break;
     case ERR_VALIDATION_FAILED: Serial.print("VALIDATION_FAILED"); break;
+    case ERR_NOT_OWNER: Serial.print("NOT_OWNER"); break;
+    case ERR_ALREADY_CLAIMED: Serial.print("ALREADY_CLAIMED"); break;
     default: Serial.print("UNKNOWN"); break;
   }
   Serial.println(")");
@@ -304,6 +412,11 @@ void loadPersistentData() {
       if (data.magic == FLASH_MAGIC_VALUE) {
         currentConfig = data.config;
         currentAnalytics = data.analytics;
+        // Load owner data from bundled structure
+        strncpy(ownerUserId, data.ownerUserId, MAX_USER_ID_LENGTH);
+        ownerUserId[MAX_USER_ID_LENGTH] = '\0';
+        hasOwner = data.hasOwner;
+        
         if (currentAnalytics.batchId >= nextBatchId) {
           nextBatchId = currentAnalytics.batchId + 1;
         }
@@ -313,6 +426,12 @@ void loadPersistentData() {
         flashWriteCount = max(flashWriteCount, currentAnalytics.flashWrites);
         errorCount = max(errorCount, currentAnalytics.errorCount);
         Serial.println("[FLASH] Loaded persistent data successfully");
+        if (hasOwner) {
+          Serial.print("[OWNERSHIP] Loaded owner: ");
+          Serial.println(ownerUserId);
+        } else {
+          Serial.println("[OWNERSHIP] No owner found - device is unclaimed");
+        }
         return;
       } else {
         Serial.print("[FLASH] WARNING: Invalid magic number (0x");
@@ -335,11 +454,17 @@ void loadPersistentData() {
   currentAnalytics.batchId = nextBatchId++;
 }
 
+// Ownership data is now bundled with PersistentData - no separate load/save needed
+
 void savePersistentData() {
   updateFlashCounters(); // Update counters before saving
   PersistentData data;
   data.config = currentConfig;
   data.analytics = currentAnalytics;
+  // Save owner data in bundled structure
+  strncpy(data.ownerUserId, ownerUserId, MAX_USER_ID_LENGTH);
+  data.ownerUserId[MAX_USER_ID_LENGTH] = '\0';
+  data.hasOwner = hasOwner;
   data.magic = FLASH_MAGIC_VALUE;
   
   File file(InternalFS);
@@ -546,10 +671,16 @@ void sendAnalyticsBatch() {
 }
 
 void handleRequestAnalytics() {
+  // Analytics can be requested without ownership (read-only operation)
+  // But if device has owner, verify ownership
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   sendAnalyticsBatch();
 }
 
 void handleConfirmAnalytics() {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   if (!bleuart.available()) {
     sendError(ERR_INVALID_PARAMETER);
     return;
@@ -572,8 +703,128 @@ void handleConfirmAnalytics() {
   }
 }
 
+// --------- Ownership Command Handlers ---------
+void handleClaimDevice() {
+  char userId[MAX_USER_ID_LENGTH + 1] = {0};
+  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) {
+    return; // Error already sent
+  }
+  
+  // Check if device is already claimed
+  if (hasOwner) {
+    // Allow developer/test users to reclaim, or if it's the same owner
+    if (isDeveloperOrTestUser(userId) || strcmp(userId, ownerUserId) == 0) {
+      // Update owner (developer reclaim or same owner)
+      strncpy(ownerUserId, userId, MAX_USER_ID_LENGTH);
+      ownerUserId[MAX_USER_ID_LENGTH] = '\0';
+      savePersistentData(); // Save bundled data
+      sendAckSuccess();
+      Serial.print("[OWNERSHIP] Device reclaimed by: ");
+      Serial.println(userId);
+    } else {
+      sendError(ERR_ALREADY_CLAIMED);
+      Serial.print("[OWNERSHIP] Claim rejected - device already owned by: ");
+      Serial.println(ownerUserId);
+    }
+  } else {
+    // Device is unclaimed - allow anyone to claim it
+    strncpy(ownerUserId, userId, MAX_USER_ID_LENGTH);
+    ownerUserId[MAX_USER_ID_LENGTH] = '\0';
+    hasOwner = true;
+    savePersistentData(); // Save bundled data (config + analytics + owner)
+    sendAckSuccess();
+    Serial.print("[OWNERSHIP] Device claimed by: ");
+    Serial.println(userId);
+  }
+}
+
+void handleVerifyOwnership() {
+  char userId[MAX_USER_ID_LENGTH + 1] = {0};
+  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) {
+    return; // Error already sent
+  }
+  
+  // Check ownership: owner, developer, or test user
+  bool isAuthorized = false;
+  
+  if (!hasOwner) {
+    // No owner - anyone can access
+    isAuthorized = true;
+  } else if (strcmp(userId, ownerUserId) == 0) {
+    // User is the owner
+    isAuthorized = true;
+  } else if (isDeveloperOrTestUser(userId)) {
+    // User is a developer or test user - always allowed
+    isAuthorized = true;
+  }
+  
+  if (isAuthorized) {
+    // Store verified user ID for this session
+    strncpy(verifiedUserId, userId, MAX_USER_ID_LENGTH);
+    verifiedUserId[MAX_USER_ID_LENGTH] = '\0';
+    sendAckSuccess();
+    Serial.print("[OWNERSHIP] Ownership verified for: ");
+    Serial.println(userId);
+  } else {
+    sendError(ERR_NOT_OWNER);
+    Serial.print("[OWNERSHIP] Ownership verification failed for: ");
+    Serial.println(userId);
+  }
+}
+
+void handleUnclaimDevice() {
+  char userId[MAX_USER_ID_LENGTH + 1] = {0};
+  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) {
+    return; // Error already sent
+  }
+  
+  // Only owner or developer/test users can unclaim
+  if (!hasOwner) {
+    // Device is already unclaimed
+    sendAckSuccess();
+    return;
+  }
+  
+  // Check if user is authorized to unclaim
+  bool isAuthorized = false;
+  if (strcmp(userId, ownerUserId) == 0) {
+    // User is the owner
+    isAuthorized = true;
+  } else if (isDeveloperOrTestUser(userId)) {
+    // User is a developer or test user - always allowed
+    isAuthorized = true;
+  }
+  
+  if (isAuthorized) {
+    // Clear owner
+    memset(ownerUserId, 0, sizeof(ownerUserId));
+    hasOwner = false;
+    savePersistentData(); // Save bundled data
+    sendAckSuccess();
+    Serial.println("[OWNERSHIP] Device unclaimed");
+  } else {
+    sendError(ERR_NOT_OWNER);
+    Serial.print("[OWNERSHIP] Unclaim rejected - not authorized: ");
+    Serial.println(userId);
+  }
+}
+
+// Check if command requires ownership verification
+bool requiresOwnershipVerification(uint8_t cmd) {
+  // CMD_VERIFY_OWNERSHIP can always be called
+  if (cmd == CMD_VERIFY_OWNERSHIP) return false;
+  
+  // If device has no owner, no verification needed
+  if (!hasOwner) return false;
+  
+  // All other commands require verification
+  return true;
+}
+
 // --------- Command Handlers ---------
 void handleEnterConfig() {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   if (inConfigMode) {
     sendError(ERR_ALREADY_IN_CONFIG);
     return;
@@ -586,11 +837,15 @@ void handleEnterConfig() {
 }
 
 void handleExitConfig() {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   inConfigMode = false;
   sendAckSuccess();
 }
 
 void handleCommitConfig() {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   if (!inConfigMode) {
     sendError(ERR_NOT_IN_CONFIG_MODE);
     return;
@@ -622,6 +877,8 @@ bool applyParameter(ParameterId pid, uint8_t value, Config& cfg) {
 }
 
 void handleUpdateParameter(uint8_t pidRaw, uint8_t val) {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   if (!inConfigMode) {
     sendError(ERR_NOT_IN_CONFIG_MODE);
     return;
@@ -656,6 +913,8 @@ void handleUpdateParameter(uint8_t pidRaw, uint8_t val) {
 }
 
 void handleUpdateColor(uint8_t h, uint8_t s, uint8_t v) {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
   if (!inConfigMode) {
     sendError(ERR_NOT_IN_CONFIG_MODE);
     return;
@@ -706,6 +965,15 @@ void processCommand() {
     case CMD_CONFIRM_ANALYTICS:
       handleConfirmAnalytics();
       break;
+    case CMD_CLAIM_DEVICE:
+      handleClaimDevice();
+      break;
+    case CMD_VERIFY_OWNERSHIP:
+      handleVerifyOwnership();
+      break;
+    case CMD_UNCLAIM_DEVICE:
+      handleUnclaimDevice();
+      break;
     default:
       sendError(ERR_INVALID_COMMAND);
       break;
@@ -750,13 +1018,14 @@ void setup() {
     Serial.println("[FLASH] InternalFS mounted successfully");
   }
   
-  // Load persistent data (config + analytics bundled)
+  // Load persistent data (config + analytics + owner bundled)
   loadPersistentData();
   
   // BLE init
   Bluefruit.begin();
   Bluefruit.setTxPower(4);
   Bluefruit.Periph.setConnectCallback(connect_callback);
+  Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
 
   bledfu.begin();
   bledis.setManufacturer("LED Guitar");

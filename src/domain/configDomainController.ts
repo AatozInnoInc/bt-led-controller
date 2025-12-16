@@ -10,11 +10,32 @@ import { configRepository } from '../repositories/configRepository';
 import { configurationModule } from './configurationModule';
 import { BLECommandEncoder } from '../utils/bleCommandEncoder';
 import { bluetoothService } from '../utils/bluetoothService';
+import { pairDevice, isDevicePaired } from '../utils/devicePairing';
 
 export class ConfigDomainController {
   private deviceId: string | null = null;
   private currentConfig: LEDConfig = { ...DEFAULT_CONFIG };
   private pendingConfig: LEDConfig | null = null;
+
+  /**
+   * Helper to check if device is connected (DRY)
+   */
+  private async ensureDeviceConnected(): Promise<void> {
+    if (!this.deviceId) {
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'No device connected',
+      });
+    }
+
+    const isConnected = await bluetoothService.isDeviceConnected(this.deviceId);
+    if (!isConnected) {
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'Device is not connected. Please reconnect and try again.',
+      });
+    }
+  }
 
   /**
    * Initialize configuration for a device
@@ -38,21 +59,7 @@ export class ConfigDomainController {
    * Enter configuration mode
    */
   async enterConfigMode(): Promise<boolean> {
-    if (!this.deviceId) {
-      throw new BLEError({
-        code: ErrorCode.UNKNOWN_ERROR,
-        message: 'No device connected',
-      });
-    }
-
-    // Check if device is actually connected before entering config mode
-    const isConnected = await bluetoothService.isDeviceConnected(this.deviceId);
-    if (!isConnected) {
-      throw new BLEError({
-        code: ErrorCode.UNKNOWN_ERROR,
-        message: 'Device is not connected. Please reconnect and try again.',
-      });
-    }
+    await this.ensureDeviceConnected();
 
     if (configurationModule.isInConfigMode()) {
       return true; // Already in config mode
@@ -116,9 +123,7 @@ export class ConfigDomainController {
    * Sends HSV as a single command for efficiency
    */
   async updateColor(color: HSVColor): Promise<void> {
-    if (!this.deviceId) {
-      throw new Error('No device connected');
-    }
+    await this.ensureDeviceConnected();
 
     // Ensure we're in config mode
     if (!configurationModule.isInConfigMode()) {
@@ -162,9 +167,7 @@ export class ConfigDomainController {
    * Update a parameter in real-time
    */
   async updateParameter(parameterId: ParameterId, value: number): Promise<void> {
-    if (!this.deviceId) {
-      throw new Error('No device connected');
-    }
+    await this.ensureDeviceConnected();
 
     // Ensure we're in config mode
     if (!configurationModule.isInConfigMode()) {
@@ -232,9 +235,7 @@ export class ConfigDomainController {
    * Save configuration to flash memory
    */
   async saveConfiguration(): Promise<void> {
-    if (!this.deviceId) {
-      throw new Error('No device connected');
-    }
+    await this.ensureDeviceConnected();
 
     if (!configurationModule.isInConfigMode()) {
       throw new Error('Not in configuration mode');
@@ -297,6 +298,140 @@ export class ConfigDomainController {
    */
   hasPendingChanges(): boolean {
     return this.pendingConfig !== null;
+  }
+
+  /**
+   * Claim device ownership (one-time operation)
+   */
+  async claimDevice(deviceId: string, userId: string, deviceName?: string): Promise<void> {
+    if (!deviceId) {
+      throw new Error('Device ID is required');
+    }
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+
+    // Check if device is actually connected
+    const isConnected = await bluetoothService.isDeviceConnected(deviceId);
+    if (!isConnected) {
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'Device is not connected. Please connect and try again.',
+      });
+    }
+
+    try {
+      const command = BLECommandEncoder.encodeClaimDevice(userId);
+      const response = await bluetoothService.sendCommand(deviceId, command);
+      
+      if (!response.isSuccess) {
+        throw new BLEError({
+          code: ErrorCode.UNKNOWN_ERROR,
+          message: 'Failed to claim device',
+        });
+      }
+
+      // Store pairing in AsyncStorage
+      await pairDevice(deviceId, userId, deviceName);
+      
+      // Verify ownership for this session
+      await this.verifyOwnership(deviceId, userId);
+    } catch (error) {
+      if (error instanceof BLEError) {
+        throw error;
+      }
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: `Failed to claim device: ${(error as Error).message}`,
+      });
+    }
+  }
+
+  /**
+   * Unclaim device ownership (E2E - removes from both app and microcontroller)
+   */
+  async unclaimDevice(deviceId: string, userId: string): Promise<void> {
+    if (!deviceId) {
+      throw new Error('Device ID is required');
+    }
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+
+    // Check if device is actually connected
+    const isConnected = await bluetoothService.isDeviceConnected(deviceId);
+    if (!isConnected) {
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'Device is not connected. Please connect and try again.',
+      });
+    }
+
+    try {
+      // Unclaim on microcontroller first
+      const command = BLECommandEncoder.encodeUnclaimDevice(userId);
+      const response = await bluetoothService.sendCommand(deviceId, command);
+      
+      if (!response.isSuccess) {
+        throw new BLEError({
+          code: ErrorCode.UNKNOWN_ERROR,
+          message: 'Failed to unclaim device on microcontroller',
+        });
+      }
+
+      // Remove pairing from app storage
+      const { unpairDevice } = await import('../utils/devicePairing');
+      await unpairDevice(deviceId);
+    } catch (error) {
+      if (error instanceof BLEError) {
+        throw error;
+      }
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: `Failed to unclaim device: ${(error as Error).message}`,
+      });
+    }
+  }
+
+  /**
+   * Verify ownership for current session
+   */
+  async verifyOwnership(deviceId: string, userId: string): Promise<void> {
+    if (!deviceId) {
+      throw new Error('Device ID is required');
+    }
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+
+    // Check if device is actually connected
+    const isConnected = await bluetoothService.isDeviceConnected(deviceId);
+    if (!isConnected) {
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: 'Device is not connected. Please connect and try again.',
+      });
+    }
+
+    try {
+      const command = BLECommandEncoder.encodeVerifyOwnership(userId);
+      const response = await bluetoothService.sendCommand(deviceId, command);
+      
+      if (!response.isSuccess) {
+        throw new BLEError({
+          code: ErrorCode.NOT_OWNER,
+          message: 'You are not the owner of this device',
+        });
+      }
+    } catch (error) {
+      if (error instanceof BLEError) {
+        throw error;
+      }
+      throw new BLEError({
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: `Failed to verify ownership: ${(error as Error).message}`,
+      });
+    }
   }
 
   /**

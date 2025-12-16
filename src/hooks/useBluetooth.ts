@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothWebService } from '../utils/bluetoothWebService';
@@ -7,11 +7,15 @@ import { getDeviceDisplayName } from '../utils/bleUtils';
 import { useAnalytics } from './useAnalytics';
 import { AnalyticsEventType } from '../types/analytics';
 import { BLECommandEncoder } from '../utils/bleCommandEncoder';
+import { getUserPairedDevices, isDevicePaired } from '../utils/devicePairing';
+import { useUser } from '../contexts/UserContext';
+import { configDomainController } from '../domain/configDomainController';
 
 export type FilterType = 'all' | 'microcontrollers' | 'named';
 
 export const useBluetooth = () => {
   const { trackConnection, processAnalyticsBatch } = useAnalytics();
+  const { user } = useUser();
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -20,6 +24,7 @@ export const useBluetooth = () => {
   const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
+  const autoConnectAttempted = useRef<Set<string>>(new Set());
 
   const isWebBluetoothSupported = useMemo(
     () => (Platform.OS === 'web' ? bluetoothWebService.isWebBluetoothSupported() : false),
@@ -55,6 +60,32 @@ export const useBluetooth = () => {
     }
     return true;
   }, []);
+
+  // Auto-connect to paired devices on app launch/restore
+  useEffect(() => {
+    const autoConnectOnLaunch = async () => {
+      if (!user?.userId || !isBluetoothInitializedRef.current || Platform.OS === 'web') {
+        return;
+      }
+
+      try {
+        const pairedDevices = await getUserPairedDevices(user.userId);
+        if (pairedDevices.length === 0 || connectedDevice) {
+          return; // No paired devices or already connected
+        }
+
+        // Start a brief scan to discover paired devices, then auto-connect
+        // This provides seamless UX - devices will auto-connect when discovered
+        console.log(`Auto-connect: Found ${pairedDevices.length} paired device(s), will connect when discovered`);
+      } catch (error) {
+        console.error('Failed to check paired devices on launch:', error);
+      }
+    };
+
+    if (isBluetoothInitialized) {
+      autoConnectOnLaunch();
+    }
+  }, [user?.userId, isBluetoothInitialized, connectedDevice]);
 
   const startScan = useCallback(async () => {
     try {
@@ -92,7 +123,7 @@ export const useBluetooth = () => {
           throw new Error('Bluetooth permissions are required to scan for devices.');
         }
 
-        await bluetoothService.startScan((device: any) => {
+        await bluetoothService.startScan(async (device: any) => {
           const unifiedDevice: BluetoothDevice = {
             id: device.id,
             name: getDeviceDisplayName(device),
@@ -102,7 +133,37 @@ export const useBluetooth = () => {
             serviceUUIDs: device.serviceUUIDs || [],
           };
 
-          setDevices(prev => (prev.some(d => d.id === unifiedDevice.id) ? prev : [...prev, unifiedDevice]));
+          setDevices(prev => {
+            // Don't add duplicates
+            if (prev.some(d => d.id === unifiedDevice.id)) {
+              return prev;
+            }
+            
+            const updated = [...prev, unifiedDevice];
+            
+            // Auto-connect to paired devices
+            if (user?.userId && !autoConnectAttempted.current.has(unifiedDevice.id)) {
+              autoConnectAttempted.current.add(unifiedDevice.id);
+              
+              // Check if device is paired to current user
+              isDevicePaired(unifiedDevice.id, user.userId).then((isPaired) => {
+                if (isPaired && !connectedDevice) {
+                  // Auto-connect after a short delay to avoid race conditions
+                  setTimeout(() => {
+                    connect(unifiedDevice).catch((err) => {
+                      console.log('Auto-connect failed:', err);
+                      autoConnectAttempted.current.delete(unifiedDevice.id);
+                    });
+                  }, 500);
+                }
+              }).catch((err) => {
+                console.error('Failed to check pairing status:', err);
+                autoConnectAttempted.current.delete(unifiedDevice.id);
+              });
+            }
+            
+            return updated;
+          });
         });
 
         setTimeout(async () => {
@@ -150,6 +211,25 @@ export const useBluetooth = () => {
 
       setConnectedDevice({ ...device, isConnected: true });
       setDevices(prev => prev.map(d => (d.id === device.id ? { ...d, isConnected: true } : d)));
+      
+      // Verify ownership if device is paired and user is signed in
+      if (user?.userId) {
+        try {
+          const isPaired = await isDevicePaired(device.id, user.userId);
+          if (isPaired) {
+            // Automatically verify ownership after connection
+            try {
+              await configDomainController.verifyOwnership(device.id, user.userId);
+              console.log('Ownership verified for device:', device.id);
+            } catch (verifyError) {
+              console.warn('Ownership verification failed:', verifyError);
+              // Don't fail the connection, but log the warning
+            }
+          }
+        } catch (pairingError) {
+          console.error('Failed to check pairing status:', pairingError);
+        }
+      }
       
       await trackConnection(
         AnalyticsEventType.CONNECTION_SUCCESS,
@@ -203,7 +283,7 @@ export const useBluetooth = () => {
     } finally {
       setIsConnecting(false);
     }
-  }, [trackConnection]);
+  }, [trackConnection, user]);
 
   const disconnect = useCallback(async () => {
     if (!connectedDevice) return;
@@ -217,6 +297,7 @@ export const useBluetooth = () => {
       }
       setDevices(prev => prev.map(d => (d.id === deviceId ? { ...d, isConnected: false } : d)));
       setConnectedDevice(null);
+      autoConnectAttempted.current.delete(deviceId);
       
       await trackConnection(
         AnalyticsEventType.CONNECTION_DISCONNECTED,
