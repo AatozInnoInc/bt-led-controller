@@ -1,20 +1,26 @@
 /**
  * User Context
- * Manages Apple Sign-In user data
+ * Manages Apple and Google Sign-In user data
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { GoogleCredential } from '../utils/googleAuth';
 
-const USER_STORAGE_KEY = 'apple_user_data';
+const USER_STORAGE_KEY = 'user_data';
+
+export type AuthProvider = 'apple' | 'google';
 
 interface UserData {
   userId: string;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
+  authProvider: AuthProvider;
 }
+
+type AuthCredential = AppleAuthentication.AppleAuthenticationCredential | GoogleCredential;
 
 interface UserContextType {
   user: UserData | null;
@@ -22,7 +28,8 @@ interface UserContextType {
   needsProfileCompletion: boolean; // True if user is signed in but missing name/email
   isReady: boolean;
   setUser: (
-    credential: AppleAuthentication.AppleAuthenticationCredential | null,
+    credential: AuthCredential | null,
+    provider: AuthProvider,
     options?: { remember?: boolean }
   ) => Promise<void>;
   clearUser: () => Promise<void>;
@@ -48,6 +55,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: parsed.email || 'null',
               firstName: parsed.firstName || 'null',
               lastName: parsed.lastName || 'null',
+              provider: parsed.authProvider || 'apple',
             });
           } catch (error) {
             console.error('Failed to load user data:', error);
@@ -60,7 +68,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const setUser = async (
-    credential: AppleAuthentication.AppleAuthenticationCredential | null,
+    credential: AuthCredential | null,
+    provider: AuthProvider,
     options?: { remember?: boolean }
   ) => {
     const remember = options?.remember !== false;
@@ -79,7 +88,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (existing) {
         const parsed = JSON.parse(existing);
         // Only use existing data if it's for the same user
-        if (parsed.userId === credential.user) {
+        const credentialUserId = 'user' in credential ? credential.user : credential.user;
+        if (parsed.userId === credentialUserId) {
           existingUser = parsed;
         }
       }
@@ -87,47 +97,71 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Failed to load existing user data:', error);
     }
 
-    // Apple provides fullName and email only on FIRST sign-in
-    // On subsequent sign-ins, these will be null/undefined
-    // IMPORTANT: credential.fullName can be an object with null/empty string values
-    // We need to check if the actual values are meaningful, not just if the object exists
-    const hasNewEmail = credential.email !== null && 
-                        credential.email !== undefined && 
-                        credential.email !== 'null' &&
-                        credential.email.trim() !== '';
-    const hasNewGivenName = credential.fullName?.givenName !== null && 
-                            credential.fullName?.givenName !== undefined && 
-                            credential.fullName.givenName.trim() !== '' &&
-                            credential.fullName.givenName !== 'null';
-    const hasNewFamilyName = credential.fullName?.familyName !== null && 
-                             credential.fullName?.familyName !== undefined && 
-                             credential.fullName.familyName.trim() !== '' &&
-                             credential.fullName.familyName !== 'null';
-    const isFirstSignIn = !existingUser; // No existing data means this is likely first sign-in
+    // Extract user ID (Apple uses 'user', Google uses 'user' as well)
+    const userId = 'user' in credential ? credential.user : credential.user;
+    
+    // Handle Apple vs Google credentials
+    let hasNewEmail = false;
+    let hasNewGivenName = false;
+    let hasNewFamilyName = false;
+    let email: string | null = null;
+    let firstName: string | null = null;
+    let lastName: string | null = null;
+
+    if (provider === 'apple') {
+      const appleCred = credential as AppleAuthentication.AppleAuthenticationCredential;
+      // Apple provides fullName and email only on FIRST sign-in
+      hasNewEmail = appleCred.email !== null && 
+                    appleCred.email !== undefined && 
+                    appleCred.email !== 'null' &&
+                    appleCred.email.trim() !== '';
+      hasNewGivenName = appleCred.fullName?.givenName !== null && 
+                        appleCred.fullName?.givenName !== undefined && 
+                        appleCred.fullName.givenName.trim() !== '' &&
+                        appleCred.fullName.givenName !== 'null';
+      hasNewFamilyName = appleCred.fullName?.familyName !== null &&
+                         appleCred.fullName?.familyName !== undefined && 
+                         appleCred.fullName.familyName.trim() !== '' &&
+                         appleCred.fullName.familyName !== 'null';
+      
+      email = hasNewEmail ? appleCred.email : (existingUser?.email ?? null);
+      firstName = hasNewGivenName ? appleCred.fullName!.givenName : (existingUser?.firstName ?? null);
+      lastName = hasNewFamilyName ? appleCred.fullName!.familyName : (existingUser?.lastName ?? null);
+    } else if (provider === 'google') {
+      const googleCred = credential as GoogleCredential;
+      // Google typically provides email and name on every sign-in
+      hasNewEmail = googleCred.email !== null && 
+                    googleCred.email !== undefined && 
+                    googleCred.email !== 'null' &&
+                    googleCred.email.trim() !== '';
+      hasNewGivenName = googleCred.fullName?.givenName !== null && 
+                        googleCred.fullName?.givenName !== undefined && 
+                        googleCred.fullName.givenName.trim() !== '' &&
+                        googleCred.fullName.givenName !== 'null';
+      hasNewFamilyName = googleCred.fullName?.familyName !== null &&
+                         googleCred.fullName?.familyName !== undefined && 
+                         googleCred.fullName.familyName.trim() !== '' &&
+                         googleCred.fullName.familyName !== 'null';
+      
+      email = hasNewEmail ? googleCred.email : (existingUser?.email ?? null);
+      firstName = hasNewGivenName ? googleCred.fullName!.givenName : (existingUser?.firstName ?? null);
+      lastName = hasNewFamilyName ? googleCred.fullName!.familyName : (existingUser?.lastName ?? null);
+    }
     
     const userData: UserData = {
-      userId: credential.user,
-      // Only use credential email if it's actually provided and not empty
-      // Otherwise, preserve existing email, or null if first sign-in
-      email: hasNewEmail ? credential.email : (existingUser?.email ?? null),
-      // Only use credential name if it's actually provided and not empty/null string
-      // Otherwise, preserve existing name, or null if first sign-in
-      firstName: hasNewGivenName ? credential.fullName!.givenName : (existingUser?.firstName ?? null),
-      lastName: hasNewFamilyName ? credential.fullName!.familyName : (existingUser?.lastName ?? null),
+      userId,
+      email,
+      firstName,
+      lastName,
+      authProvider: provider,
     };
 
     console.log('Setting user data:', {
       userId: userData.userId,
-      isFirstSignIn,
+      provider: userData.authProvider,
       hasNewEmail,
       hasNewGivenName,
       hasNewFamilyName,
-      credentialEmail: credential.email === null ? 'null' : (credential.email === undefined ? 'undefined' : credential.email),
-      credentialGivenName: credential.fullName?.givenName === null ? 'null' : (credential.fullName?.givenName === undefined ? 'undefined' : credential.fullName.givenName),
-      credentialFamilyName: credential.fullName?.familyName === null ? 'null' : (credential.fullName?.familyName === undefined ? 'undefined' : credential.fullName.familyName),
-      existingFirstName: existingUser?.firstName || 'none',
-      existingLastName: existingUser?.lastName || 'none',
-      existingEmail: existingUser?.email || 'none',
       storedEmail: userData.email === null ? 'null' : userData.email,
       storedFirstName: userData.firstName === null ? 'null' : userData.firstName,
       storedLastName: userData.lastName === null ? 'null' : userData.lastName,
