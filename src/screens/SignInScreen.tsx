@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
+import { signInWithGoogle, isGoogleSignInAvailable } from '../utils/googleAuth';
 
 interface SignInScreenProps {
   onSignedIn: () => void;
@@ -49,7 +50,7 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
       });
       
       // Save user data to context
-      await setUser(credential, { remember: rememberMe });
+      await setUser(credential, 'apple', { remember: rememberMe });
       // You could verify credential.identityToken on a server here.
       onSignedIn();
     } catch (error: any) {
@@ -57,6 +58,30 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
         return;
       }
       console.warn('Apple Sign-In failed', error);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+      const credential = await signInWithGoogle();
+      
+      console.log('Google Sign-In credential received:', {
+        userId: credential.user,
+        email: credential.email || 'null',
+        fullName: credential.fullName || 'null',
+      });
+      
+      // Save user data to context
+      await setUser(credential, 'google', { remember: rememberMe });
+      onSignedIn();
+    } catch (error: any) {
+      if (error && error.message && error.message.includes('cancelled')) {
+        return;
+      }
+      console.warn('Google Sign-In failed', error);
     }
   };
 
@@ -88,8 +113,21 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
             style={styles.appleButton}
             onPress={handleAppleSignIn}
           />
+        ) : Platform.OS === 'android' && isGoogleSignInAvailable() ? (
+          <TouchableOpacity
+            style={[styles.googleButton, { backgroundColor: '#4285F4' }]}
+            onPress={handleGoogleSignIn}
+          >
+            <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>
+              Sign in with Google
+            </Text>
+          </TouchableOpacity>
         ) : (
-          <Text style={[styles.helper, { color: colors.textSecondary }]}>Apple Sign-In is not available on this device.</Text>
+          <Text style={[styles.helper, { color: colors.textSecondary }]}>
+            {Platform.OS === 'ios' 
+              ? 'Apple Sign-In is not available on this device.'
+              : 'Sign-In is not available on this device.'}
+          </Text>
         )}
 
         <View style={styles.rememberRow}>
@@ -97,8 +135,9 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ onSignedIn }) => {
           <Switch
             value={rememberMe}
             onValueChange={setRememberMe}
-            thumbColor={rememberMe ? colors.primary : isDark ? '#333' : '#ccc'}
-            trackColor={{ true: colors.primary, false: isDark ? '#555' : '#ddd' }}
+            trackColor={{ false: '#C6C6C8', true: '#34C759' }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor="#C6C6C8"
           />
         </View>
 
@@ -174,6 +213,18 @@ const styles = StyleSheet.create({
 		width: '100%',
 		height: 50,
 		marginTop: 4,
+	},
+	googleButton: {
+		width: '100%',
+		height: 50,
+		marginTop: 4,
+		borderRadius: 12,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	googleButtonText: {
+		fontSize: 16,
+		fontWeight: '600',
 	},
 	secondaryCta: {
 		marginTop: 14,
