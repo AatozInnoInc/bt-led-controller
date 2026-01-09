@@ -59,16 +59,16 @@ class BluetoothService {
         console.warn('Bluetooth manager not available');
         return false;
       }
-      
+
       const state = await this.manager.state();
       console.log('Bluetooth state:', state);
-      
+
       // Check if we need to request permissions
       if (state === State.Unauthorized) {
         console.log('Bluetooth permissions not granted');
         return false;
       }
-      
+
       return state === State.PoweredOn;
     } catch (error) {
       console.error('Failed to request permissions:', error);
@@ -105,7 +105,7 @@ class BluetoothService {
               serviceUUIDs: device.serviceUUIDs,
               localName: device.localName
             });
-            
+
             // Special logging for our specific device
             if (device.name && device.name.includes('LED Guitar Controller')) {
               console.log('🎯 POTENTIAL MICROCONTROLLER FOUND:', device.name);
@@ -116,7 +116,7 @@ class BluetoothService {
                 serviceUUIDs: device.serviceUUIDs
               });
             }
-            
+
             if (onDeviceFound) {
               onDeviceFound(device);
             }
@@ -143,19 +143,19 @@ class BluetoothService {
       const device = await this.manager.connectToDevice(deviceId);
       await device.discoverAllServicesAndCharacteristics();
       console.log('Successfully connected to device:', device.name || deviceId);
-      
+
       // Store connected device
       this.connectedDevices.set(deviceId, device);
-      
+
       // Setup disconnection listener
       device.onDisconnected((error: any, device: any) => {
         console.log('Device disconnected:', deviceId, error);
         this.handleDisconnection(deviceId);
       });
-      
+
       // Setup notification listener
       await this.setupNotifications(deviceId, device);
-      
+
       return device;
     } catch (error) {
       console.error('Failed to connect to device:', error);
@@ -190,7 +190,7 @@ class BluetoothService {
       subscription.remove();
       this.notificationSubscriptions.delete(deviceId);
     }
-    
+
     // Remove callbacks and buffers
     this.responseCallbacks.delete(deviceId);
     this.analyticsCallbacks.delete(deviceId);
@@ -286,9 +286,21 @@ class BluetoothService {
               }
               return;
             }
-            
+
+            // Pass raw bytes to ConfigurationModule to parse config (if it's an enter config response)
+            // This must happen before decodeResponse to preserve the full response
+            // Format: 8 bytes [0x90, brightness, speed, h, s, v, effectType, powerState]
+            if (bytes.length === 8 && bytes[0] === 0x90) {
+              try {
+                const { configurationModule } = require('../domain/bluetooth/configurationModule');
+                configurationModule.handleResponse(bytes);
+              } catch (error) {
+                console.error('Failed to handle config response:', error);
+              }
+            }
+
             const response = BLECommandEncoder.decodeResponse(bytes);
-            
+
             // Find callback for this device (if any)
             const callback = this.responseCallbacks.get(deviceId);
             if (callback) {
@@ -297,7 +309,7 @@ class BluetoothService {
             }
           } catch (error) {
             console.error('Failed to decode response:', error);
-            
+
             // Pass the error to the callback so the promise can reject immediately
             const callback = this.responseCallbacks.get(deviceId);
             if (callback) {

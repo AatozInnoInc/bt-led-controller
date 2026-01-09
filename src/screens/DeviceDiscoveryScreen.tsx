@@ -18,7 +18,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothService } from '../utils/bluetoothService';
 import { isPotentialMicrocontroller } from '../utils/bleUtils';
-import { useBluetooth } from '../hooks/useBluetooth';
+import { useBluetoothContext as useBluetooth } from '../contexts/BluetoothContext';
 import { getUserPairedDevices, isDevicePaired, getDeviceOwner } from '../utils/devicePairing';
 import { useUser } from '../contexts/UserContext';
 
@@ -294,7 +294,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   const selectDevice = (device: BluetoothDevice) => {
     console.log('Device selected:', device.name, 'Connected:', device.isConnected);
     console.log('About to show connect dialog for device:', device.name);
-    
+
     if (device.isConnected) {
       // For web, use browser's confirm dialog
       if (Platform.OS === 'web' && window?.confirm) {
@@ -342,7 +342,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
   const renderDevice = ({ item }: { item: BluetoothDevice }) => {
     const isMicrocontroller = isPotentialMicrocontroller(item);
-    
+
     return (
       <TouchableOpacity
         style={[

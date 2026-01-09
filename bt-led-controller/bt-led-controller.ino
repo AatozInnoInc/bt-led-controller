@@ -240,6 +240,7 @@ bool readUserIdFromBle(char* userId, uint8_t maxLen) {
 #define CHECK_OWNERSHIP_OR_RETURN() \
   do { \
     if (hasOwner && !isOwnershipVerified()) { \
+      Serial.print("[CHECK_OWNERSHIP_OR_RETURN] ERROR: NOT OWNER!"); \
       sendError(ERR_NOT_OWNER); \
       return; \
     } \
@@ -402,16 +403,50 @@ void loadPersistentData() {
   File file(InternalFS);
   PersistentData data = {0};
   
+  Serial.println("[FLASH] ========== LOADING PERSISTENT DATA ==========");
+  
   // Try to open and read the config file
   if (file.open(FLASH_CONFIG_FILENAME, FILE_O_READ)) {
     size_t bytesRead = file.read((uint8_t*)&data, sizeof(PersistentData));
     file.close();
     
+    Serial.print("[FLASH] Read ");
+    Serial.print(bytesRead);
+    Serial.print(" bytes (expected ");
+    Serial.print(sizeof(PersistentData));
+    Serial.println(")");
+    
     if (bytesRead == sizeof(PersistentData)) {
       // Verify magic number
+      Serial.print("[FLASH] Magic number: 0x");
+      Serial.print(data.magic, HEX);
+      Serial.print(" (expected 0x");
+      Serial.print(FLASH_MAGIC_VALUE, HEX);
+      Serial.println(")");
+      
       if (data.magic == FLASH_MAGIC_VALUE) {
+        // Log loaded config values BEFORE assignment
+        Serial.println("[FLASH] ========== LOADED CONFIG VALUES ==========");
+        Serial.print("[FLASH] Config.brightness: ");
+        Serial.println(data.config.brightness);
+        Serial.print("[FLASH] Config.speed: ");
+        Serial.println(data.config.speed);
+        Serial.print("[FLASH] Config.color.h: ");
+        Serial.println(data.config.color.h);
+        Serial.print("[FLASH] Config.color.s: ");
+        Serial.println(data.config.color.s);
+        Serial.print("[FLASH] Config.color.v: ");
+        Serial.println(data.config.color.v);
+        Serial.print("[FLASH] Config.effectType: ");
+        Serial.println(data.config.effectType);
+        Serial.print("[FLASH] Config.powerState: ");
+        Serial.println(data.config.powerState ? "true" : "false");
+        Serial.println("[FLASH] ===========================================");
+        
+        // Now assign
         currentConfig = data.config;
         currentAnalytics = data.analytics;
+        
         // Load owner data from bundled structure
         strncpy(ownerUserId, data.ownerUserId, MAX_USER_ID_LENGTH);
         ownerUserId[MAX_USER_ID_LENGTH] = '\0';
@@ -450,15 +485,34 @@ void loadPersistentData() {
   }
   
   // First boot or corrupted data - use defaults
+  Serial.println("[FLASH] Using default config values");
   currentAnalytics = {0};
   currentAnalytics.batchId = nextBatchId++;
+  Serial.println("[FLASH] ===========================================");
 }
 
 // Ownership data is now bundled with PersistentData - no separate load/save needed
 
 void savePersistentData() {
   updateFlashCounters(); // Update counters before saving
-  PersistentData data;
+  
+  Serial.println("[FLASH] ========== SAVING PERSISTENT DATA ==========");
+  Serial.print("[FLASH] Config.brightness: ");
+  Serial.println(currentConfig.brightness);
+  Serial.print("[FLASH] Config.speed: ");
+  Serial.println(currentConfig.speed);
+  Serial.print("[FLASH] Config.color.h: ");
+  Serial.println(currentConfig.color.h);
+  Serial.print("[FLASH] Config.color.s: ");
+  Serial.println(currentConfig.color.s);
+  Serial.print("[FLASH] Config.color.v: ");
+  Serial.println(currentConfig.color.v);
+  Serial.print("[FLASH] Config.effectType: ");
+  Serial.println(currentConfig.effectType);
+  Serial.print("[FLASH] Config.powerState: ");
+  Serial.println(currentConfig.powerState ? "true" : "false");
+  
+  PersistentData data = {0}; // Initialize to zero first
   data.config = currentConfig;
   data.analytics = currentAnalytics;
   // Save owner data in bundled structure
@@ -467,25 +521,51 @@ void savePersistentData() {
   data.hasOwner = hasOwner;
   data.magic = FLASH_MAGIC_VALUE;
   
+  // Delete old file first to ensure clean write
+  if (InternalFS.exists(FLASH_CONFIG_FILENAME)) {
+    if (InternalFS.remove(FLASH_CONFIG_FILENAME)) {
+      Serial.println("[FLASH] Removed old config file");
+      delay(10); // Give filesystem time to process deletion
+    } else {
+      Serial.println("[FLASH] WARNING: Failed to remove old config file");
+    }
+  }
+  
+  // Open file in write mode (should truncate if exists)
   File file(InternalFS);
   if (file.open(FLASH_CONFIG_FILENAME, FILE_O_WRITE)) {
+    // Seek to beginning in case file wasn't truncated
+    file.seek(0);
+    
+    // Write the entire struct
     size_t bytesWritten = file.write((uint8_t*)&data, sizeof(PersistentData));
+    
+    // Truncate to exact size in case old file was larger
+    file.truncate(sizeof(PersistentData));
+    
+    file.flush(); // Ensure data is written to flash
     file.close();
+    
+    // Small delay to ensure file system has time to commit
+    delay(50); // Increased delay for flash write to complete
     
     if (bytesWritten == sizeof(PersistentData)) {
       flashWriteCount++;
       currentAnalytics.flashWrites = flashWriteCount;
       Serial.println("[FLASH] Saved persistent data (config + analytics)");
+      Serial.println("[FLASH] ===========================================");
     } else {
       Serial.print("[FLASH] ERROR: Failed to write all data (wrote ");
       Serial.print(bytesWritten);
       Serial.print(" of ");
       Serial.print(sizeof(PersistentData));
       Serial.println(" bytes)");
+      Serial.println("[FLASH] ===========================================");
       trackError(ERR_FLASH_WRITE_FAILED);
     }
   } else {
     Serial.println("[FLASH] ERROR: Failed to open file for writing");
+    Serial.println("[FLASH] ===========================================");
     trackError(ERR_FLASH_WRITE_FAILED);
   }
 }
@@ -831,9 +911,53 @@ void handleEnterConfig() {
   }
   // Load config + analytics from flash (bundled read)
   loadPersistentData();
+  
+  // Debug: Log what was loaded
+  Serial.print("[CONFIG] Loaded config from flash: brightness=");
+  Serial.print(currentConfig.brightness);
+  Serial.print(", speed=");
+  Serial.print(currentConfig.speed);
+  Serial.print(", color=(");
+  Serial.print(currentConfig.color.h);
+  Serial.print(",");
+  Serial.print(currentConfig.color.s);
+  Serial.print(",");
+  Serial.print(currentConfig.color.v);
+  Serial.print("), effectType=");
+  Serial.print(currentConfig.effectType);
+  Serial.print(", powerState=");
+  Serial.println(currentConfig.powerState ? "on" : "off");
+  
   pendingConfig = currentConfig;
   inConfigMode = true;
-  sendAckSuccess();
+  
+  // Send success response followed by binary config data
+  // Format: [0x90, brightness, speed, h, s, v, effectType, powerState] (8 bytes total)
+  uint8_t resp[8];
+  resp[0] = RESP_ACK_SUCCESS;
+  resp[1] = currentConfig.brightness;
+  resp[2] = currentConfig.speed;
+  resp[3] = currentConfig.color.h;
+  resp[4] = currentConfig.color.s;
+  resp[5] = currentConfig.color.v;
+  resp[6] = currentConfig.effectType;
+  resp[7] = currentConfig.powerState ? 1 : 0;
+  bleuart.write(resp, 8);
+  
+  Serial.print("[CONFIG] Entered config mode, sent current config: brightness=");
+  Serial.print(currentConfig.brightness);
+  Serial.print(", speed=");
+  Serial.print(currentConfig.speed);
+  Serial.print(", color=(");
+  Serial.print(currentConfig.color.h);
+  Serial.print(",");
+  Serial.print(currentConfig.color.s);
+  Serial.print(",");
+  Serial.print(currentConfig.color.v);
+  Serial.print("), effectType=");
+  Serial.print(currentConfig.effectType);
+  Serial.print(", powerState=");
+  Serial.println(currentConfig.powerState ? "on" : "off");
 }
 
 void handleExitConfig() {
@@ -854,6 +978,23 @@ void handleCommitConfig() {
     sendError(ERR_VALIDATION_FAILED);
     return;
   }
+  
+  // Debug: Log what we're about to save
+  Serial.print("[CONFIG] Committing config: brightness=");
+  Serial.print(pendingConfig.brightness);
+  Serial.print(", speed=");
+  Serial.print(pendingConfig.speed);
+  Serial.print(", color=(");
+  Serial.print(pendingConfig.color.h);
+  Serial.print(",");
+  Serial.print(pendingConfig.color.s);
+  Serial.print(",");
+  Serial.print(pendingConfig.color.v);
+  Serial.print("), effectType=");
+  Serial.print(pendingConfig.effectType);
+  Serial.print(", powerState=");
+  Serial.println(pendingConfig.powerState ? "on" : "off");
+  
   currentConfig = pendingConfig;
   FastLED.setBrightness(percentTo255(currentConfig.brightness));
   inConfigMode = false;
@@ -934,6 +1075,13 @@ void processCommand() {
   if (!bleuart.available()) return;
 
   uint8_t cmd = bleuart.read();
+  Serial.print("[BLE] Received command: 0x");
+  Serial.print(cmd, HEX);
+  Serial.print(" (");
+  Serial.print(cmd, DEC);
+  Serial.print("), available bytes: ");
+  Serial.println(bleuart.available());
+  
   switch (cmd) {
     case CMD_ENTER_CONFIG:
       handleEnterConfig();

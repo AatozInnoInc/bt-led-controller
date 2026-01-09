@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
@@ -19,20 +20,29 @@ import Constants from 'expo-constants';
 import { useTheme } from '../contexts/ThemeContext';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
-import { useBluetooth } from '../hooks/useBluetooth';
+import { useBluetoothContext as useBluetooth } from '../contexts/BluetoothContext';
 import { useAnalytics } from '../hooks/useAnalytics';
-import { configDomainController } from '../domain/configDomainController';
+import { configDomainController } from '../domain/config/configDomainController';
 import { ParameterId } from '../types/commands';
-import { EffectType, LEDConfig, HSVColor } from '../types/config';
-import { BLEError, ErrorEnvelope, ErrorCode } from '../types/errors';
-import { ErrorHandler } from '../utils/errorEnvelope';
+import { EffectType, HSVColor } from '../types/config';
+import { BLEError, ErrorCode } from '../types/errors';
+import { ErrorEnvelope, ErrorHandler, formatErrorForUser } from '../domain/common/errorEnvelope';
+import { createAlertFromError, createSuccessAlert, createErrorAlert, AlertMessages } from '../domain/common/alertEnvelope';
 import { validateParameter, validateColor, validateColorAndPower, calculateTotalCurrent } from '../utils/parameterValidation';
 import { BluetoothDevice } from '../types/bluetooth';
+import { DeviceSettings } from '../utils/bleConstants';
 import { hsvToRgb, rgbToHsv, hsvToHex, hexToHsv } from '../utils/colorUtils';
+import { ConfigModeStatus } from '../domain/bluetooth/configurationModule';
 
 // Development mode: Set to true to test UI without a real device connection
 const forceDevMode = Constants.expoConfig?.extra?.forceDevMode === true;
-const DEV_MODE = __DEV__ || forceDevMode; // Enable in dev and TestFlight (via config)
+const DEV_MODE = /* __DEV__ ||  */forceDevMode; // Enable in dev and TestFlight (via config)
+console.log('DEV_MODE debug:', {
+  DEV_MODE,
+  forceDevMode,
+  rawValue: Constants.expoConfig?.extra?.forceDevMode,
+  extra: Constants.expoConfig?.extra,
+});
 
 // Mock device for development/testing
 const MOCK_DEVICE: BluetoothDevice = {
@@ -155,7 +165,8 @@ const ConfigScreen: React.FC = () => {
   const [errorSeverity, setErrorSeverity] = useState<'error' | 'warning' | 'info'>('error');
   const [errorEnvelope, setErrorEnvelope] = useState<ErrorEnvelope | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [config, setConfig] = useState<LEDConfig | null>(null);
+  const [config, setConfig] = useState<DeviceSettings | null>(null);
+  const [configModeState, setConfigModeState] = useState<ConfigModeStatus>({ state: 'inactive' });
   const [isInConfigMode, setIsInConfigMode] = useState(false);
   
   // Slider refs to prevent flashing (not used directly, kept for potential future use)
@@ -167,17 +178,17 @@ const ConfigScreen: React.FC = () => {
   const [effectType, setEffectType] = useState<EffectType>(EffectType.SOLID);
   const [powerState, setPowerState] = useState(false);
 
-  // Predefined colors in HSV format (for FastLED)
-  const colors: HSVColor[] = [
-    { h: 0, s: 255, v: 255 },     // Red
-    { h: 30, s: 255, v: 255 },   // Orange
-    { h: 60, s: 255, v: 255 },   // Yellow
-    { h: 120, s: 255, v: 255 },  // Green
-    { h: 160, s: 255, v: 255 },  // Blue (iOS blue)
-    { h: 200, s: 255, v: 255 },  // Cyan
-    { h: 220, s: 255, v: 255 },  // Purple
-    { h: 240, s: 255, v: 255 },  // Violet
-    { h: 300, s: 255, v: 255 },  // Pink
+  // Predefined colors in HEX format (for UI display)
+  const colors: string[] = [
+    '#FF0000', // Red
+    '#FF8000', // Orange
+    '#FFFF00', // Yellow
+    '#00FF00', // Green
+    '#007AFF', // Blue (Standard iOS/System Blue)
+    '#00FFFF', // Cyan
+    '#8000FF', // Purple
+    '#AA00FF', // Violet
+    '#FF00FF', // Pink
   ];
 
   const effects = [
@@ -192,6 +203,13 @@ const ConfigScreen: React.FC = () => {
   // Initialize config when device connects
   useEffect(() => {
     if (connectedDevice) {
+      // Reset state before loading new config to prevent showing stale/default values
+      setConfig(null);
+      setIsInConfigMode(false);
+      setError(null);
+      setErrorEnvelope(null);
+      
+      // Always load current config from device on connect/reconnect
       initializeConfig();
       
       // Setup disconnection listener for graceful handling
@@ -241,7 +259,7 @@ const ConfigScreen: React.FC = () => {
 
   // Cleanup on unmount
   useEffect(() => {
-        return () => {
+    return () => {
       // Clear all debounce timers on unmount
       parameterDebounceTimers.current.forEach((timer) => clearTimeout(timer));
       parameterDebounceTimers.current.clear();
@@ -249,37 +267,94 @@ const ConfigScreen: React.FC = () => {
         clearTimeout(colorDebounceTimer.current);
         colorDebounceTimer.current = null;
       }
-        };
+    };
   }, []);
+
+  // Ensure we exit config mode whenever navigating away from this screen
+  useFocusEffect(
+    useCallback(() => {
+      // Screen is focused; no action needed on enter
+      return () => {
+        // Screen is losing focus (navigating away, tab change, etc.)
+        console.log('Exiting config mode on blur');
+        if (!DEV_MODE || (connectedDevice && connectedDevice.id !== MOCK_DEVICE.id)) {
+          console.log('Starting exit');
+          configDomainController.exitConfigMode().catch((err: any) => {
+            console.error('Failed to exit config mode on blur:', err);
+          });
+        }
+      };
+    }, [connectedDevice])
+  );
 
   const initializeConfig = async () => {
     if (!connectedDevice) return;
     
     setIsLoading(true);
     setError(null);
+    setErrorEnvelope(null);
+    
+    // Reset UI state to prevent showing stale/default values
+    // These will be set from the device config once loaded
+    setBrightness(50); // Temporary default, will be overwritten
+    setSpeed(30); // Temporary default, will be overwritten
+    setSelectedColor({ h: 160, s: 255, v: 255 }); // Temporary default
+    setEffectType(EffectType.SOLID); // Temporary default
+    setPowerState(false); // Temporary default
     
     try {
-      // In dev mode with mock device, skip actual BLE initialization
+      // In dev mode with mock device, use default config without BLE
       if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
-        // Initialize controller with mock device ID (for caching purposes)
-        const defaultConfig = await configDomainController.initializeConfig(connectedDevice.id);
-        setConfig(defaultConfig);
-        setBrightness(defaultConfig.brightness);
-        setSpeed(defaultConfig.speed);
-        setSelectedColor(defaultConfig.color);
-        setEffectType(defaultConfig.effectType);
-        setPowerState(defaultConfig.powerState);
+        console.log("Setting up DEV_MODE mock device")
+        // Use default values for mock device
+        const mockConfig: DeviceSettings = {
+          brightness: 50,
+          currentPattern: 0,
+          powerMode: 0,
+          autoOff: 0,
+          maxEffects: 10,
+          defaultColor: [0, 122, 255],
+          speed: 30,
+          color: { h: 160, s: 255, v: 255 },
+          effectType: 0,
+          powerState: false,
+        };
+        setConfig(mockConfig);
+        setBrightness(mockConfig.brightness);
+        setSpeed(mockConfig.speed);
+        setSelectedColor(mockConfig.color);
+        setEffectType(mockConfig.effectType);
+        setPowerState(mockConfig.powerState);
+        setConfigModeState({ state: 'active' });
+        setIsInConfigMode(true);
         setIsLoading(false);
         return;
       }
       
-      const loadedConfig = await configDomainController.initializeConfig(connectedDevice.id);
-      setConfig(loadedConfig);
-      setBrightness(loadedConfig.brightness);
-      setSpeed(loadedConfig.speed);
-      setSelectedColor(loadedConfig.color); // Already HSV format
-      setEffectType(loadedConfig.effectType);
-      setPowerState(loadedConfig.powerState);
+      // Initialize controller with connected device
+      await configDomainController.initialize(connectedDevice);
+      
+      // Enter config mode and get CURRENT config from device
+      // This ensures we always show the device's actual current settings
+      const result = await configDomainController.enterConfigMode();
+      
+      if (result.success && result.config) {
+        // Load the device's current settings into UI state
+        console.log('Loaded current device config:', result.config);
+        setConfig(result.config);
+        setBrightness(result.config.brightness);
+        setSpeed(result.config.speed);
+        setSelectedColor(result.config.color);
+        setEffectType(result.config.effectType);
+        setPowerState(result.config.powerState);
+        setConfigModeState({ state: 'active' });
+        setIsInConfigMode(true);
+      } else if (result.error) {
+        setErrorEnvelope(result.error);
+        setError(formatErrorForUser(result.error));
+        const alert = createAlertFromError(result.error);
+        Alert.alert(alert.title, alert.message);
+      }
     } catch (err) {
       if (err instanceof BLEError) {
         const envelope = ErrorHandler.fromError(err);
@@ -505,8 +580,11 @@ const ConfigScreen: React.FC = () => {
   }, [connectedDevice, config, isInConfigMode, brightness, speed, effectType, powerState, trackConfigChange]);
 
   // Update color as a whole HSV value
-  const updateColor = useCallback(async (color: HSVColor) => {
+  const updateColor = useCallback(async (hexColor: string) => {
     if (!connectedDevice || !config) return;
+
+    // Convert HEX to HSV for internal processing
+    const color = hexToHsv(hexColor);
 
     // Validate color before sending
     const validation = validateColor(color);
@@ -572,9 +650,15 @@ const ConfigScreen: React.FC = () => {
           setIsInConfigMode(true);
         }
 
-        await configDomainController.updateColor(color);
-        setError(null);
-        setErrorEnvelope(null);
+        // Send HSV directly to device (firmware uses FastLED HSV)
+        const result = await configDomainController.updateColor(color);
+        if (result.success) {
+          setError(null);
+          setErrorEnvelope(null);
+        } else if (result.error) {
+          setErrorEnvelope(result.error);
+          setError(formatErrorForUser(result.error));
+        }
       } catch (err) {
         if (err instanceof BLEError) {
           const envelope = ErrorHandler.fromError(err);
@@ -611,13 +695,19 @@ const ConfigScreen: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 500));
         
         // Update config to reflect current state
-        const savedConfig: LEDConfig = {
+        const savedConfig: DeviceSettings = {
           brightness,
+          currentPattern: effectType,
+          powerMode: 0,
+          autoOff: 0,
+          maxEffects: 10,
+          defaultColor: [0, 122, 255],
           speed,
           color: selectedColor,
           effectType,
           powerState,
         };
+        console.log('💾 Saved config:', savedConfig);
         setConfig(savedConfig);
         setIsInConfigMode(false);
         
@@ -626,13 +716,12 @@ const ConfigScreen: React.FC = () => {
         return;
       }
 
-      await configDomainController.saveConfiguration();
+      await configDomainController.commitConfig();
       await configDomainController.exitConfigMode();
       setIsInConfigMode(false);
       
-      // Reload config to reflect saved state
-      const savedConfig = configDomainController.getCurrentConfig();
-      setConfig(savedConfig);
+      // Reload config to reflect saved state - keep current UI state
+      // (commitConfig saves the current cached config)
       
       Alert.alert('Success', 'Configuration saved successfully!');
       setError(null);
@@ -680,35 +769,35 @@ const ConfigScreen: React.FC = () => {
     await updateParameter(ParameterId.EFFECT_TYPE, effectId);
   };
 
-  const handleColorSelect = async (color: HSVColor) => {
-    await updateColor(color);
+  const handleColorSelect = async (hexColor: string) => {
+    await updateColor(hexColor);
   };
 
   const ColorPicker: React.FC = () => {
-    // Convert selected HSV to RGB for comparison
-    const selectedRgb = hsvToRgb(selectedColor);
+    // Convert predefined HEX colors to HSV for comparison (since selectedColor is HSV)
+    const colorHsvValues = colors.map(hex => hexToHsv(hex));
     
     return (
     <View style={styles.colorPickerContainer}>
         <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Color</Text>
       <View style={styles.colorGrid}>
-          {colors.map((hsvColor: HSVColor, index: number) => {
-            // Convert HSV to RGB for display
-            const rgbColor = hsvToRgb(hsvColor);
+          {colors.map((hexColor: string, index: number) => {
+            // Compare HSV values directly (with small tolerance for rounding)
+            const colorHsv = colorHsvValues[index];
             const isSelected = 
-              selectedColor.h === hsvColor.h && 
-              selectedColor.s === hsvColor.s && 
-              selectedColor.v === hsvColor.v;
-            
+              Math.abs(selectedColor.h - colorHsv.h) < 2 &&
+              Math.abs(selectedColor.s - colorHsv.s) < 2 &&
+              Math.abs(selectedColor.v - colorHsv.v) < 2;
+
             return (
           <TouchableOpacity
-                key={index}
+            key={index}
             style={[
               styles.colorOption,
-                  { backgroundColor: `rgb(${rgbColor.r}, ${rgbColor.g}, ${rgbColor.b})` },
+                  { backgroundColor: hexColor },
                   isSelected && { borderColor: themeColors.text, borderWidth: 2 },
             ]}
-                onPress={() => handleColorSelect(hsvColor)}
+                onPress={() => handleColorSelect(hexColor)}
           >
                 {isSelected && (
                   <Ionicons name="checkmark" size={20} color={isDark ? "white" : themeColors.text} />

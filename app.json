@@ -59,7 +59,7 @@
       "eas": {
         "projectId": "3e9eae45-7e71-4e9a-b521-17f55238f77d"
       },
-      "forceDevMode": true
+      "forceDevMode": false
     },
     "owner": "aatoz"
   }

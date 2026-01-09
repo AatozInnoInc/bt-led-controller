@@ -4,6 +4,10 @@
  */
 
 export enum ErrorCode {
+  // General / legacy error codes
+  NONE = 0x00,
+
+  // Command / config flow errors (match firmware)
   INVALID_COMMAND = 0x01,
   INVALID_PARAMETER = 0x02,
   OUT_OF_RANGE = 0x03,
@@ -13,6 +17,14 @@ export enum ErrorCode {
   VALIDATION_FAILED = 0x07,
   NOT_OWNER = 0x08, // User is not the owner and not a developer/test user
   ALREADY_CLAIMED = 0x09, // Device already has an owner
+
+  // Device health/status errors (from legacy domain/common ErrorEnvelope)
+  SETTINGS_CORRUPT = 0x10,
+  FLASH_FAILURE = 0x11,
+  LED_FAILURE = 0x12,
+  MEMORY_LOW = 0x13,
+  POWER_LOW = 0x14,
+
   UNKNOWN_ERROR = 0xFF,
 }
 

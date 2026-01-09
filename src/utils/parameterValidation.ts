@@ -4,8 +4,17 @@
  */
 
 import { ParameterId } from '../types/commands';
-import { HSVColor, LEDConfig } from '../types/config';
+import { HSVColor } from '../types/config';
 import { hsvToRgb } from './colorUtils';
+
+/**
+ * Minimal config interface for power validation
+ */
+interface PowerValidationConfig {
+  brightness: number;
+  color: HSVColor;
+  powerState: boolean;
+}
 
 export interface ValidationResult {
   isValid: boolean;
@@ -127,7 +136,7 @@ export function calculateTotalCurrent(
  * @returns Validation result
  */
 export function validatePowerConsumption(
-  config: LEDConfig,
+  config: PowerValidationConfig,
   ledCount: number = MAX_LED_COUNT
 ): ValidationResult {
   // Only validate if power is on
@@ -204,11 +213,9 @@ export function validateColorAndPower(
   
   // Then validate power consumption if power is on
   if (powerState) {
-    const mockConfig: LEDConfig = {
+    const mockConfig: PowerValidationConfig = {
       brightness,
-      speed: 0,
       color,
-      effectType: 0,
       powerState: true,
     };
     return validatePowerConsumption(mockConfig, ledCount);

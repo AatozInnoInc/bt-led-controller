@@ -68,8 +68,15 @@ export function rgbToHsv(rgb: RGBColor): HSVColor {
     } else {
       h = (r - g) / delta + 4;
     }
+    // Handle negative hue values (wrap around)
+    if (h < 0) {
+      h += 6;
+    }
   }
   h = Math.round((h * 60) / 360 * 255); // Convert to 0-255 range
+  // Ensure h is in valid range (0-255)
+  if (h < 0) h = 0;
+  if (h > 255) h = 255;
 
   const s = max === 0 ? 0 : Math.round((delta / max) * 255);
   const v = Math.round(max * 255);

@@ -58,11 +58,15 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
               provider: parsed.authProvider || 'apple',
             });
           } catch (error) {
-            console.error('Failed to load user data:', error);
+            console.error('Failed to parse user data from storage:', error);
+            console.log('Raw data:', data);
           }
         } else {
           console.log('No user data found in storage');
         }
+      })
+      .catch((error) => {
+        console.error('Failed to load user data from storage:', error);
       })
       .finally(() => setIsReady(true));
   }, []);
@@ -83,22 +87,22 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Load existing user data to preserve name/email if credential doesn't have them
     // (Apple only provides fullName/email on first sign-in)
     let existingUser: UserData | null = null;
+    
+    // Extract user ID first (both Apple and Google credentials have 'user' property)
+    const userId = (credential as any).user;
+    
     try {
       const existing = await AsyncStorage.getItem(USER_STORAGE_KEY);
       if (existing) {
         const parsed = JSON.parse(existing);
         // Only use existing data if it's for the same user
-        const credentialUserId = 'user' in credential ? credential.user : credential.user;
-        if (parsed.userId === credentialUserId) {
+        if (parsed.userId === userId) {
           existingUser = parsed;
         }
       }
     } catch (error) {
       console.error('Failed to load existing user data:', error);
     }
-
-    // Extract user ID (Apple uses 'user', Google uses 'user' as well)
-    const userId = 'user' in credential ? credential.user : credential.user;
     
     // Handle Apple vs Google credentials
     let hasNewEmail = false;
@@ -169,9 +173,28 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setUserState(userData);
     if (remember) {
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+      try {
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+        console.log('User data saved to storage successfully');
+        
+        // Verify the save worked by reading it back (especially important for web)
+        const verify = await AsyncStorage.getItem(USER_STORAGE_KEY);
+        if (verify) {
+          console.log('User data verified in storage');
+        } else {
+          console.warn('User data save verification failed - data not found after save');
+        }
+      } catch (error) {
+        console.error('Failed to save user data to storage:', error);
+        // Still set the user state even if storage fails (for session-only use)
+        console.warn('User data will only persist for this session');
+      }
     } else {
-      await AsyncStorage.removeItem(USER_STORAGE_KEY);
+      try {
+        await AsyncStorage.removeItem(USER_STORAGE_KEY);
+      } catch (error) {
+        console.error('Failed to remove user data from storage:', error);
+      }
     }
   };
 
@@ -185,7 +208,12 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setUserState(updatedUser);
-    await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    try {
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+      console.log('User name updated in storage');
+    } catch (error) {
+      console.error('Failed to save updated user name to storage:', error);
+    }
   };
 
   const clearUser = async () => {

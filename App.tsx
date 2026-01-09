@@ -25,6 +25,7 @@ import CustomTabBar from './src/components/CustomTabBar';
 import SignInScreen from './src/screens/SignInScreen';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import { UserProvider, useUser } from './src/contexts/UserContext';
+import { BluetoothProvider } from './src/contexts/BluetoothContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -168,7 +169,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <UserProvider>
-        <AppContent />
+        <BluetoothProvider>
+          <AppContent />
+        </BluetoothProvider>
       </UserProvider>
     </ThemeProvider>
   );

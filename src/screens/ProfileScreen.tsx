@@ -20,6 +20,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
+import { deviceStorage } from '../utils/deviceStorage';
 
 const ProfileScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
@@ -27,6 +28,7 @@ const ProfileScreen: React.FC = () => {
   const { user, updateName, clearUser, needsProfileCompletion } = useUser();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
+  const [autoReconnectEnabled, setAutoReconnectEnabled] = React.useState(true);
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
   const [isEditingPersonal, setIsEditingPersonal] = React.useState(false);
@@ -57,10 +59,34 @@ const ProfileScreen: React.FC = () => {
     }
   }, [user, needsProfileCompletion]);
 
+  // Load auto-reconnect setting on mount
+  React.useEffect(() => {
+    const loadAutoReconnectSetting = async () => {
+      try {
+        const enabled = await deviceStorage.getAutoReconnectEnabled();
+        setAutoReconnectEnabled(enabled);
+      } catch (error) {
+        console.error('Failed to load auto-reconnect setting:', error);
+      }
+    };
+    loadAutoReconnectSetting();
+  }, []);
+
   const email = user?.email || '';
   
   const handleDarkModeToggle = (value: boolean) => {
     setThemeMode(value ? 'dark' : 'light');
+  };
+
+  const handleAutoReconnectToggle = async (value: boolean) => {
+    try {
+      await deviceStorage.setAutoReconnectEnabled(value);
+      setAutoReconnectEnabled(value);
+      console.log('Auto-reconnect setting updated:', value);
+    } catch (error) {
+      console.error('Failed to save auto-reconnect setting:', error);
+      Alert.alert('Error', 'Failed to save auto-reconnect setting');
+    }
   };
 
   const handleLogout = () => {
@@ -342,6 +368,16 @@ const ProfileScreen: React.FC = () => {
             showSwitch={true}
             switchValue={autoSyncEnabled}
             onSwitchChange={setAutoSyncEnabled}
+            showArrow={false}
+            themeColors={colors}
+          />
+          <MenuItem
+            icon="bluetooth"
+            title="Auto Reconnect"
+            subtitle="Automatically reconnect to paired devices on app launch"
+            showSwitch={true}
+            switchValue={autoReconnectEnabled}
+            onSwitchChange={handleAutoReconnectToggle}
             showArrow={false}
             themeColors={colors}
           />
