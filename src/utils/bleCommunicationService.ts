@@ -209,7 +209,7 @@ export class BLECommunicationService {
   }
 
   async setSettings(settings: Partial<DeviceSettings>): Promise<BLECommandResult> {
-    const command = `${BLE_COMMANDS.SETTINGS_SET}${settings.brightness || 0}${settings.currentPattern || 0}${settings.powerMode || 0}${settings.autoOff || 0}${settings.maxEffects || 10}${settings.defaultColor?.[0] || 255}${settings.defaultColor?.[1] || 255}${settings.defaultColor?.[2] || 255}`;
+    const command = `${BLE_COMMANDS.SETTINGS_SET}${settings.brightness || 0}${settings.currentPattern || 0}${settings.powerMode || 0}${settings.autoOff || 0}${settings.maxEffects || 10}${settings.color?.[0] || 255}${settings.color?.[1] || 255}${settings.color?.[2] || 255}`;
     return this.sendCommand(command);
   }
 

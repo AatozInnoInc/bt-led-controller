@@ -325,12 +325,12 @@ export class ConfigurationModule {
     console.log('[ConfigurationModule] this.constructor.name:', this.constructor.name);
     try {
       console.log('[ConfigurationModule] handleResponse ENTERED with data type:', typeof data, 'length:', typeof data === 'string' ? data.length : (Array.isArray(data) ? data.length : (data as Uint8Array).length));
-      
-      // Normalize data first
+
+      // Normalize data for acknowledgment check
       const arrayData = typeof data === 'string' 
         ? new Uint8Array(data.split('').map(c => c.charCodeAt(0)))
         : (Array.isArray(data) ? new Uint8Array(data) : data);
-      
+
       console.log('[ConfigurationModule] Normalized to arrayData, length:', arrayData.length, 'first byte:', arrayData.length > 0 ? '0x' + arrayData[0].toString(16) : 'N/A');
 
     // IMPORTANT: Check for config response BEFORE error envelope

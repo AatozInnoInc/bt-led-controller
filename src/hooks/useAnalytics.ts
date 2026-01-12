@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { AnalyticsEvent, AnalyticsEventType, AnalyticsSession, TelemetryEvent } from '../types/analytics';
 import { analyticsRepository } from '../repositories/analyticsRepository';
 import { AnalyticsBatch } from '../types/commands';
+import { getErrorMessage } from '../domain/common/errorEnvelope';
 
 export const useAnalytics = () => {
   const activeSessionRef = useRef<AnalyticsSession | null>(null);
@@ -183,22 +184,6 @@ export const useAnalytics = () => {
     } as any);
   }, [trackEvent]);
 
-  /**
-   * Translate error code to human-readable message
-   */
-  const getErrorMessage = useCallback((errorCode: number): string => {
-    switch (errorCode) {
-      case 0x01: return 'Invalid command';
-      case 0x02: return 'Invalid parameter';
-      case 0x03: return 'Parameter value out of range';
-      case 0x04: return 'Device not in configuration mode';
-      case 0x05: return 'Device already in configuration mode';
-      case 0x06: return 'Failed to write to flash memory';
-      case 0x07: return 'Configuration validation failed';
-      case 0xFF: return 'Unknown error';
-      default: return `Error code: 0x${errorCode.toString(16)}`;
-    }
-  }, []);
 
   /**
    * Process analytics batch from microcontroller
@@ -251,7 +236,7 @@ export const useAnalytics = () => {
     } catch (error) {
       console.error('Failed to process analytics batch:', error);
     }
-  }, [getErrorMessage]);
+  }, []);
 
   /**
    * Load active session on mount

@@ -5,7 +5,8 @@
 
 import { CommandType, ResponseType, ParameterId, BLECommand, CommandResponse, UpdateParameterCommand, AnalyticsBatch, AnalyticsSessionData } from '../types/commands';
 import { ErrorEnvelope, ErrorCode, BLEError } from '../types/errors';
-import { HSVColor } from '../types/config';
+import { getErrorMessage } from '../domain/common/errorEnvelope';
+import { RGBColor } from '../utils/bleConstants';
 
 // TODO: This class has a lot of data arrangement and some code duplication.
 // We need to set up tests for every command
@@ -59,14 +60,15 @@ export class BLECommandEncoder {
   }
 
   /**
-   * Encode Update Color command (HSV as single command)
-   * Payload format: [H, S, V] (3 bytes)
+   * Encode Update Color command (RGB as single command)
+   * Payload format: [R, G, B] (3 bytes)
    */
-  static encodeUpdateColor(color: HSVColor): Uint8Array {
+  static encodeUpdateColor(color: RGBColor): Uint8Array {
     const payload = new Uint8Array(3);
-    payload[0] = Math.max(0, Math.min(255, Math.round(color.h))); // Hue
-    payload[1] = Math.max(0, Math.min(255, Math.round(color.s))); // Saturation
-    payload[2] = Math.max(0, Math.min(255, Math.round(color.v))); // Value
+    const [r, g, b] = color;
+    payload[0] = Math.max(0, Math.min(255, Math.round(r))); // Red
+    payload[1] = Math.max(0, Math.min(255, Math.round(g))); // Green
+    payload[2] = Math.max(0, Math.min(255, Math.round(b))); // Blue
     return this.encodeCommand({
       type: CommandType.UPDATE_COLOR,
       payload,
@@ -159,19 +161,9 @@ export class BLECommandEncoder {
 
     const responseType = data[0];
 
-    if (responseType === ResponseType.ACK_SUCCESS) {
-      return {
-        type: ResponseType.ACK_SUCCESS,
-        isSuccess: true,
-        data: data.slice(1),
-      };
-    }
-
-    if (responseType === ResponseType.ANALYTICS_BATCH) {
-      return this.decodeAnalyticsBatch(data);
-    }
-
-    if (responseType === ResponseType.ACK_ERROR) {
+    // Handle error envelope: [0x90, errorCode, ...message] (variable length, not 8 bytes)
+    // Note: 0x90 is also used for CONFIG_MODE ack (single byte) and config response (8 bytes)
+    if (responseType === 0x90 && data.length > 1 && data.length !== 8) {
       if (data.length < 2) {
         throw new BLEError({
           code: ErrorCode.UNKNOWN_ERROR,
@@ -181,14 +173,56 @@ export class BLECommandEncoder {
 
       const errorCode = data[1] as ErrorCode;
       const errorData = data.length > 2 ? data.slice(2) : undefined;
+
+      // Try to extract message from firmware if available, otherwise use default
+      let errorMessage = getErrorMessage(errorCode);
+      if (errorData && errorData.length > 0) {
+        // Convert firmware message bytes to string (filter out null bytes)
+        const firmwareMessage = String.fromCharCode(...Array.from(errorData).filter(b => b !== 0)).trim();
+        if (firmwareMessage.length > 0) {
+          errorMessage = firmwareMessage;
+        }
+      }
       
       const envelope: ErrorEnvelope = {
         code: errorCode,
-        message: this.getErrorMessage(errorCode),
+        message: errorMessage,
         data: errorData,
       };
 
       return envelope;
+    }
+
+    // Handle config mode acknowledgment: single byte 0x90
+    if (responseType === ResponseType.ACK_CONFIG_MODE && data.length === 1) {
+      return {
+        type: ResponseType.ACK_CONFIG_MODE,
+        isSuccess: true,
+        data: undefined,
+      };
+    }
+
+    // Handle commit acknowledgment: 0x91
+    if (responseType === ResponseType.ACK_COMMIT) {
+      return {
+        type: ResponseType.ACK_COMMIT,
+        isSuccess: true,
+        data: data.slice(1),
+      };
+    }
+
+    // Handle success acknowledgment: 0x92
+    if (responseType === ResponseType.ACK_SUCCESS) {
+      return {
+        type: ResponseType.ACK_SUCCESS,
+        isSuccess: true,
+        data: data.slice(1),
+      };
+    }
+
+    // Handle analytics batch: 0xA0
+    if (responseType === ResponseType.ANALYTICS_BATCH) {
+      return this.decodeAnalyticsBatch(data);
     }
 
     throw new BLEError({
@@ -296,32 +330,5 @@ export class BLECommandEncoder {
     };
   }
 
-  /**
-   * Get human-readable error message from error code
-   */
-  private static getErrorMessage(code: ErrorCode): string {
-    switch (code) {
-      case ErrorCode.INVALID_COMMAND:
-        return 'Invalid command';
-      case ErrorCode.INVALID_PARAMETER:
-        return 'Invalid parameter';
-      case ErrorCode.OUT_OF_RANGE:
-        return 'Parameter value out of range';
-      case ErrorCode.NOT_IN_CONFIG_MODE:
-        return 'Device not in configuration mode';
-      case ErrorCode.ALREADY_IN_CONFIG_MODE:
-        return 'Device already in configuration mode';
-      case ErrorCode.FLASH_WRITE_FAILED:
-        return 'Failed to write to flash memory';
-      case ErrorCode.VALIDATION_FAILED:
-        return 'Configuration validation failed';
-      case ErrorCode.NOT_OWNER:
-        return 'You are not the owner of this device';
-      case ErrorCode.ALREADY_CLAIMED:
-        return 'Device is already claimed by another user';
-      default:
-        return 'Unknown error';
-    }
-  }
 }
 

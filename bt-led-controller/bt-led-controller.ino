@@ -1,818 +1,712 @@
-/**
- * nRF52 LED Controller Firmware
- * - Uses FastLED
- * - Implements new BLE command protocol (no backwards compatibility)
- * - Matches React Native app commands (tx-config.mmd / config-design.mmd)
- */
+/*********************************************************************
+ This is an example for our nRF52 based Bluefruit LE modules
+
+ Pick one up today in the adafruit shop!
+
+ Adafruit invests time and resources providing this open source code,
+ please support Adafruit and open-source hardware by purchasing
+ products from Adafruit!
+
+ MIT license, check LICENSE for more information
+ All text above, and the splash screen below must be included in
+ any redistribution
+*********************************************************************/
+
+// LED Guitar Controller with Settings Storage and Error Handling
+// Converted from FastLED to Adafruit_DotStar (software SPI on explicit pins)
 
 #include <Arduino.h>
-#include <FastLED.h>
 #include <bluefruit.h>
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
-using namespace Adafruit_LittleFS_Namespace;
+#include <string.h>
 
-// --------- LED Configuration ---------
-#define LED_DATA_PIN   30          // Feather nRF52832 default; adjust as needed
-#define LED_CLOCK_PIN  31          // APA102 clock pin (choose a free GPIO)
-#define LED_COUNT      14          // Worst-case number of LEDs on the guitar
-#define LED_TYPE       APA102
-#define COLOR_ORDER    BGR
+#include <Adafruit_DotStar.h>
+#include <SPI.h>
 
-// Power constraints
-#define BATTERY_VOLTS        3      // 3.3v rail (FastLED uses integer volts)
-#define SAFE_CURRENT_MA      400    // 80% of 500mA battery for headroom
-#define MAX_LED_CURRENT_MA   60     // per LED at full white/full brightness
+#include "device_config.h"
 
-// --------- BLE Command Protocol ---------
-enum CommandType : uint8_t {
-  CMD_ENTER_CONFIG  = 0x10,
-  CMD_EXIT_CONFIG   = 0x11,
-  CMD_COMMIT_CONFIG = 0x12,
-  CMD_UPDATE_PARAM  = 0x02,
-  CMD_UPDATE_COLOR  = 0x03,
-  CMD_REQUEST_ANALYTICS = 0x20,
-  CMD_CONFIRM_ANALYTICS  = 0x21,
-  CMD_CLAIM_DEVICE = 0x13,      // Claim device ownership (one-time, sets owner)
-  CMD_VERIFY_OWNERSHIP = 0x14,  // Verify user can access device (per-session)
-  CMD_UNCLAIM_DEVICE = 0x15,    // Unclaim device ownership (removes owner)
-};
-
-enum ResponseType : uint8_t {
-  RESP_ACK_SUCCESS = 0x90,
-  RESP_ACK_ERROR   = 0x91,
-  RESP_ANALYTICS_BATCH = 0xA0, // Analytics batch response
-};
-
-enum ParameterId : uint8_t {
-  PARAM_BRIGHTNESS      = 0x01,
-  PARAM_SPEED           = 0x02,
-  PARAM_COLOR_HUE       = 0x03,
-  PARAM_COLOR_SATURATION= 0x04,
-  PARAM_COLOR_VALUE     = 0x05,
-  PARAM_EFFECT_TYPE     = 0x06,
-  PARAM_POWER_STATE     = 0x07,
-};
-
-enum ErrorCode : uint8_t {
-  ERR_INVALID_COMMAND      = 0x01,
-  ERR_INVALID_PARAMETER    = 0x02,
-  ERR_OUT_OF_RANGE         = 0x03,
-  ERR_NOT_IN_CONFIG_MODE   = 0x04,
-  ERR_ALREADY_IN_CONFIG    = 0x05,
-  ERR_FLASH_WRITE_FAILED   = 0x06,
-  ERR_VALIDATION_FAILED    = 0x07,
-  ERR_NOT_OWNER            = 0x08,  // User is not the owner and not a developer/test user
-  ERR_ALREADY_CLAIMED      = 0x09,  // Device already has an owner
-  ERR_UNKNOWN              = 0xFF,
-};
-
-// --------- Config Structures ---------
-struct HSVColor {
-  uint8_t h; // 0-255
-  uint8_t s; // 0-255
-  uint8_t v; // 0-255
-};
-
-struct Config {
-  uint8_t brightness; // 0-100
-  uint8_t speed;      // 0-100
-  HSVColor color;     // HSV (FastLED-friendly)
-  uint8_t effectType; // 0-5
-  bool powerState;    // on/off
-};
-
-// --------- Ownership Structures ---------
-#define MAX_USER_ID_LENGTH 64  // Maximum length for user ID string
-char ownerUserId[MAX_USER_ID_LENGTH + 1] = {0};  // Owner user ID (null-terminated string)
-char verifiedUserId[MAX_USER_ID_LENGTH + 1] = {0}; // Verified user ID for current session (cleared on disconnect)
-bool hasOwner = false;  // True if device has been claimed
-
-// --------- Analytics Structures ---------
-struct AnalyticsSession {
-  uint32_t startTime;    // Unix timestamp (seconds)
-  uint32_t endTime;      // Unix timestamp (seconds)
-  uint32_t duration;     // milliseconds
-  bool turnedOn;         // Session started with power on
-  bool turnedOff;        // Session ended with power off
-};
-
-struct AnalyticsData {
-  uint8_t sessionCount;           // Number of completed sessions (max 10 per batch)
-  AnalyticsSession sessions[10];   // Completed sessions
-  uint16_t flashReads;             // Total flash read operations
-  uint16_t flashWrites;            // Total flash write operations
-  uint16_t errorCount;              // Total errors encountered
-  uint8_t lastErrorCode;            // Most recent error code (0 = no error)
-  uint32_t lastErrorTimestamp;     // Unix timestamp (seconds) of last error
-  uint16_t averagePowerConsumption; // Average power in mA (0 = not tracked)
-  uint16_t peakPowerConsumption;   // Peak power in mA (0 = not tracked)
-  uint8_t batchId;                  // Unique batch ID (increments)
-  bool hasData;                     // True if this batch has data to send
-};
-
-// Combined storage structure (bundled config + analytics + owner to minimize flash ops)
-struct PersistentData {
-  Config config;
-  AnalyticsData analytics;
-  char ownerUserId[MAX_USER_ID_LENGTH + 1]; // Owner user ID (null-terminated string)
-  bool hasOwner;  // True if device has been claimed
-  uint8_t magic; // Magic number to verify data integrity (0xAA)
-};
-
-// Default config
-Config currentConfig = {
-  50,        // brightness
-  30,        // speed
-  {160,255,255}, // HSV: iOS blue
-  0,         // effect: SOLID
-  false      // power off
-};
-
-Config pendingConfig = currentConfig;
-bool inConfigMode = false;
-
-// --------- Ownership & Security ---------
-
-// Developer/test user IDs (hardcoded for now, can be read from config file)
-// These users can ALWAYS access the device, even if not the owner
-const char* DEVELOPER_USER_IDS[] = {
-  // Add developer user IDs here (comma-separated, max 10)
-  // Example: "000705.a1f264ac9b024361b8d829d3724dea86.2039",
-  nullptr  // Terminator
-};
-
-const char* TEST_USER_IDS[] = {
-  // Add test user IDs here (comma-separated, max 10)
-  nullptr  // Terminator
-};
-
-// --------- Analytics State ---------
-AnalyticsData currentAnalytics = {0};
-AnalyticsSession activeSession = {0, 0, 0, false, false};
-bool hasActiveSession = false;
-uint32_t sessionStartTime = 0;
-uint16_t flashReadCount = 0;
-uint16_t flashWriteCount = 0;
-uint16_t errorCount = 0;
-uint16_t powerReadings[10] = {0}; // Circular buffer for power readings
-uint8_t powerReadingIndex = 0;
-uint8_t nextBatchId = 1;
-
-// Update analytics flash counters
-void updateFlashCounters() {
-  currentAnalytics.flashReads = flashReadCount;
-  currentAnalytics.flashWrites = flashWriteCount;
-  currentAnalytics.errorCount = errorCount;
-}
-
-// Flash storage configuration
-#define FLASH_CONFIG_FILENAME "/config.dat"
-#define FLASH_MAGIC_VALUE 0xAA
-
-// --------- FastLED State ---------
-CRGB leds[LED_COUNT];
-uint32_t lastEffectUpdate = 0;
-bool strobeOn = false;
-
-// --------- BLE Services ---------
-BLEDfu  bledfu;
-BLEDis  bledis;
+// BLE Services
+BLEDfu bledfu;
+BLEDis bledis;
 BLEUart bleuart;
 
-// Check if user ID is a developer or test user
+// ----------------------------------------
+// DotStar / APA102 LED setup
+// ----------------------------------------
+
+// If your strip expects BGR, Adafruit’s constant is DOTSTAR_BRG
+// (Adafruit names it by the *byte order it sends*: B,R,G)
+Adafruit_DotStar strip(LED_COUNT, DATA_PIN, CLOCK_PIN, DOTSTAR_BRG);
+
+// A small staging buffer so we can keep most of your pattern logic intact
+// while moving away from FastLED’s CRGB/CHSV APIs.
+struct RGB {
+  uint8_t r, g, b;
+};
+static RGB ledBuf[LED_COUNT];
+
+static inline void idle_low() {
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(CLOCK_PIN, OUTPUT);
+  digitalWrite(DATA_PIN, LOW);
+  digitalWrite(CLOCK_PIN, LOW);
+}
+
+// Apply ledBuf -> strip pixels and show.
+// Also optionally idle the lines low to reduce floating-line artifacts.
+static inline void showLeds() {
+  for (int i = 0; i < LED_COUNT; i++) {
+    strip.setPixelColor(i, strip.Color(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b));
+  }
+  strip.show();
+  idle_low();
+}
+
+static inline void clearBuf() {
+  for (int i = 0; i < LED_COUNT; i++) {
+    ledBuf[i] = {0, 0, 0};
+  }
+}
+
+// "FastLED-like" helpers (minimal subset)
+
+static inline void fill_solid_buf(uint8_t r, uint8_t g, uint8_t b) {
+  for (int i = 0; i < LED_COUNT; i++) {
+    ledBuf[i] = {r, g, b};
+  }
+}
+
+static inline uint8_t qadd8(uint8_t a, uint8_t b) {
+  uint16_t s = (uint16_t)a + (uint16_t)b;
+  return (s > 255) ? 255 : (uint8_t)s;
+}
+
+static inline uint8_t qsub8(uint8_t a, uint8_t b) {
+  return (a > b) ? (uint8_t)(a - b) : 0;
+}
+
+// Approx of FastLED fadeToBlackBy: scale each channel down by (255-amount)/255
+static inline void fadeToBlackBy_buf(uint8_t amount) {
+  uint16_t scale = 255 - amount;
+  for (int i = 0; i < LED_COUNT; i++) {
+    ledBuf[i].r = (uint8_t)((uint16_t)ledBuf[i].r * scale / 255);
+    ledBuf[i].g = (uint8_t)((uint16_t)ledBuf[i].g * scale / 255);
+    ledBuf[i].b = (uint8_t)((uint16_t)ledBuf[i].b * scale / 255);
+  }
+}
+
+// Linear blend between two RGB colors (t=0..255)
+static inline RGB blend_rgb(const RGB& a, const RGB& b, uint8_t t) {
+  uint16_t it = 255 - t;
+  RGB out;
+  out.r = (uint8_t)((a.r * it + b.r * t) / 255);
+  out.g = (uint8_t)((a.g * it + b.g * t) / 255);
+  out.b = (uint8_t)((a.b * it + b.b * t) / 255);
+  return out;
+}
+
+// HSV -> RGB conversion (0-255 ranges), sufficient for your wave/breath effects
+static inline RGB hsv2rgb(uint8_t h, uint8_t s, uint8_t v) {
+  // Standard integer HSV->RGB (similar to FastLED-ish behavior)
+  if (s == 0) return {v, v, v};
+
+  uint8_t region = h / 43;               // 0..5
+  uint8_t remainder = (h - region * 43) * 6;
+
+  uint8_t p = (uint8_t)((uint16_t)v * (255 - s) / 255);
+  uint8_t q = (uint8_t)((uint16_t)v * (255 - (uint16_t)s * remainder / 255) / 255);
+  uint8_t t = (uint8_t)((uint16_t)v * (255 - (uint16_t)s * (255 - remainder) / 255) / 255);
+
+  switch (region) {
+    case 0: return {v, t, p};
+    case 1: return {q, v, p};
+    case 2: return {p, v, t};
+    case 3: return {p, q, v};
+    case 4: return {t, p, v};
+    default:return {v, p, q};
+  }
+}
+
+// Sine approximation for 0..255 input -> 0..255 output (FastLED sin8-like)
+static inline uint8_t sin8_approx(uint8_t x) {
+  // Use Arduino's float sin for simplicity (nRF52 can handle it),
+  // but keep it deterministic and bounded.
+  float rad = (x / 255.0f) * 2.0f * 3.14159265f;
+  float s = sinf(rad);
+  int v = (int)((s + 1.0f) * 127.5f);
+  if (v < 0) v = 0;
+  if (v > 255) v = 255;
+  return (uint8_t)v;
+}
+
+// beat8-like: returns 0..255 ramp at bpm, with phase offset in [0..255]
+static inline uint8_t beat8_like(uint8_t bpm, uint8_t phase) {
+  // 256 units per cycle. bpm cycles per minute.
+  // t(ms) * bpm / 60000 gives cycles, multiply 256 gives position.
+  uint32_t t = millis();
+  uint32_t pos = (uint32_t)((uint64_t)t * bpm * 256 / 60000);
+  return (uint8_t)(pos + phase);
+}
+
+// Gamma correction table (unchanged)
+const uint8_t gamma8[] = {
+  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,
+  1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,
+  2,3,3,3,3,3,3,3,4,4,4,4,4,5,5,5,
+  5,6,6,6,6,7,7,7,7,8,8,8,9,9,9,10,
+  10,10,11,11,11,12,12,13,13,13,14,14,15,15,16,16,
+  17,17,18,18,19,19,20,20,21,21,22,22,23,24,24,25,
+  25,26,27,27,28,29,29,30,31,32,32,33,34,35,35,36,
+  37,38,39,39,40,41,42,43,44,45,46,47,48,49,50,50,
+  51,52,54,55,56,57,58,59,60,61,62,63,64,66,67,68,
+  69,70,72,73,74,75,77,78,79,81,82,83,85,86,87,89,
+  90,92,93,95,96,98,99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255
+};
+
+// ----------------------------------------
+// Original globals (unchanged)
+// ----------------------------------------
+DeviceSettings currentSettings;
+DeviceSettings ramBuffer;
+DeviceSettings lastSavedSettings;
+bool settingsLoaded = false;
+unsigned long lastActivityTime = 0;
+unsigned long autoOffTimer = 0;
+
+bool configModeActive = false;
+bool configDirty = false;
+bool lastSavedStateValid = false;
+
+char verifiedUserId[MAX_USER_ID_LENGTH + 1] = {0};
+
+const char* DEVELOPER_USER_IDS[] = { nullptr };
+const char* TEST_USER_IDS[] = { nullptr };
+
+// Forward declarations for functions referenced before defined
+void startAdv(void);
+void connect_callback(uint16_t conn_handle);
+void disconnect_callback(uint16_t conn_handle, uint8_t reason);
+
+void initializeSettings();
+void resetToDefaultSettings();
+bool loadSettingsFromFlash();
+bool saveSettingsToFlash();
+bool loadSettingsFromFlashInternal(DeviceSettings* settings);
+uint32_t calculateChecksum(DeviceSettings* settings);
+void applySettings();
+
+bool validateConfig(DeviceSettings* settings);
+bool validateBrightness(uint8_t brightness);
+bool validatePattern(uint8_t pattern);
+bool validatePowerMode(uint8_t powerMode);
+bool validateColor(uint8_t r, uint8_t g, uint8_t b);
+void applyPowerMode();
+
+bool isDeveloperOrTestUser(const char* userId);
+bool isOwnershipVerified();
+bool readUserIdFromBle(char* userId, uint8_t maxLen);
+
+void handleClaimDevice();
+void handleVerifyOwnership();
+void handleUnclaimDevice();
+
+void handleEnterConfigMode();
+void handleExitConfigMode();
+void handleCommitConfig();
+void handleConfigUpdate();
+
+void sendErrorResponse(uint8_t errorCode, const char* message);
+void sendConfigModeAck();
+void sendCommitAck();
+void sendSuccessAck();
+
+void updatePattern();
+void setPattern(uint8_t pattern);
+
+// pattern implementations
+void rainbow();
+void pulse();
+void fade();
+void chase();
+void twinkle();
+void wave();
+void breath();
+void strobe();
+
+// ----------------------------------------
+// Setup / Loop
+// ----------------------------------------
+
+void setup() {
+  Serial.begin(SERIAL_BAUD_RATE);
+  delay(100);
+
+  Serial.println("LED Guitar Controller");
+  Serial.println("====================");
+  Serial.printf("Device Name: %s\n", DEVICE_NAME);
+  Serial.printf("Manufacturer: %s\n", MANUFACTURER_NAME);
+
+  // Initialize FS + settings
+  initializeSettings();
+
+  // Init DotStar/APA102
+  idle_low();
+  delay(50);
+
+  strip.begin();
+  strip.setBrightness(currentSettings.brightness);
+  clearBuf();
+  showLeds(); // ensure off
+
+  // Init Bluefruit
+  Bluefruit.begin();
+  Bluefruit.setTxPower(BLE_TX_POWER);
+
+  Bluefruit.Periph.setConnectCallback(connect_callback);
+  Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+
+  bledfu.begin();
+
+  bledis.setManufacturer(MANUFACTURER_NAME);
+  bledis.setModel(DEVICE_NAME);
+  bledis.begin();
+
+  bleuart.begin();
+
+  startAdv();
+
+  applySettings();
+
+  Serial.println("Device ready for connections!");
+}
+
+void loop() {
+  // Handle auto-off timer
+  if (currentSettings.autoOff > 0 && Bluefruit.connected()) {
+    if (millis() - lastActivityTime > (currentSettings.autoOff * 60000UL)) {
+      Serial.println("Auto-off timeout reached");
+      clearBuf();
+      showLeds();
+      sendErrorResponse(ERROR_POWER_LOW, "Auto-off timeout");
+    }
+  }
+
+  // Update and display current pattern/effect (non-blocking patterns recommended;
+  // your current ones are mostly quick, except strobe toggling.)
+  updatePattern();
+
+  // Echo received data
+  if (Bluefruit.connected() && bleuart.available()) {
+    lastActivityTime = millis();
+
+    int command = bleuart.read();
+    Serial.printf("Received command: 0x%02X (ASCII: %d)\n", command, command);
+
+    if (command == CMD_STATUS) {
+      uint8_t ack = RESPONSE_ACK_SUCCESS;
+      bleuart.write(&ack, 1);
+      Serial.println("Status command acknowledged");
+      return;
+    }
+
+    if (command == CMD_ENTER_CONFIG) { handleEnterConfigMode(); return; }
+    if (command == CMD_COMMIT_CONFIG) { handleCommitConfig(); return; }
+    if (command == CMD_EXIT_CONFIG)   { handleExitConfigMode(); return; }
+    if (command == CMD_CONFIG_UPDATE) { handleConfigUpdate(); return; }
+    if (command == CMD_CLAIM_DEVICE)  { handleClaimDevice(); return; }
+    if (command == CMD_VERIFY_OWNERSHIP) { handleVerifyOwnership(); return; }
+    if (command == CMD_UNCLAIM_DEVICE) { handleUnclaimDevice(); return; }
+
+    sendErrorResponse(ERROR_INVALID_COMMAND, "Unknown command");
+  }
+}
+
+// ========================================
+// BLE advertising (unchanged)
+// ========================================
+
+void startAdv(void) {
+  Bluefruit.setName(DEVICE_NAME);
+
+  Bluefruit.Advertising.clearData();
+  Bluefruit.ScanResponse.clearData();
+
+  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+  Bluefruit.Advertising.addTxPower();
+  Bluefruit.Advertising.addService(bleuart);
+
+  uint8_t manufacturerData[] = {0xFF, 0xFF};
+  Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA,
+                                manufacturerData, sizeof(manufacturerData));
+
+  Bluefruit.ScanResponse.addName();
+
+  Bluefruit.Advertising.restartOnDisconnect(true);
+  Bluefruit.Advertising.setInterval(BLE_FAST_INTERVAL, BLE_SLOW_INTERVAL);
+  Bluefruit.Advertising.setFastTimeout(BLE_FAST_TIMEOUT);
+  Bluefruit.Advertising.start(0);
+
+  Serial.printf("BLE Advertising started with name: %s\n", DEVICE_NAME);
+}
+
+void connect_callback(uint16_t conn_handle) {
+  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+
+  char central_name[32] = {0};
+  connection->getPeerName(central_name, sizeof(central_name));
+
+  Serial.print("Connected to ");
+  Serial.println(central_name);
+
+  memset(verifiedUserId, 0, sizeof(verifiedUserId));
+  Serial.println("LED Guitar Controller ready for commands!");
+}
+
+void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
+  Serial.printf("Disconnected, reason: %d\n", reason);
+
+  memset(verifiedUserId, 0, sizeof(verifiedUserId));
+
+  if (configModeActive) {
+    configModeActive = false;
+    configDirty = false;
+    Serial.println("Config mode exited due to disconnect");
+  }
+
+  if (!configModeActive) {
+    saveSettingsToFlash();
+  }
+}
+
+// ========================================
+// Settings Management (unchanged)
+// ========================================
+
+void initializeSettings() {
+  if (loadSettingsFromFlash()) {
+    Serial.println("Settings loaded from Flash");
+    settingsLoaded = true;
+  } else {
+    Serial.println("No valid settings found, using defaults");
+    resetToDefaultSettings();
+    saveSettingsToFlash();
+  }
+}
+
+void resetToDefaultSettings() {
+  currentSettings.magic = SETTINGS_MAGIC;
+  currentSettings.version = SETTINGS_VERSION;
+  currentSettings.brightness = DEFAULT_BRIGHTNESS;
+  currentSettings.currentPattern = PATTERN_OFF;
+  currentSettings.powerMode = 0;
+  currentSettings.autoOff = 0;
+  currentSettings.maxEffects = MAX_EFFECTS;
+  currentSettings.color[0] = 255;
+  currentSettings.color[1] = 255;
+  currentSettings.color[2] = 255;
+  currentSettings.speed = 50;
+
+  memset(currentSettings.ownerUserId, 0, sizeof(currentSettings.ownerUserId));
+  currentSettings.hasOwner = false;
+
+  for (int i = 0; i < 14; i++) currentSettings.reserved[i] = 0;
+
+  currentSettings.checksum = calculateChecksum(&currentSettings);
+}
+
+bool loadSettingsFromFlash() {
+  DeviceSettings loadedSettings;
+
+  if (!InternalFS.begin()) {
+    Serial.println("Failed to initialize LittleFS");
+    return false;
+  }
+
+  Adafruit_LittleFS_Namespace::File file =
+      InternalFS.open("/settings.dat", Adafruit_LittleFS_Namespace::FILE_O_READ);
+  if (!file) {
+    Serial.println("No settings file found");
+    return false;
+  }
+
+  size_t bytesRead = file.read((uint8_t*)&loadedSettings, sizeof(DeviceSettings));
+  file.close();
+
+  if (bytesRead != sizeof(DeviceSettings)) {
+    Serial.println("Settings file corrupted - wrong size");
+    return false;
+  }
+
+  if (loadedSettings.magic != SETTINGS_MAGIC) {
+    Serial.println("Invalid settings magic number");
+    return false;
+  }
+
+  if (loadedSettings.version != SETTINGS_VERSION) {
+    Serial.println("Settings version mismatch");
+    return false;
+  }
+
+  uint32_t calculatedChecksum = calculateChecksum(&loadedSettings);
+  if (loadedSettings.checksum != calculatedChecksum) {
+    Serial.println("Settings checksum mismatch");
+    return false;
+  }
+
+  memcpy(&currentSettings, &loadedSettings, sizeof(DeviceSettings));
+  memcpy(&lastSavedSettings, &loadedSettings, sizeof(DeviceSettings));
+  lastSavedStateValid = true;
+
+  Serial.println("Settings loaded successfully from LittleFS");
+  return true;
+}
+
+bool saveSettingsToFlash() {
+  if (lastSavedStateValid) {
+    if (memcmp(&currentSettings, &lastSavedSettings, sizeof(DeviceSettings)) == 0) {
+      Serial.println("Settings unchanged, skipping flash write");
+      return true;
+    }
+  }
+
+  currentSettings.checksum = calculateChecksum(&currentSettings);
+  Serial.printf("Calculated checksum before save: %lu\n", currentSettings.checksum);
+  Serial.printf("DeviceSettings struct size: %zu bytes\n", sizeof(DeviceSettings));
+
+  if (!InternalFS.begin()) {
+    Serial.println("Failed to initialize LittleFS");
+    return false;
+  }
+
+  if (InternalFS.exists("/settings.dat")) {
+    if (!InternalFS.remove("/settings.dat")) {
+      Serial.println("Warning: Failed to remove old settings file");
+    }
+    delay(10);
+  }
+
+  Adafruit_LittleFS_Namespace::File file =
+      InternalFS.open("/settings.dat", Adafruit_LittleFS_Namespace::FILE_O_WRITE);
+  if (!file) {
+    Serial.println("Failed to create settings file");
+    return false;
+  }
+
+  size_t bytesWritten = file.write((uint8_t*)&currentSettings, sizeof(DeviceSettings));
+  Serial.printf("Bytes written: %zu (expected: %zu)\n", bytesWritten, sizeof(DeviceSettings));
+
+  file.truncate(sizeof(DeviceSettings));
+  file.flush();
+  file.close();
+
+  delay(100);
+
+  if (bytesWritten != sizeof(DeviceSettings)) {
+    Serial.println("Failed to write settings file - size mismatch");
+    return false;
+  }
+
+  DeviceSettings verifySettings;
+  memset(&verifySettings, 0, sizeof(DeviceSettings));
+
+  file = InternalFS.open("/settings.dat", Adafruit_LittleFS_Namespace::FILE_O_READ);
+  if (!file) {
+    Serial.println("Failed to verify settings file");
+    return false;
+  }
+
+  file.seek(0);
+  size_t bytesRead = file.read((uint8_t*)&verifySettings, sizeof(DeviceSettings));
+  Serial.printf("Bytes read: %zu (expected: %zu)\n", bytesRead, sizeof(DeviceSettings));
+  Serial.printf("Stored checksum in file: %lu\n", verifySettings.checksum);
+  file.close();
+
+  if (bytesRead != sizeof(DeviceSettings)) {
+    Serial.println("Settings save verification failed - wrong size");
+    return false;
+  }
+
+  uint32_t verifyChecksum = calculateChecksum(&verifySettings);
+  Serial.printf("Recalculated checksum from read-back: %lu\n", verifyChecksum);
+
+  if (verifyChecksum != verifySettings.checksum) {
+    Serial.println("Settings save verification failed - checksum mismatch");
+    Serial.printf("Stored checksum: %lu, Recalculated: %lu, Expected: %lu\n",
+                  verifySettings.checksum, verifyChecksum, currentSettings.checksum);
+    return false;
+  }
+
+  if (verifySettings.checksum != currentSettings.checksum) {
+    Serial.println("Settings save verification failed - stored checksum doesn't match");
+    Serial.printf("Written checksum: %lu, Stored checksum: %lu\n",
+                  currentSettings.checksum, verifySettings.checksum);
+    return false;
+  }
+
+  size_t compareSize = sizeof(DeviceSettings) - sizeof(uint32_t);
+  if (memcmp(&currentSettings, &verifySettings, compareSize) != 0) {
+    Serial.println("Settings save verification failed - data mismatch after checksum verification");
+    return false;
+  }
+
+  Serial.println("Settings saved successfully to LittleFS");
+
+  memcpy(&lastSavedSettings, &currentSettings, sizeof(DeviceSettings));
+  lastSavedStateValid = true;
+
+  return true;
+}
+
+bool loadSettingsFromFlashInternal(DeviceSettings* settings) {
+  if (!InternalFS.begin()) return false;
+
+  Adafruit_LittleFS_Namespace::File file =
+      InternalFS.open("/settings.dat", Adafruit_LittleFS_Namespace::FILE_O_READ);
+  if (!file) return false;
+
+  size_t bytesRead = file.read((uint8_t*)settings, sizeof(DeviceSettings));
+  file.close();
+
+  if (bytesRead != sizeof(DeviceSettings)) return false;
+  if (settings->magic != SETTINGS_MAGIC) return false;
+  if (settings->version != SETTINGS_VERSION) return false;
+
+  uint32_t calculatedChecksum = calculateChecksum(settings);
+  if (settings->checksum != calculatedChecksum) return false;
+
+  return true;
+}
+
+uint32_t calculateChecksum(DeviceSettings* settings) {
+  uint32_t checksum = 0;
+  uint8_t* data = (uint8_t*)settings;
+
+  for (size_t i = 0; i < sizeof(DeviceSettings) - sizeof(uint32_t); i++) {
+    checksum += data[i];
+  }
+  return checksum;
+}
+
+void applySettings() {
+  // Brightness
+  strip.setBrightness(currentSettings.brightness);
+
+  // Pattern
+  setPattern(currentSettings.currentPattern);
+
+  // Power mode
+  applyPowerMode();
+}
+
+// ========================================
+// Validation (unchanged)
+// ========================================
+
+bool validateConfig(DeviceSettings* settings) {
+  return validateBrightness(settings->brightness) &&
+         validatePattern(settings->currentPattern) &&
+         validatePowerMode(settings->powerMode) &&
+         validateColor(settings->color[0], settings->color[1], settings->color[2]);
+}
+
+bool validateBrightness(uint8_t brightness) { return brightness <= MAX_BRIGHTNESS; }
+bool validatePattern(uint8_t pattern) { return pattern < MAX_EFFECTS; }
+bool validatePowerMode(uint8_t powerMode) { return powerMode <= 2; }
+bool validateColor(uint8_t r, uint8_t g, uint8_t b) { (void)r; (void)g; (void)b; return true; }
+
+void applyPowerMode() {
+  switch (currentSettings.powerMode) {
+    case 0: strip.setBrightness(currentSettings.brightness); break;
+    case 1: strip.setBrightness(currentSettings.brightness / 2); break;
+    case 2: strip.setBrightness(currentSettings.brightness / 4); break;
+  }
+  showLeds();
+}
+
+// ========================================
+// Ownership helpers + BLE parsing (unchanged)
+// ========================================
+
 bool isDeveloperOrTestUser(const char* userId) {
   if (!userId || strlen(userId) == 0) return false;
-  
-  // Check developer list
+
   for (int i = 0; DEVELOPER_USER_IDS[i] != nullptr; i++) {
-    if (strcmp(userId, DEVELOPER_USER_IDS[i]) == 0) {
-      return true;
-    }
+    if (strcmp(userId, DEVELOPER_USER_IDS[i]) == 0) return true;
   }
-  
-  // Check test list
   for (int i = 0; TEST_USER_IDS[i] != nullptr; i++) {
-    if (strcmp(userId, TEST_USER_IDS[i]) == 0) {
-      return true;
-    }
+    if (strcmp(userId, TEST_USER_IDS[i]) == 0) return true;
   }
-  
   return false;
 }
 
-// Check if user has verified ownership for this session
-bool isOwnershipVerified() {
-  return strlen(verifiedUserId) > 0;
-}
+bool isOwnershipVerified() { return strlen(verifiedUserId) > 0; }
 
-// Helper function to read user ID from BLE (DRY)
-// Returns true if successful, false on error (error already sent)
 bool readUserIdFromBle(char* userId, uint8_t maxLen) {
   if (!bleuart.available()) {
-    sendError(ERR_INVALID_PARAMETER);
+    sendErrorResponse(ERROR_INVALID_PARAMETER, "Insufficient data");
     return false;
   }
-  
-  // Read user ID length (1 byte)
+
   uint8_t userIdLen = bleuart.read();
   if (userIdLen == 0 || userIdLen > maxLen) {
-    sendError(ERR_INVALID_PARAMETER);
+    sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid user ID length");
     return false;
   }
-  
-  // Read user ID bytes
+
   memset(userId, 0, maxLen + 1);
   for (uint8_t i = 0; i < userIdLen; i++) {
     if (!bleuart.available()) {
-      sendError(ERR_INVALID_PARAMETER);
+      sendErrorResponse(ERROR_INVALID_PARAMETER, "Insufficient data");
       return false;
     }
     userId[i] = (char)bleuart.read();
   }
   userId[userIdLen] = '\0';
-  
   return true;
 }
 
-// Helper macro to check ownership at start of command handlers
-// Returns early if ownership check fails
 #define CHECK_OWNERSHIP_OR_RETURN() \
   do { \
-    if (hasOwner && !isOwnershipVerified()) { \
-      Serial.print("[CHECK_OWNERSHIP_OR_RETURN] ERROR: NOT OWNER!"); \
-      sendError(ERR_NOT_OWNER); \
+    if (currentSettings.hasOwner && !isOwnershipVerified()) { \
+      Serial.print("[CHECK_OWNERSHIP] ERROR: NOT OWNER!\n"); \
+      sendErrorResponse(ERROR_NOT_OWNER, "Not authorized"); \
       return; \
     } \
   } while(0)
 
-// Clear session ownership (called on disconnect)
-void clearSessionOwnership() {
-  memset(verifiedUserId, 0, sizeof(verifiedUserId));
-}
+// ========================================
+// Ownership handlers (unchanged)
+// ========================================
 
-// Connection callback to auto-send analytics and clear session ownership
-void connect_callback(uint16_t conn_handle) {
-  // Clear previous session ownership
-  clearSessionOwnership();
-  
-  // Auto-send analytics on connection if there are completed sessions
-  delay(500); // Wait for connection to stabilize
-  if (currentAnalytics.hasData && currentAnalytics.sessionCount > 0) {
-    sendAnalyticsBatch();
-  }
-}
-
-// Disconnection callback to clear session ownership
-void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
-  clearSessionOwnership();
-}
-
-// --------- Helpers ---------
-template<typename T> T clampVal(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
-
-uint8_t percentTo255(uint8_t pct) { return (uint16_t)pct * 255 / 100; }
-
-uint16_t estimateTotalCurrentmA(const HSVColor& color, uint8_t brightnessPct, uint8_t ledCount = LED_COUNT) {
-  // Convert HSV to RGB to estimate white proportion
-  CHSV hsv(color.h, color.s, color.v);
-  CRGB rgb;
-  hsv2rgb_rainbow(hsv, rgb);
-  uint16_t rgbSum = rgb.r + rgb.g + rgb.b; // 0..765
-  float colorFactor = rgbSum / 765.0f;     // white ~1.0, others <1
-  float brightnessFactor = brightnessPct / 100.0f;
-  float perLed = MAX_LED_CURRENT_MA * colorFactor * brightnessFactor;
-  return (uint16_t)(perLed * ledCount);
-}
-
-bool validateConfig(const Config& cfg) {
-  // Range checks
-  if (cfg.brightness > 100 || cfg.speed > 100 || cfg.effectType > 5) return false;
-  // HSV ranges already 0-255 by type
-  // Power check
-  if (cfg.powerState) {
-    uint16_t total = estimateTotalCurrentmA(cfg.color, cfg.brightness);
-    if (total > SAFE_CURRENT_MA) return false;
-  }
-  return true;
-}
-
-// --------- Effect Rendering ---------
-uint16_t speedToIntervalMs(uint8_t speed) {
-  // Map 0-100 to 1200..60 ms (slower..faster)
-  return (uint16_t)(1200 - ((uint16_t)speed * 114) / 10); // approx linear
-}
-
-void renderSolid() {
-  fill_solid(leds, LED_COUNT, CHSV(currentConfig.color.h, currentConfig.color.s, currentConfig.color.v));
-}
-
-void renderPulse() {
-  uint8_t beat = beatsin8(20 + currentConfig.speed / 4, 40, currentConfig.color.v); // speed influences pulse
-  fill_solid(leds, LED_COUNT, CHSV(currentConfig.color.h, currentConfig.color.s, beat));
-}
-
-void renderRainbow() {
-  uint8_t delta = 2 + (currentConfig.speed / 8);
-  static uint8_t hueBase = 0;
-  hueBase += delta;
-  fill_rainbow(leds, LED_COUNT, hueBase, 4);
-  // Apply saturation/value from config
-  for (uint8_t i = 0; i < LED_COUNT; i++) {
-    leds[i].nscale8_video(currentConfig.color.v);
-  }
-}
-
-void renderWave() {
-  uint8_t t = millis() / speedToIntervalMs(currentConfig.speed);
-  for (uint8_t i = 0; i < LED_COUNT; i++) {
-    uint8_t wave = sin8(t * 4 + i * 16);
-    leds[i] = CHSV(currentConfig.color.h, currentConfig.color.s, scale8(currentConfig.color.v, wave));
-  }
-}
-
-void renderStrobe() {
-  uint16_t interval = max<uint16_t>(30, speedToIntervalMs(currentConfig.speed) / 4);
-  if (millis() - lastEffectUpdate >= interval) {
-    lastEffectUpdate = millis();
-    strobeOn = !strobeOn;
-  }
-  if (strobeOn) {
-    fill_solid(leds, LED_COUNT, CHSV(currentConfig.color.h, currentConfig.color.s, currentConfig.color.v));
-  } else {
-    fill_solid(leds, LED_COUNT, CRGB::Black);
-  }
-}
-
-void renderCustom() {
-  // Placeholder: behave like solid for now
-  renderSolid();
-}
-
-void renderEffect() {
-  if (!currentConfig.powerState) {
-    fill_solid(leds, LED_COUNT, CRGB::Black);
-    FastLED.show();
-    return;
-  }
-
-  switch (currentConfig.effectType) {
-    case 0: renderSolid(); break;
-    case 1: renderPulse(); break;
-    case 2: renderRainbow(); break;
-    case 3: renderWave(); break;
-    case 4: renderStrobe(); break;
-    case 5: renderCustom(); break;
-    default: renderSolid(); break;
-  }
-  FastLED.show();
-}
-
-// --------- BLE Response Helpers ---------
-void sendAckSuccess() {
-  uint8_t resp[1] = { RESP_ACK_SUCCESS };
-  bleuart.write(resp, 1);
-}
-
-void sendError(ErrorCode code) {
-  uint8_t resp[2] = { RESP_ACK_ERROR, (uint8_t)code };
-  bleuart.write(resp, 2);
-  
-  // Log error to serial monitor
-  Serial.print("[ERROR] Code: 0x");
-  Serial.print((uint8_t)code, HEX);
-  Serial.print(" (");
-  switch (code) {
-    case ERR_INVALID_COMMAND: Serial.print("INVALID_COMMAND"); break;
-    case ERR_INVALID_PARAMETER: Serial.print("INVALID_PARAMETER"); break;
-    case ERR_OUT_OF_RANGE: Serial.print("OUT_OF_RANGE"); break;
-    case ERR_NOT_IN_CONFIG_MODE: Serial.print("NOT_IN_CONFIG_MODE"); break;
-    case ERR_ALREADY_IN_CONFIG: Serial.print("ALREADY_IN_CONFIG"); break;
-    case ERR_FLASH_WRITE_FAILED: Serial.print("FLASH_WRITE_FAILED"); break;
-    case ERR_VALIDATION_FAILED: Serial.print("VALIDATION_FAILED"); break;
-    case ERR_NOT_OWNER: Serial.print("NOT_OWNER"); break;
-    case ERR_ALREADY_CLAIMED: Serial.print("ALREADY_CLAIMED"); break;
-    default: Serial.print("UNKNOWN"); break;
-  }
-  Serial.println(")");
-  trackError(code);
-}
-
-// --------- Flash Storage (Bundled Config + Analytics) ---------
-void loadPersistentData() {
-  File file(InternalFS);
-  PersistentData data = {0};
-  
-  Serial.println("[FLASH] ========== LOADING PERSISTENT DATA ==========");
-  
-  // Try to open and read the config file
-  if (file.open(FLASH_CONFIG_FILENAME, FILE_O_READ)) {
-    size_t bytesRead = file.read((uint8_t*)&data, sizeof(PersistentData));
-    file.close();
-    
-    Serial.print("[FLASH] Read ");
-    Serial.print(bytesRead);
-    Serial.print(" bytes (expected ");
-    Serial.print(sizeof(PersistentData));
-    Serial.println(")");
-    
-    if (bytesRead == sizeof(PersistentData)) {
-      // Verify magic number
-      Serial.print("[FLASH] Magic number: 0x");
-      Serial.print(data.magic, HEX);
-      Serial.print(" (expected 0x");
-      Serial.print(FLASH_MAGIC_VALUE, HEX);
-      Serial.println(")");
-      
-      if (data.magic == FLASH_MAGIC_VALUE) {
-        // Log loaded config values BEFORE assignment
-        Serial.println("[FLASH] ========== LOADED CONFIG VALUES ==========");
-        Serial.print("[FLASH] Config.brightness: ");
-        Serial.println(data.config.brightness);
-        Serial.print("[FLASH] Config.speed: ");
-        Serial.println(data.config.speed);
-        Serial.print("[FLASH] Config.color.h: ");
-        Serial.println(data.config.color.h);
-        Serial.print("[FLASH] Config.color.s: ");
-        Serial.println(data.config.color.s);
-        Serial.print("[FLASH] Config.color.v: ");
-        Serial.println(data.config.color.v);
-        Serial.print("[FLASH] Config.effectType: ");
-        Serial.println(data.config.effectType);
-        Serial.print("[FLASH] Config.powerState: ");
-        Serial.println(data.config.powerState ? "true" : "false");
-        Serial.println("[FLASH] ===========================================");
-        
-        // Now assign
-        currentConfig = data.config;
-        currentAnalytics = data.analytics;
-        
-        // Load owner data from bundled structure
-        strncpy(ownerUserId, data.ownerUserId, MAX_USER_ID_LENGTH);
-        ownerUserId[MAX_USER_ID_LENGTH] = '\0';
-        hasOwner = data.hasOwner;
-        
-        if (currentAnalytics.batchId >= nextBatchId) {
-          nextBatchId = currentAnalytics.batchId + 1;
-        }
-        flashReadCount++;
-        // Restore flash counters from analytics
-        flashReadCount = max(flashReadCount, currentAnalytics.flashReads);
-        flashWriteCount = max(flashWriteCount, currentAnalytics.flashWrites);
-        errorCount = max(errorCount, currentAnalytics.errorCount);
-        Serial.println("[FLASH] Loaded persistent data successfully");
-        if (hasOwner) {
-          Serial.print("[OWNERSHIP] Loaded owner: ");
-          Serial.println(ownerUserId);
-        } else {
-          Serial.println("[OWNERSHIP] No owner found - device is unclaimed");
-        }
-        return;
-      } else {
-        Serial.print("[FLASH] WARNING: Invalid magic number (0x");
-        Serial.print(data.magic, HEX);
-        Serial.println(")");
-      }
-    } else {
-      Serial.print("[FLASH] WARNING: File size mismatch (expected ");
-      Serial.print(sizeof(PersistentData));
-      Serial.print(", got ");
-      Serial.print(bytesRead);
-      Serial.println(")");
-    }
-  } else {
-    Serial.println("[FLASH] No existing config file found");
-  }
-  
-  // First boot or corrupted data - use defaults
-  Serial.println("[FLASH] Using default config values");
-  currentAnalytics = {0};
-  currentAnalytics.batchId = nextBatchId++;
-  Serial.println("[FLASH] ===========================================");
-}
-
-// Ownership data is now bundled with PersistentData - no separate load/save needed
-
-void savePersistentData() {
-  updateFlashCounters(); // Update counters before saving
-  
-  Serial.println("[FLASH] ========== SAVING PERSISTENT DATA ==========");
-  Serial.print("[FLASH] Config.brightness: ");
-  Serial.println(currentConfig.brightness);
-  Serial.print("[FLASH] Config.speed: ");
-  Serial.println(currentConfig.speed);
-  Serial.print("[FLASH] Config.color.h: ");
-  Serial.println(currentConfig.color.h);
-  Serial.print("[FLASH] Config.color.s: ");
-  Serial.println(currentConfig.color.s);
-  Serial.print("[FLASH] Config.color.v: ");
-  Serial.println(currentConfig.color.v);
-  Serial.print("[FLASH] Config.effectType: ");
-  Serial.println(currentConfig.effectType);
-  Serial.print("[FLASH] Config.powerState: ");
-  Serial.println(currentConfig.powerState ? "true" : "false");
-  
-  PersistentData data = {0}; // Initialize to zero first
-  data.config = currentConfig;
-  data.analytics = currentAnalytics;
-  // Save owner data in bundled structure
-  strncpy(data.ownerUserId, ownerUserId, MAX_USER_ID_LENGTH);
-  data.ownerUserId[MAX_USER_ID_LENGTH] = '\0';
-  data.hasOwner = hasOwner;
-  data.magic = FLASH_MAGIC_VALUE;
-  
-  // Delete old file first to ensure clean write
-  if (InternalFS.exists(FLASH_CONFIG_FILENAME)) {
-    if (InternalFS.remove(FLASH_CONFIG_FILENAME)) {
-      Serial.println("[FLASH] Removed old config file");
-      delay(10); // Give filesystem time to process deletion
-    } else {
-      Serial.println("[FLASH] WARNING: Failed to remove old config file");
-    }
-  }
-  
-  // Open file in write mode (should truncate if exists)
-  File file(InternalFS);
-  if (file.open(FLASH_CONFIG_FILENAME, FILE_O_WRITE)) {
-    // Seek to beginning in case file wasn't truncated
-    file.seek(0);
-    
-    // Write the entire struct
-    size_t bytesWritten = file.write((uint8_t*)&data, sizeof(PersistentData));
-    
-    // Truncate to exact size in case old file was larger
-    file.truncate(sizeof(PersistentData));
-    
-    file.flush(); // Ensure data is written to flash
-    file.close();
-    
-    // Small delay to ensure file system has time to commit
-    delay(50); // Increased delay for flash write to complete
-    
-    if (bytesWritten == sizeof(PersistentData)) {
-      flashWriteCount++;
-      currentAnalytics.flashWrites = flashWriteCount;
-      Serial.println("[FLASH] Saved persistent data (config + analytics)");
-      Serial.println("[FLASH] ===========================================");
-    } else {
-      Serial.print("[FLASH] ERROR: Failed to write all data (wrote ");
-      Serial.print(bytesWritten);
-      Serial.print(" of ");
-      Serial.print(sizeof(PersistentData));
-      Serial.println(" bytes)");
-      Serial.println("[FLASH] ===========================================");
-      trackError(ERR_FLASH_WRITE_FAILED);
-    }
-  } else {
-    Serial.println("[FLASH] ERROR: Failed to open file for writing");
-    Serial.println("[FLASH] ===========================================");
-    trackError(ERR_FLASH_WRITE_FAILED);
-  }
-}
-
-// --------- Analytics Tracking ---------
-void startSession(bool turnedOn) {
-  if (!hasActiveSession) {
-    hasActiveSession = true;
-    sessionStartTime = millis();
-    activeSession.startTime = (uint32_t)(millis() / 1000); // Unix timestamp approximation
-    activeSession.turnedOn = turnedOn;
-    activeSession.turnedOff = false;
-  }
-}
-
-void endSession(bool turnedOff) {
-  if (hasActiveSession) {
-    uint32_t sessionDuration = millis() - sessionStartTime;
-    activeSession.endTime = (uint32_t)(millis() / 1000);
-    activeSession.duration = sessionDuration;
-    activeSession.turnedOff = turnedOff;
-    
-    // Only save completed sessions (not active ones)
-    // Add to batch if there's room
-    if (currentAnalytics.sessionCount < 10) {
-      currentAnalytics.sessions[currentAnalytics.sessionCount] = activeSession;
-      currentAnalytics.sessionCount++;
-      currentAnalytics.hasData = true;
-      Serial.print("[ANALYTICS] Session ended: duration=");
-      Serial.print(sessionDuration);
-      Serial.print("ms, total sessions=");
-      Serial.println(currentAnalytics.sessionCount);
-    } else {
-      Serial.println("[ANALYTICS] WARNING: Session buffer full, session discarded");
-    }
-    
-    hasActiveSession = false;
-  }
-}
-
-void trackPowerConsumption(uint16_t powerMa) {
-  // Track power in circular buffer
-  powerReadings[powerReadingIndex] = powerMa;
-  powerReadingIndex = (powerReadingIndex + 1) % 10;
-  
-  // Calculate average
-  uint32_t sum = 0;
-  uint8_t count = 0;
-  for (uint8_t i = 0; i < 10; i++) {
-    if (powerReadings[i] > 0) {
-      sum += powerReadings[i];
-      count++;
-    }
-  }
-  if (count > 0) {
-    currentAnalytics.averagePowerConsumption = (uint16_t)(sum / count);
-  }
-  
-  // Track peak
-  for (uint8_t i = 0; i < 10; i++) {
-    if (powerReadings[i] > currentAnalytics.peakPowerConsumption) {
-      currentAnalytics.peakPowerConsumption = powerReadings[i];
-    }
-  }
-}
-
-void trackError(ErrorCode code) {
-  errorCount++;
-  currentAnalytics.errorCount = errorCount;
-  currentAnalytics.lastErrorCode = (uint8_t)code;
-  currentAnalytics.lastErrorTimestamp = (uint32_t)(millis() / 1000);
-}
-
-// Track flash operations (called when config is read/written)
-void trackFlashRead() {
-  flashReadCount++;
-}
-
-void trackFlashWrite() {
-  flashWriteCount++;
-}
-
-// --------- Analytics Batch Sending ---------
-void sendAnalyticsBatch() {
-  // Only send if there are completed sessions (not just active session)
-  // Rule: Don't send if only 1 session exists (it's the active session)
-  if (!currentAnalytics.hasData || currentAnalytics.sessionCount == 0) {
-    // No data to send - send success with 0 sessions
-    uint8_t resp[2] = { RESP_ACK_SUCCESS, 0 }; // 0 = no data
-    bleuart.write(resp, 2);
-    return;
-  }
-  
-  // Update flash counters before sending
-  updateFlashCounters();
-  
-  // Calculate payload size dynamically based on structure
-  const uint8_t RESPONSE_TYPE_SIZE = 1;        // RESP_ANALYTICS_BATCH
-  const uint8_t BATCH_ID_SIZE = 1;
-  const uint8_t SESSION_COUNT_SIZE = 1;
-  const uint8_t FLASH_READS_SIZE = 2;
-  const uint8_t FLASH_WRITES_SIZE = 2;
-  const uint8_t ERROR_COUNT_SIZE = 2;
-  const uint8_t LAST_ERROR_CODE_SIZE = 1;
-  const uint8_t LAST_ERROR_TIMESTAMP_SIZE = 4;
-  const uint8_t AVG_POWER_SIZE = 2;
-  const uint8_t PEAK_POWER_SIZE = 2;
-  const uint8_t SESSION_SIZE = 13; // startTime(4) + endTime(4) + duration(4) + flags(1)
-  
-  const uint8_t HEADER_SIZE = RESPONSE_TYPE_SIZE + BATCH_ID_SIZE + SESSION_COUNT_SIZE +
-    FLASH_READS_SIZE + FLASH_WRITES_SIZE + ERROR_COUNT_SIZE +
-    LAST_ERROR_CODE_SIZE + LAST_ERROR_TIMESTAMP_SIZE +
-    AVG_POWER_SIZE + PEAK_POWER_SIZE;
-  
-  uint8_t payloadSize = HEADER_SIZE + (currentAnalytics.sessionCount * SESSION_SIZE);
-  uint8_t* payload = new uint8_t[payloadSize];
-  uint8_t idx = 0;
-  
-  payload[idx++] = RESP_ANALYTICS_BATCH;
-  payload[idx++] = currentAnalytics.batchId;
-  payload[idx++] = currentAnalytics.sessionCount;
-  
-  // Flash reads (2 bytes, big-endian)
-  payload[idx++] = (currentAnalytics.flashReads >> 8) & 0xFF;
-  payload[idx++] = currentAnalytics.flashReads & 0xFF;
-  
-  // Flash writes (2 bytes)
-  payload[idx++] = (currentAnalytics.flashWrites >> 8) & 0xFF;
-  payload[idx++] = currentAnalytics.flashWrites & 0xFF;
-  
-  // Error count (2 bytes)
-  payload[idx++] = (currentAnalytics.errorCount >> 8) & 0xFF;
-  payload[idx++] = currentAnalytics.errorCount & 0xFF;
-  
-  // Last error code (1 byte)
-  payload[idx++] = currentAnalytics.lastErrorCode;
-  
-  // Last error timestamp (4 bytes, big-endian)
-  payload[idx++] = (currentAnalytics.lastErrorTimestamp >> 24) & 0xFF;
-  payload[idx++] = (currentAnalytics.lastErrorTimestamp >> 16) & 0xFF;
-  payload[idx++] = (currentAnalytics.lastErrorTimestamp >> 8) & 0xFF;
-  payload[idx++] = currentAnalytics.lastErrorTimestamp & 0xFF;
-  
-  // Average power (2 bytes)
-  payload[idx++] = (currentAnalytics.averagePowerConsumption >> 8) & 0xFF;
-  payload[idx++] = currentAnalytics.averagePowerConsumption & 0xFF;
-  
-  // Peak power (2 bytes)
-  payload[idx++] = (currentAnalytics.peakPowerConsumption >> 8) & 0xFF;
-  payload[idx++] = currentAnalytics.peakPowerConsumption & 0xFF;
-  
-  // Sessions
-  for (uint8_t i = 0; i < currentAnalytics.sessionCount; i++) {
-    AnalyticsSession& sess = currentAnalytics.sessions[i];
-    // startTime (4 bytes, big-endian)
-    payload[idx++] = (sess.startTime >> 24) & 0xFF;
-    payload[idx++] = (sess.startTime >> 16) & 0xFF;
-    payload[idx++] = (sess.startTime >> 8) & 0xFF;
-    payload[idx++] = sess.startTime & 0xFF;
-    // endTime (4 bytes)
-    payload[idx++] = (sess.endTime >> 24) & 0xFF;
-    payload[idx++] = (sess.endTime >> 16) & 0xFF;
-    payload[idx++] = (sess.endTime >> 8) & 0xFF;
-    payload[idx++] = sess.endTime & 0xFF;
-    // duration (4 bytes)
-    payload[idx++] = (sess.duration >> 24) & 0xFF;
-    payload[idx++] = (sess.duration >> 16) & 0xFF;
-    payload[idx++] = (sess.duration >> 8) & 0xFF;
-    payload[idx++] = sess.duration & 0xFF;
-    // flags (1 byte: bit 0 = turnedOn, bit 1 = turnedOff)
-    payload[idx++] = (sess.turnedOn ? 0x01 : 0x00) | (sess.turnedOff ? 0x02 : 0x00);
-  }
-  
-  // Send in chunks if needed (BLE MTU is typically 20-23 bytes)
-  uint8_t chunkSize = 20;
-  for (uint8_t i = 0; i < payloadSize; i += chunkSize) {
-    uint8_t chunkLen = min(chunkSize, (uint8_t)(payloadSize - i));
-    bleuart.write(&payload[i], chunkLen);
-    delay(10); // Small delay between chunks
-  }
-  
-  delete[] payload;
-}
-
-void handleRequestAnalytics() {
-  // Analytics can be requested without ownership (read-only operation)
-  // But if device has owner, verify ownership
-  CHECK_OWNERSHIP_OR_RETURN();
-  
-  sendAnalyticsBatch();
-}
-
-void handleConfirmAnalytics() {
-  CHECK_OWNERSHIP_OR_RETURN();
-  
-  if (!bleuart.available()) {
-    sendError(ERR_INVALID_PARAMETER);
-    return;
-  }
-  
-  uint8_t confirmedBatchId = bleuart.read();
-  
-  // Only clear if this batch was confirmed
-  if (confirmedBatchId == currentAnalytics.batchId && currentAnalytics.hasData) {
-    // Clear analytics data
-    currentAnalytics = {0};
-    currentAnalytics.batchId = nextBatchId++;
-    currentAnalytics.hasData = false;
-    
-    // Save to flash (bundled with config)
-    savePersistentData();
-    sendAckSuccess();
-  } else {
-    sendAckSuccess(); // Still acknowledge even if batch ID doesn't match
-  }
-}
-
-// --------- Ownership Command Handlers ---------
 void handleClaimDevice() {
   char userId[MAX_USER_ID_LENGTH + 1] = {0};
-  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) {
-    return; // Error already sent
-  }
-  
-  // Check if device is already claimed
-  if (hasOwner) {
-    // Allow developer/test users to reclaim, or if it's the same owner
-    if (isDeveloperOrTestUser(userId) || strcmp(userId, ownerUserId) == 0) {
-      // Update owner (developer reclaim or same owner)
-      strncpy(ownerUserId, userId, MAX_USER_ID_LENGTH);
-      ownerUserId[MAX_USER_ID_LENGTH] = '\0';
-      savePersistentData(); // Save bundled data
-      sendAckSuccess();
+  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) return;
+
+  if (currentSettings.hasOwner) {
+    if (isDeveloperOrTestUser(userId) || strcmp(userId, currentSettings.ownerUserId) == 0) {
+      strncpy(currentSettings.ownerUserId, userId, MAX_USER_ID_LENGTH);
+      currentSettings.ownerUserId[MAX_USER_ID_LENGTH] = '\0';
+      saveSettingsToFlash();
+      sendSuccessAck();
       Serial.print("[OWNERSHIP] Device reclaimed by: ");
       Serial.println(userId);
     } else {
-      sendError(ERR_ALREADY_CLAIMED);
+      sendErrorResponse(ERROR_ALREADY_CLAIMED, "Device already claimed");
       Serial.print("[OWNERSHIP] Claim rejected - device already owned by: ");
-      Serial.println(ownerUserId);
+      Serial.println(currentSettings.ownerUserId);
     }
   } else {
-    // Device is unclaimed - allow anyone to claim it
-    strncpy(ownerUserId, userId, MAX_USER_ID_LENGTH);
-    ownerUserId[MAX_USER_ID_LENGTH] = '\0';
-    hasOwner = true;
-    savePersistentData(); // Save bundled data (config + analytics + owner)
-    sendAckSuccess();
+    strncpy(currentSettings.ownerUserId, userId, MAX_USER_ID_LENGTH);
+    currentSettings.ownerUserId[MAX_USER_ID_LENGTH] = '\0';
+    currentSettings.hasOwner = true;
+    saveSettingsToFlash();
+    sendSuccessAck();
     Serial.print("[OWNERSHIP] Device claimed by: ");
     Serial.println(userId);
   }
@@ -820,33 +714,26 @@ void handleClaimDevice() {
 
 void handleVerifyOwnership() {
   char userId[MAX_USER_ID_LENGTH + 1] = {0};
-  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) {
-    return; // Error already sent
-  }
-  
-  // Check ownership: owner, developer, or test user
+  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) return;
+
   bool isAuthorized = false;
-  
-  if (!hasOwner) {
-    // No owner - anyone can access
+
+  if (!currentSettings.hasOwner) {
     isAuthorized = true;
-  } else if (strcmp(userId, ownerUserId) == 0) {
-    // User is the owner
+  } else if (strcmp(userId, currentSettings.ownerUserId) == 0) {
     isAuthorized = true;
   } else if (isDeveloperOrTestUser(userId)) {
-    // User is a developer or test user - always allowed
     isAuthorized = true;
   }
-  
+
   if (isAuthorized) {
-    // Store verified user ID for this session
     strncpy(verifiedUserId, userId, MAX_USER_ID_LENGTH);
     verifiedUserId[MAX_USER_ID_LENGTH] = '\0';
-    sendAckSuccess();
+    sendSuccessAck();
     Serial.print("[OWNERSHIP] Ownership verified for: ");
     Serial.println(userId);
   } else {
-    sendError(ERR_NOT_OWNER);
+    sendErrorResponse(ERROR_NOT_OWNER, "Not authorized");
     Serial.print("[OWNERSHIP] Ownership verification failed for: ");
     Serial.println(userId);
   }
@@ -854,339 +741,418 @@ void handleVerifyOwnership() {
 
 void handleUnclaimDevice() {
   char userId[MAX_USER_ID_LENGTH + 1] = {0};
-  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) {
-    return; // Error already sent
-  }
-  
-  // Only owner or developer/test users can unclaim
-  if (!hasOwner) {
-    // Device is already unclaimed
-    sendAckSuccess();
+  if (!readUserIdFromBle(userId, MAX_USER_ID_LENGTH)) return;
+
+  if (!currentSettings.hasOwner) {
+    sendSuccessAck();
     return;
   }
-  
-  // Check if user is authorized to unclaim
+
   bool isAuthorized = false;
-  if (strcmp(userId, ownerUserId) == 0) {
-    // User is the owner
-    isAuthorized = true;
-  } else if (isDeveloperOrTestUser(userId)) {
-    // User is a developer or test user - always allowed
-    isAuthorized = true;
-  }
-  
+  if (strcmp(userId, currentSettings.ownerUserId) == 0) isAuthorized = true;
+  else if (isDeveloperOrTestUser(userId)) isAuthorized = true;
+
   if (isAuthorized) {
-    // Clear owner
-    memset(ownerUserId, 0, sizeof(ownerUserId));
-    hasOwner = false;
-    savePersistentData(); // Save bundled data
-    sendAckSuccess();
+    memset(currentSettings.ownerUserId, 0, sizeof(currentSettings.ownerUserId));
+    currentSettings.hasOwner = false;
+    saveSettingsToFlash();
+    sendSuccessAck();
     Serial.println("[OWNERSHIP] Device unclaimed");
   } else {
-    sendError(ERR_NOT_OWNER);
+    sendErrorResponse(ERROR_NOT_OWNER, "Not authorized");
     Serial.print("[OWNERSHIP] Unclaim rejected - not authorized: ");
     Serial.println(userId);
   }
 }
 
-// Check if command requires ownership verification
-bool requiresOwnershipVerification(uint8_t cmd) {
-  // CMD_VERIFY_OWNERSHIP can always be called
-  if (cmd == CMD_VERIFY_OWNERSHIP) return false;
-  
-  // If device has no owner, no verification needed
-  if (!hasOwner) return false;
-  
-  // All other commands require verification
-  return true;
+// ========================================
+// Config mode handlers (only LED calls changed)
+// ========================================
+
+void handleEnterConfigMode() {
+  CHECK_OWNERSHIP_OR_RETURN();
+
+  Serial.println("Entering config mode...");
+  configModeActive = true;
+  configDirty = false;
+
+  memcpy(&ramBuffer, &currentSettings, sizeof(DeviceSettings));
+
+  sendConfigModeAck();
+  Serial.println("Config mode active");
 }
 
-// --------- Command Handlers ---------
-void handleEnterConfig() {
+void handleExitConfigMode() {
   CHECK_OWNERSHIP_OR_RETURN();
-  
-  if (inConfigMode) {
-    sendError(ERR_ALREADY_IN_CONFIG);
-    return;
+
+  Serial.println("Exiting config mode...");
+
+  if (configDirty) {
+    Serial.println("Discarding unsaved changes");
+    configDirty = false;
   }
-  // Load config + analytics from flash (bundled read)
-  loadPersistentData();
-  
-  // Debug: Log what was loaded
-  Serial.print("[CONFIG] Loaded config from flash: brightness=");
-  Serial.print(currentConfig.brightness);
-  Serial.print(", speed=");
-  Serial.print(currentConfig.speed);
-  Serial.print(", color=(");
-  Serial.print(currentConfig.color.h);
-  Serial.print(",");
-  Serial.print(currentConfig.color.s);
-  Serial.print(",");
-  Serial.print(currentConfig.color.v);
-  Serial.print("), effectType=");
-  Serial.print(currentConfig.effectType);
-  Serial.print(", powerState=");
-  Serial.println(currentConfig.powerState ? "on" : "off");
-  
-  pendingConfig = currentConfig;
-  inConfigMode = true;
-  
-  // Send success response followed by binary config data
-  // Format: [0x90, brightness, speed, h, s, v, effectType, powerState] (8 bytes total)
-  uint8_t resp[8];
-  resp[0] = RESP_ACK_SUCCESS;
-  resp[1] = currentConfig.brightness;
-  resp[2] = currentConfig.speed;
-  resp[3] = currentConfig.color.h;
-  resp[4] = currentConfig.color.s;
-  resp[5] = currentConfig.color.v;
-  resp[6] = currentConfig.effectType;
-  resp[7] = currentConfig.powerState ? 1 : 0;
-  bleuart.write(resp, 8);
-  
-  Serial.print("[CONFIG] Entered config mode, sent current config: brightness=");
-  Serial.print(currentConfig.brightness);
-  Serial.print(", speed=");
-  Serial.print(currentConfig.speed);
-  Serial.print(", color=(");
-  Serial.print(currentConfig.color.h);
-  Serial.print(",");
-  Serial.print(currentConfig.color.s);
-  Serial.print(",");
-  Serial.print(currentConfig.color.v);
-  Serial.print("), effectType=");
-  Serial.print(currentConfig.effectType);
-  Serial.print(", powerState=");
-  Serial.println(currentConfig.powerState ? "on" : "off");
-}
 
-void handleExitConfig() {
-  CHECK_OWNERSHIP_OR_RETURN();
-  
-  inConfigMode = false;
-  sendAckSuccess();
+  configModeActive = false;
+  sendSuccessAck();
+  Serial.println("Config mode exited");
 }
 
 void handleCommitConfig() {
   CHECK_OWNERSHIP_OR_RETURN();
-  
-  if (!inConfigMode) {
-    sendError(ERR_NOT_IN_CONFIG_MODE);
+
+  if (!configModeActive) {
+    sendErrorResponse(ERROR_INVALID_COMMAND, "Not in config mode");
     return;
   }
-  if (!validateConfig(pendingConfig)) {
-    sendError(ERR_VALIDATION_FAILED);
+
+  Serial.println("Committing config to flash...");
+
+  if (!configDirty) {
+    Serial.println("No changes to commit");
+    sendCommitAck();
     return;
   }
-  
-  // Debug: Log what we're about to save
-  Serial.print("[CONFIG] Committing config: brightness=");
-  Serial.print(pendingConfig.brightness);
-  Serial.print(", speed=");
-  Serial.print(pendingConfig.speed);
-  Serial.print(", color=(");
-  Serial.print(pendingConfig.color.h);
-  Serial.print(",");
-  Serial.print(pendingConfig.color.s);
-  Serial.print(",");
-  Serial.print(pendingConfig.color.v);
-  Serial.print("), effectType=");
-  Serial.print(pendingConfig.effectType);
-  Serial.print(", powerState=");
-  Serial.println(pendingConfig.powerState ? "on" : "off");
-  
-  currentConfig = pendingConfig;
-  FastLED.setBrightness(percentTo255(currentConfig.brightness));
-  inConfigMode = false;
-  
-  // Save config + analytics together to minimize flash writes
-  savePersistentData();
-  sendAckSuccess();
-}
 
-bool applyParameter(ParameterId pid, uint8_t value, Config& cfg) {
-  switch (pid) {
-    case PARAM_BRIGHTNESS:      cfg.brightness = clampVal<uint8_t>(value, 0, 100); return true;
-    case PARAM_SPEED:           cfg.speed      = clampVal<uint8_t>(value, 0, 100); return true;
-    case PARAM_COLOR_HUE:       cfg.color.h    = value; return true;
-    case PARAM_COLOR_SATURATION:cfg.color.s    = value; return true;
-    case PARAM_COLOR_VALUE:     cfg.color.v    = value; return true;
-    case PARAM_EFFECT_TYPE:     cfg.effectType = clampVal<uint8_t>(value, 0, 5); return true;
-    case PARAM_POWER_STATE:     cfg.powerState = (value > 0); return true;
-    default: return false;
-  }
-}
-
-void handleUpdateParameter(uint8_t pidRaw, uint8_t val) {
-  CHECK_OWNERSHIP_OR_RETURN();
-  
-  if (!inConfigMode) {
-    sendError(ERR_NOT_IN_CONFIG_MODE);
+  if (!validateConfig(&ramBuffer)) {
+    sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid config values");
     return;
   }
-  ParameterId pid = (ParameterId)pidRaw;
-  Config testCfg = pendingConfig;
-  bool powerStateChanged = (pid == PARAM_POWER_STATE);
-  bool wasOn = testCfg.powerState;
-  
-  if (!applyParameter(pid, val, testCfg)) {
-    sendError(ERR_INVALID_PARAMETER);
-    return;
-  }
-  if (!validateConfig(testCfg)) {
-    sendError(ERR_VALIDATION_FAILED);
-    return;
-  }
-  pendingConfig = testCfg;
-  
-  // Track power state changes for analytics
-  if (powerStateChanged) {
-    if (pendingConfig.powerState && !wasOn) {
-      startSession(true);
-      uint16_t powerMa = estimateTotalCurrentmA(pendingConfig.color, pendingConfig.brightness);
-      trackPowerConsumption(powerMa);
-    } else if (!pendingConfig.powerState && wasOn) {
-      endSession(true);
-    }
-  }
-  
-  sendAckSuccess();
-}
 
-void handleUpdateColor(uint8_t h, uint8_t s, uint8_t v) {
-  CHECK_OWNERSHIP_OR_RETURN();
-  
-  if (!inConfigMode) {
-    sendError(ERR_NOT_IN_CONFIG_MODE);
-    return;
-  }
-  Config testCfg = pendingConfig;
-  testCfg.color = {h, s, v};
-  if (!validateConfig(testCfg)) {
-    sendError(ERR_VALIDATION_FAILED);
-    return;
-  }
-  pendingConfig = testCfg;
-  sendAckSuccess();
-}
+  memcpy(&currentSettings, &ramBuffer, sizeof(DeviceSettings));
 
-// --------- BLE Command Processing ---------
-void processCommand() {
-  if (!bleuart.available()) return;
-
-  uint8_t cmd = bleuart.read();
-  Serial.print("[BLE] Received command: 0x");
-  Serial.print(cmd, HEX);
-  Serial.print(" (");
-  Serial.print(cmd, DEC);
-  Serial.print("), available bytes: ");
-  Serial.println(bleuart.available());
-  
-  switch (cmd) {
-    case CMD_ENTER_CONFIG:
-      handleEnterConfig();
-      break;
-    case CMD_EXIT_CONFIG:
-      handleExitConfig();
-      break;
-    case CMD_COMMIT_CONFIG:
-      handleCommitConfig();
-      break;
-    case CMD_UPDATE_PARAM: {
-      if (bleuart.available() < 2) { sendError(ERR_INVALID_PARAMETER); return; }
-      uint8_t pid = bleuart.read();
-      uint8_t val = bleuart.read();
-      handleUpdateParameter(pid, val);
-      break;
-    }
-    case CMD_UPDATE_COLOR: {
-      if (bleuart.available() < 3) { sendError(ERR_INVALID_PARAMETER); return; }
-      uint8_t h = bleuart.read();
-      uint8_t s = bleuart.read();
-      uint8_t v = bleuart.read();
-      handleUpdateColor(h, s, v);
-      break;
-    }
-    case CMD_REQUEST_ANALYTICS:
-      handleRequestAnalytics();
-      break;
-    case CMD_CONFIRM_ANALYTICS:
-      handleConfirmAnalytics();
-      break;
-    case CMD_CLAIM_DEVICE:
-      handleClaimDevice();
-      break;
-    case CMD_VERIFY_OWNERSHIP:
-      handleVerifyOwnership();
-      break;
-    case CMD_UNCLAIM_DEVICE:
-      handleUnclaimDevice();
-      break;
-    default:
-      sendError(ERR_INVALID_COMMAND);
-      break;
-  }
-}
-
-// --------- BLE Setup ---------
-void startAdv(void) {  
-  Bluefruit.Advertising.clearData();
-  Bluefruit.ScanResponse.clearData();
-
-  Bluefruit.setName("LED Guitar");
-
-  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-  Bluefruit.Advertising.addTxPower();
-  Bluefruit.Advertising.addService(bleuart);
-  Bluefruit.ScanResponse.addName();
-
-  Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.setInterval(32, 244);
-  Bluefruit.Advertising.setFastTimeout(30);
-  Bluefruit.Advertising.start(0);
-}
-
-// --------- Arduino Setup/Loop ---------
-void setup() {
-  Serial.begin(115200);
-  delay(100);
-
-  // FastLED init with power limit
-  FastLED.addLeds<LED_TYPE, LED_DATA_PIN, LED_CLOCK_PIN, COLOR_ORDER>(leds, LED_COUNT);
-  FastLED.setMaxPowerInVoltsAndMilliamps(BATTERY_VOLTS, SAFE_CURRENT_MA);
-  FastLED.setBrightness(percentTo255(currentConfig.brightness));
-  fill_solid(leds, LED_COUNT, CRGB::Black);
-  FastLED.show();
-
-  // Initialize internal file system for flash storage
-  if (!InternalFS.begin()) {
-    Serial.println("[FLASH] ERROR: Failed to mount InternalFS!");
-    // Continue anyway - will use defaults
+  if (saveSettingsToFlash()) {
+    applySettings();
+    configDirty = false;
+    sendCommitAck();
+    Serial.println("Config committed successfully");
   } else {
-    Serial.println("[FLASH] InternalFS mounted successfully");
+    sendErrorResponse(ERROR_FLASH_WRITE_FAILED, "Failed to save to flash");
   }
-  
-  // Load persistent data (config + analytics + owner bundled)
-  loadPersistentData();
-  
-  // BLE init
-  Bluefruit.begin();
-  Bluefruit.setTxPower(4);
-  Bluefruit.Periph.setConnectCallback(connect_callback);
-  Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
-
-  bledfu.begin();
-  bledis.setManufacturer("LED Guitar");
-  bledis.setModel("Controller");
-  bledis.begin();
-
-  bleuart.begin();
-  startAdv();
-
-  Serial.println("BLE LED Controller ready");
 }
 
-void loop() {
-  processCommand();
-  renderEffect();
+void handleConfigUpdate() {
+  CHECK_OWNERSHIP_OR_RETURN();
+
+  if (!configModeActive) {
+    sendErrorResponse(ERROR_INVALID_COMMAND, "Not in config mode");
+    return;
+  }
+
+  if (bleuart.available() < 1) {
+    sendErrorResponse(ERROR_INVALID_PARAMETER, "Insufficient data");
+    return;
+  }
+
+  int paramType = bleuart.read();
+  Serial.printf("Config update: paramType=0x%02X\n", paramType);
+
+  bool updated = false;
+
+  switch (paramType) {
+    case 0x00: { // Brightness
+      if (bleuart.available() >= 1) {
+        int brightness = bleuart.read();
+        if (validateBrightness(brightness)) {
+          ramBuffer.brightness = brightness;
+          updated = true;
+
+          // preview immediately
+          strip.setBrightness((uint8_t)brightness);
+          showLeds();
+        } else {
+          sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid brightness");
+          return;
+        }
+      }
+      break;
+    }
+    case 0x01: { // Pattern
+      if (bleuart.available() >= 1) {
+        int pattern = bleuart.read();
+        if (validatePattern(pattern)) {
+          ramBuffer.currentPattern = pattern;
+          updated = true;
+
+          setPattern((uint8_t)pattern);
+          showLeds();
+        } else {
+          sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid pattern");
+          return;
+        }
+      }
+      break;
+    }
+    case 0x02: { // Color (RGB)
+      if (bleuart.available() >= 3) {
+        int r = bleuart.read();
+        int g = bleuart.read();
+        int b = bleuart.read();
+        if (validateColor(r, g, b)) {
+          ramBuffer.color[0] = r;
+          ramBuffer.color[1] = g;
+          ramBuffer.color[2] = b;
+          // Also update currentSettings for immediate preview
+          currentSettings.color[0] = r;
+          currentSettings.color[1] = g;
+          currentSettings.color[2] = b;
+          updated = true;
+          
+          // Apply color immediately for real-time preview
+          // If current pattern uses color, update it
+          if (ramBuffer.currentPattern == PATTERN_SOLID_WHITE || 
+              ramBuffer.currentPattern == PATTERN_PULSE || 
+              ramBuffer.currentPattern == PATTERN_FADE) {
+            fill_solid_buf(r, g, b);
+            showLeds();
+          }
+        } else {
+          sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid color");
+          return;
+        }
+      }
+      break;
+    }
+    case 0x03: { // Power Mode
+      if (bleuart.available() >= 1) {
+        int powerMode = bleuart.read();
+        if (validatePowerMode(powerMode)) {
+          ramBuffer.powerMode = powerMode;
+          updated = true;
+          applyPowerMode();
+        } else {
+          sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid power mode");
+          return;
+        }
+      }
+      break;
+    }
+    case 0x04: { // Speed
+      if (bleuart.available() >= 1) {
+        int speed = bleuart.read();
+        if (speed >= 0 && speed <= 100) {
+          ramBuffer.speed = speed;
+          updated = true;
+          Serial.printf("Speed updated to: %d%%\n", speed);
+        } else {
+          sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid speed (must be 0-100)");
+          return;
+        }
+      }
+      break;
+    }
+    default: {
+      sendErrorResponse(ERROR_INVALID_PARAMETER, "Unknown parameter type");
+      return;
+    }
+  }
+
+  if (updated) {
+    configDirty = true;
+    sendSuccessAck();
+    Serial.println("Config updated in RAM buffer");
+  }
+}
+
+// ========================================
+// Response functions (unchanged)
+// ========================================
+
+void sendErrorResponse(uint8_t errorCode, const char* message) {
+  uint8_t errorEnvelope[64];
+  errorEnvelope[0] = 0x90;
+  errorEnvelope[1] = errorCode;
+
+  int msgLen = strlen(message);
+  int totalLen = 2 + msgLen;
+  if (totalLen > 63) totalLen = 63;
+
+  memcpy(&errorEnvelope[2], message, totalLen - 2);
+
+  bleuart.write(errorEnvelope, totalLen);
+  Serial.printf("Error %d: %s\n", errorCode, message);
+}
+
+void sendConfigModeAck() { uint8_t ack = RESPONSE_ACK_CONFIG_MODE; bleuart.write(&ack, 1); }
+void sendCommitAck()     { uint8_t ack = RESPONSE_ACK_COMMIT;      bleuart.write(&ack, 1); }
+void sendSuccessAck()    { uint8_t ack = RESPONSE_ACK_SUCCESS;     bleuart.write(&ack, 1); }
+
+// ========================================
+// Pattern functions (DotStar-backed)
+// ========================================
+
+void updatePattern() {
+  if (currentSettings.currentPattern == PATTERN_OFF) return;
+
+  switch (currentSettings.currentPattern) {
+    case PATTERN_SOLID_WHITE:
+      // Use current color from settings (RGB values from React app)
+      fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
+      showLeds();
+      break;
+
+    case PATTERN_RAINBOW:
+      rainbow();
+      showLeds();
+      break;
+
+    case PATTERN_PULSE:
+      // placeholder: original pulse() was static red; keep same semantics
+      fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
+      showLeds();
+      break;
+
+    case PATTERN_FADE:
+      fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
+      showLeds();
+      break;
+
+    case PATTERN_CHASE:
+      chase();
+      showLeds();
+      break;
+
+    case PATTERN_TWINKLE:
+      twinkle();
+      showLeds();
+      break;
+
+    case PATTERN_WAVE:
+      wave();
+      showLeds();
+      break;
+
+    case PATTERN_BREATH:
+      breath();
+      showLeds();
+      break;
+
+    case PATTERN_STROBE:
+      strobe();
+      showLeds();
+      break;
+
+    default:
+      break;
+  }
+}
+
+void setPattern(uint8_t pattern) {
+  switch (pattern) {
+    case PATTERN_OFF:
+      clearBuf();
+      break;
+
+    case PATTERN_SOLID_WHITE:
+      // Use current color from settings (not hardcoded white)
+      fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
+      break;
+
+    case PATTERN_RAINBOW:
+      rainbow();
+      break;
+
+    case PATTERN_PULSE:
+      pulse();
+      break;
+
+    case PATTERN_FADE:
+      fade();
+      break;
+
+    case PATTERN_CHASE:
+      chase();
+      break;
+
+    case PATTERN_TWINKLE:
+      twinkle();
+      break;
+
+    case PATTERN_WAVE:
+      wave();
+      break;
+
+    case PATTERN_BREATH:
+      breath();
+      break;
+
+    case PATTERN_STROBE:
+      strobe();
+      break;
+
+    default:
+      clearBuf();
+      break;
+  }
+
+  showLeds();
+}
+
+// === Effect: Rainbow (Red-White-Blue Blend Cycle) ===
+void rainbow() {
+  const RGB cycleColors[3] = { {255,0,0}, {255,255,255}, {0,0,255} };
+
+  for (int i = 0; i < LED_COUNT; i++) {
+    float position = (float)i / (float)LED_COUNT;
+    int colorIndex = (int)(position * 3) % 3;
+    float blendFactor = (position * 3) - (int)(position * 3);
+
+    RGB startColor = cycleColors[colorIndex];
+    RGB endColor = cycleColors[(colorIndex + 1) % 3];
+    ledBuf[i] = blend_rgb(startColor, endColor, (uint8_t)(blendFactor * 255));
+  }
+}
+
+void pulse() {
+  // Original was "Red pulse effect" but it was static; keep it simple.
+  fill_solid_buf(255, 0, 0);
+}
+
+void fade() {
+  fill_solid_buf(255, 255, 255);
+}
+
+#define CHASER_PULSE 12
+void chase() {
+  uint8_t pos1 = map(beat8_like(CHASER_PULSE, 0),   0, 255, 0, LED_COUNT - 1);
+  uint8_t pos2 = map(beat8_like(CHASER_PULSE, 85),  0, 255, 0, LED_COUNT - 1);
+  uint8_t pos3 = map(beat8_like(CHASER_PULSE, 170), 0, 255, 0, LED_COUNT - 1);
+
+  fadeToBlackBy_buf(20);
+
+  ledBuf[pos1] = {255, 0, 0};
+  ledBuf[pos2] = {255, 255, 255};
+  ledBuf[pos3] = {0, 0, 255};
+}
+
+void twinkle() {
+  for (int i = 0; i < LED_COUNT; i++) {
+    if (random(10) < 3) ledBuf[i] = {255, 255, 255};
+    else ledBuf[i] = {0, 0, 0};
+  }
+}
+
+void wave() {
+  uint32_t now = millis();
+  for (int i = 0; i < LED_COUNT; i++) {
+    uint8_t phase = (uint8_t)((i * 255) / LED_COUNT);
+    uint8_t sineVal = sin8_approx((uint8_t)((now >> 3) + phase));
+    uint8_t g = gamma8[sineVal];
+
+    RGB rgb = hsv2rgb(phase, 255, g);
+    ledBuf[i] = rgb;
+  }
+}
+
+void breath() {
+  uint8_t b = (uint8_t)((sin8_approx((uint8_t)(millis() >> 3)) + 1) >> 1);
+  // Original used HSV(0,0,brightness) => grayscale
+  ledBuf[0] = {b, b, b};
+  for (int i = 1; i < LED_COUNT; i++) ledBuf[i] = ledBuf[0];
+}
+
+void strobe() {
+  static bool strobeState = false;
+  strobeState = !strobeState;
+  if (strobeState) fill_solid_buf(255, 255, 255);
+  else clearBuf();
 }

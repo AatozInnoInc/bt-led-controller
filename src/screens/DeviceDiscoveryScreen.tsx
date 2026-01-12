@@ -10,17 +10,18 @@ import {
   Platform,
   TextInput,
 } from 'react-native';
-import { LinearGradient } from '../utils/linearGradientWrapper';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
-import { useAnalytics } from '../hooks/useAnalytics';
-import { useTheme } from '../contexts/ThemeContext';
+
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothService } from '../utils/bluetoothService';
-import { isPotentialMicrocontroller } from '../utils/bleUtils';
-import { useBluetoothContext as useBluetooth } from '../contexts/BluetoothContext';
+import { BlurView } from 'expo-blur';
 import { getUserPairedDevices, isDevicePaired, getDeviceOwner } from '../utils/devicePairing';
+import { Ionicons } from '@expo/vector-icons';
+import { isLedGuitarDevice } from '../utils/bleConstants';
+import { LinearGradient } from '../utils/linearGradientWrapper';
+import { useBluetoothContext as useBluetooth } from '../contexts/BluetoothContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
+import { PairedDevice } from '../utils/deviceStorage';
 
 // Type declaration for web platform window object
 declare const window: { confirm?: (message?: string) => boolean } | undefined;
@@ -41,6 +42,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     connectedDevice,
     error,
     lastResponse,
+    pairedDevices,
+    isAutoReconnecting,
+    showReconnectionPrompt,
     isWebBluetoothSupported,
     isBluetoothInitialized,
     initialize,
@@ -50,11 +54,16 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     disconnect,
     send,
     sendFailureTest,
+    removePairedDevice,
+    toggleFavorite,
+    refreshPairedDevices,
+    verifyCurrentConnection,
   } = useBluetooth();
-  // moved into useBluetooth hook
+  // moved into BluetoothContext
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('all');
   const [pairedDeviceIds, setPairedDeviceIds] = useState<Set<string>>(new Set());
+  const [showPairedDevices, setShowPairedDevices] = useState(true);
 
   useEffect(() => {
     initialize();
@@ -83,18 +92,14 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     loadPairedDevices();
   }, [user?.userId]);
 
-  // moved to useBluetooth hook
-
-  // moved to utils/bleUtils
-
   const getFilteredDevices = (): BluetoothDevice[] => {
     let filtered = devices;
-    
+
     // Filter out devices already paired to current user (they will auto-connect)
     if (user?.userId) {
       filtered = filtered.filter(device => !pairedDeviceIds.has(device.id));
     }
-    
+
     // Apply search filter
     if (searchQuery) {
       filtered = filtered.filter(device => 
@@ -107,7 +112,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     // Apply type filter
     switch (filterType) {
       case 'microcontrollers':
-        filtered = filtered.filter(device => isPotentialMicrocontroller(device));
+        filtered = filtered.filter(device => isLedGuitarDevice(device));
         break;
       case 'named':
         filtered = filtered.filter(device => device.name && device.name.trim() !== '');
@@ -120,176 +125,42 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     return filtered;
   };
 
-
-
-  // moved to useBluetooth hook
-
-  // moved to useBluetooth hook
-
-  /* moved to hook
-  const connectToDevice = async (device: BluetoothDevice) => {
-    try {
-      setIsConnecting(true);
-      setError(null);
-
-      console.log('Starting connection process for device:', device.name);
-
-      if (Platform.OS === 'web') {
-        // Use real Web Bluetooth connection
-        console.log('Attempting to connect to device via Web Bluetooth:', device.name);
-        
-        // Check if we have a selected device
-        if (!bluetoothWebService.hasSelectedDevice()) {
-          console.log('No device selected, need to scan first');
-          setError('Please scan for devices first to select a device');
-          return;
+  const handleRemovePairedDevice = (device: PairedDevice) => {
+    // Use window.confirm for web and Alert.alert for native
+    const confirmRemoval = () => {
+      if (Platform.OS === 'web' && window?.confirm) {
+        const shouldRemove = window.confirm(`Remove ${device.name} from paired devices?`);
+        if (shouldRemove) {
+          performRemoval();
         }
-
-        // Get the selected device to verify it matches
-        const selectedDevice = bluetoothWebService.getSelectedDevice();
-        console.log('Selected device from service:', selectedDevice?.name);
-        console.log('Target device:', device.name);
-        console.log('Device IDs match:', selectedDevice?.id === device.id);
-
-        await bluetoothWebService.connectToDevice(device.id);
-        console.log('Web Bluetooth connection successful');
       } else {
-        // Use real Bluetooth connection for mobile
-        console.log('Attempting to connect to device via native Bluetooth:', device.name);
-        
-        try {
-          await bluetoothService.connectToDevice(device.id);
-          console.log('Native Bluetooth connection successful');
-        } catch (error) {
-          console.error('Native Bluetooth connection failed:', error);
-          throw new Error('Failed to connect to device: ' + (error as Error).message);
-        }
+        Alert.alert(
+          'Remove Device',
+          `Remove ${device.name} from paired devices?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Remove', 
+              style: 'destructive',
+              onPress: performRemoval
+            },
+          ]
+        );
       }
+    };
 
-      // Update device status
-      setConnectedDevice({
-        ...device,
-        isConnected: true,
-      });
-
-      // Update device in list
-      setDevices(prevDevices =>
-        prevDevices.map(d =>
-          d.id === device.id ? { ...d, isConnected: true } : d
-        )
-      );
-
-      console.log('Device state updated - connected:', device.name);
-
-      Alert.alert(
-        'Connected!',
-        `Successfully connected to ${device.name}`,
-        [{ text: 'OK' }]
-      );
-
-    } catch (error) {
-      console.error('Connection error:', error);
-      setError('Failed to connect to device: ' + (error as Error).message);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-  */
-
-  /* moved to hook
-  const disconnectDevice = async () => {
-    if (!connectedDevice) return;
-
-    try {
-      if (Platform.OS === 'web') {
-        await bluetoothWebService.disconnectDevice(connectedDevice.id);
-      } else {
-        // Use real Bluetooth disconnection for mobile
-        await bluetoothService.disconnectDevice(connectedDevice.id);
+    const performRemoval = async () => {
+      try {
+        await removePairedDevice(device.id);
+        // Also refresh paired devices to ensure UI is updated
+        await refreshPairedDevices();
+      } catch (error) {
+        console.error('DeviceDiscoveryScreen: Failed to remove device:', error);
       }
-      
-      setConnectedDevice(null);
-      setDevices(prevDevices =>
-        prevDevices.map(d =>
-          d.id === connectedDevice.id ? { ...d, isConnected: false } : d
-        )
-      );
+    };
 
-      Alert.alert('Disconnected', 'Device disconnected successfully');
-    } catch (error) {
-      console.error('Disconnect error:', error);
-      setError('Failed to disconnect device');
-    }
+    confirmRemoval();
   };
-  */
-
-  /* moved to hook
-  const sendMessage = async () => {
-    if (!connectedDevice) {
-      setError('No device connected');
-      return;
-    }
-
-    try {
-      setIsSending(true);
-      setError(null);
-      setLastResponse(null);
-
-      if (Platform.OS === 'web') {
-        // Use real Web Bluetooth to send message
-        const response = await bluetoothWebService.sendMessage(connectedDevice.id, 'Hello World!');
-        setLastResponse(response);
-      } else {
-        // Use real Bluetooth to send message for mobile
-        await bluetoothService.sendMessage(connectedDevice.id, 'Hello World!');
-        setLastResponse('Message sent successfully via Bluetooth');
-      }
-
-    } catch (error) {
-      console.error('Send message error:', error);
-      setError('Failed to send message: ' + (error as Error).message);
-      setLastResponse(null);
-    } finally {
-      setIsSending(false);
-    }
-  };
-  */
-
-  /* moved to hook
-  const testFailure = async () => {
-    if (!connectedDevice) {
-      setError('No device connected');
-      return;
-    }
-
-    try {
-      setIsTestingFailure(true);
-      setError(null);
-      setLastResponse(null);
-
-      if (Platform.OS === 'web') {
-        // Send a message that should trigger an error response
-        const response = await bluetoothWebService.sendMessage(connectedDevice.id, 'ERROR_TEST');
-        setLastResponse(response);
-      } else {
-        // Use real Bluetooth to send error test message for mobile
-        try {
-          await bluetoothService.sendMessage(connectedDevice.id, 'ERROR_TEST');
-          setLastResponse('Error test message sent via Bluetooth');
-        } catch (error) {
-          setLastResponse('Error test triggered: ' + (error as Error).message);
-        }
-      }
-
-    } catch (error) {
-      console.error('Test failure error:', error);
-      setError('Test failure triggered: ' + (error as Error).message);
-      setLastResponse(null);
-    } finally {
-      setIsTestingFailure(false);
-    }
-  };
-  */
 
   const selectDevice = (device: BluetoothDevice) => {
     console.log('Device selected:', device.name, 'Connected:', device.isConnected);
@@ -340,8 +211,118 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
     }
   };
 
+  const renderPairedDevice = ({ item }: { item: PairedDevice }) => {
+    // Check if this paired device is currently connected
+    // Only show as connected if we have verified communication
+    const isConnected = connectedDevice?.id === item.id && connectedDevice?.isConnected;
+    
+    const handleReconnect = async () => {
+      try {
+        const deviceToConnect: BluetoothDevice = {
+          id: item.id,
+          name: item.name,
+          rssi: item.rssi || -50,
+          isConnected: false,
+          manufacturerData: item.manufacturerData || '',
+          serviceUUIDs: item.serviceUUIDs || [],
+        };
+        await connect(deviceToConnect);
+      } catch (error) {
+        console.error('Failed to reconnect:', error);
+      }
+    };
+
+    return (
+      <View style={[
+        styles.pairedDeviceCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+        isConnected && { borderColor: colors.success, backgroundColor: colors.success + '10' }
+      ]}>
+        <View style={styles.pairedDeviceInfo}>
+          <View style={styles.pairedDeviceHeader}>
+            <Ionicons 
+              name={isConnected ? "bluetooth" : "bluetooth-outline"} 
+              size={20} 
+              color={isConnected ? colors.success : colors.textSecondary} 
+            />
+            <Text 
+              style={[styles.pairedDeviceName, { color: colors.text }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {item.name}
+            </Text>
+            <View style={styles.badgeContainer}>
+              <View style={[styles.pairedBadge, { backgroundColor: colors.warning }]}>
+                <Text style={[styles.pairedText, { color: colors.text }]}>Paired</Text>
+              </View>
+              {isConnected && (
+                <View style={[styles.connectedBadge, { backgroundColor: colors.success }]}>
+                  <Text style={[styles.connectedText, { color: colors.text }]}>Connected</Text>
+                </View>
+              )}
+            </View>
+          </View>
+          <View style={styles.pairedDeviceDetails}>
+            <Text style={[styles.pairedDeviceDetail, { color: colors.textSecondary }]}>
+              Last connected: {item.lastConnected.toLocaleDateString()}
+            </Text>
+            <Text style={[styles.pairedDeviceDetail, { color: colors.textSecondary }]}>
+              Connections: {item.connectionCount}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.pairedDeviceActions}>
+          {!isConnected && (
+            <TouchableOpacity
+              style={[
+                styles.pairedDeviceAction,
+                styles.reconnectAction,
+                { backgroundColor: colors.primary + '20', borderColor: colors.primary }
+              ]}
+              onPress={handleReconnect}
+              disabled={isConnecting}
+            >
+              <Ionicons 
+                name="refresh" 
+                size={18} 
+                color={colors.primary} 
+              />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[
+              styles.pairedDeviceAction,
+              styles.favoriteAction,
+              { backgroundColor: colors.card, borderColor: colors.border },
+              item.isFavorite && { backgroundColor: colors.warning + '20', borderColor: colors.warning }
+            ]}
+            onPress={() => toggleFavorite(item.id)}
+          >
+            <Ionicons 
+              name={item.isFavorite ? "star" : "star-outline"} 
+              size={18} 
+              color={item.isFavorite ? colors.text : colors.warning} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.pairedDeviceAction,
+              styles.deleteAction,
+              { backgroundColor: colors.card, borderColor: colors.border }
+            ]}
+            onPress={() => handleRemovePairedDevice(item)}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.error} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderDevice = ({ item }: { item: BluetoothDevice }) => {
-    const isMicrocontroller = isPotentialMicrocontroller(item);
+    const isMicrocontroller = isLedGuitarDevice(item);
+    const isPaired = pairedDevices.some(paired => paired.id === item.id);
 
     return (
       <TouchableOpacity
@@ -350,7 +331,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           { backgroundColor: colors.card, borderColor: colors.border },
           item.isConnected && { borderColor: colors.success, backgroundColor: colors.success + '10' },
           isConnecting && { borderColor: colors.primary, backgroundColor: colors.primary + '10', opacity: 0.7 },
-          isMicrocontroller && { borderColor: colors.warning, backgroundColor: colors.warning + '10' }
+          isPaired && { borderColor: colors.warning, backgroundColor: colors.warning + '10' }
         ]}
         onPress={() => selectDevice(item)}
         activeOpacity={0.7}
@@ -364,22 +345,24 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
               color={item.isConnected ? colors.success : (isMicrocontroller ? colors.warning : colors.primary)} 
             />
             <Text style={[styles.deviceName, { color: colors.text }]}>{item.name}</Text>
-            {item.isConnected && (
-              <View style={[styles.connectedBadge, { backgroundColor: colors.success }]}>
-                <Text style={[styles.connectedText, { color: colors.text }]}>Connected</Text>
-              </View>
-            )}
-            {isMicrocontroller && !item.isConnected && (
-              <View style={[styles.microcontrollerBadge, { backgroundColor: colors.warning }]}>
-                <Text style={[styles.microcontrollerText, { color: colors.text }]}>MCU</Text>
-              </View>
-            )}
-            {isConnecting && !item.isConnected && (
-              <View style={[styles.connectingBadge, { backgroundColor: colors.primary }]}>
-                <ActivityIndicator size="small" color={colors.text} />
-                <Text style={[styles.connectingText, { color: colors.text }]}>Connecting...</Text>
-              </View>
-            )}
+            <View style={styles.badgeContainer}>
+              {isPaired && (
+                <View style={[styles.pairedBadge, { backgroundColor: colors.warning }]}>
+                  <Text style={[styles.pairedText, { color: colors.text }]}>Paired</Text>
+                </View>
+              )}
+              {item.isConnected && (
+                <View style={[styles.connectedBadge, { backgroundColor: colors.success }]}>
+                  <Text style={[styles.connectedText, { color: colors.text }]}>Connected</Text>
+                </View>
+              )}
+              {isConnecting && !item.isConnected && (
+                <View style={[styles.connectingBadge, { backgroundColor: colors.primary }]}>
+                  <ActivityIndicator size="small" color={colors.text} />
+                  <Text style={[styles.connectingText, { color: colors.text }]}>Connecting...</Text>
+                </View>
+              )}
+            </View>
           </View>
           <View style={styles.deviceDetails}>
             <Text style={[styles.deviceDetail, { color: colors.textSecondary }]}>
@@ -397,11 +380,13 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             )}
           </View>
         </View>
-        <Ionicons 
-          name="chevron-forward" 
-          size={20} 
-          color={colors.textSecondary} 
-        />
+        <View style={styles.chevronContainer}>
+          <Ionicons 
+            name="chevron-forward" 
+            size={20} 
+            color={colors.textSecondary} 
+          />
+        </View>
       </TouchableOpacity>
     );
   };
@@ -498,6 +483,47 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         );
       })()}
 
+      {/* Reconnection Prompt */}
+      {showReconnectionPrompt && (
+        <BlurView intensity={25} tint={isDark ? "dark" : "light"} style={[
+          styles.reconnectionPrompt,
+          { backgroundColor: colors.primary + '20', borderColor: colors.primary }
+        ]}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.reconnectionText, { color: colors.primary }]}>
+            Looking for your LED Guitar controller...
+          </Text>
+        </BlurView>
+      )}
+
+      {/* Paired Devices Section */}
+      {pairedDevices.length > 0 && (
+        <View style={styles.pairedDevicesSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Paired Devices</Text>
+            <TouchableOpacity
+              style={styles.toggleButton}
+              onPress={() => setShowPairedDevices(!showPairedDevices)}
+            >
+              <Ionicons 
+                name={showPairedDevices ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={colors.textSecondary} 
+              />
+            </TouchableOpacity>
+          </View>
+          {showPairedDevices && (
+            <FlatList
+              data={pairedDevices}
+              renderItem={renderPairedDevice}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+              style={styles.pairedDevicesList}
+            />
+          )}
+        </View>
+      )}
+
       {/* Scan Button */}
       <View style={styles.scanSection}>
         <TouchableOpacity
@@ -580,7 +606,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
                 { color: colors.textSecondary },
                 filterType === 'microcontrollers' && { color: '#FFFFFF', fontWeight: '600' }
               ]}>
-                Microcontrollers ({devices.filter(d => isPotentialMicrocontroller(d)).length})
+                Microcontrollers ({devices.filter(d => isLedGuitarDevice(d)).length})
               </Text>
             </TouchableOpacity>
             
@@ -604,55 +630,55 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         </View>
       )}
 
-      {/* Send Message Button */}
+      {/* Connection Controls */}
       {connectedDevice && (
         <View style={styles.sendMessageSection}>
           <View style={styles.buttonRow}>
             <TouchableOpacity
               style={[
-                styles.sendMessageButton,
-                { backgroundColor: colors.success },
+                styles.testFailureButton,
+                { backgroundColor: colors.warning },
+                isTestingFailure && { backgroundColor: colors.secondary }
+              ]}
+              onPress={sendFailureTest}
+              disabled={isTestingFailure || isSending}
+            >
+              {isTestingFailure ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Ionicons 
+                  name="warning" 
+                  size={20} 
+                  color="#FFFFFF" 
+                />
+              )}
+              <Text style={[styles.testFailureButtonText, { color: '#FFFFFF' }]}>
+                {isTestingFailure ? 'Testing...' : 'Test Failure'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.verifyButton,
+                { backgroundColor: colors.primary },
                 isSending && { backgroundColor: colors.secondary }
               ]}
-              onPress={() => send('Hello World!')}
-              disabled={isSending}
+              onPress={verifyCurrentConnection}
+              disabled={isSending || isTestingFailure}
             >
               {isSending ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <Ionicons 
-                  name="send" 
+                  name="checkmark-circle" 
                   size={20} 
                   color="#FFFFFF" 
                 />
               )}
-              <Text style={[styles.sendMessageButtonText, { color: '#FFFFFF' }]}>
-                {isSending ? 'Sending...' : 'Send Message'}
+              <Text style={[styles.verifyButtonText, { color: '#FFFFFF' }]}>
+                {isSending ? 'Verifying...' : 'Verify Connection'}
               </Text>
             </TouchableOpacity>
-
-                         <TouchableOpacity
-               style={[
-                 styles.testFailureButton,
-                 { backgroundColor: colors.warning },
-                 isTestingFailure && { backgroundColor: colors.secondary }
-               ]}
-               onPress={sendFailureTest}
-               disabled={isTestingFailure || isSending}
-             >
-               {isTestingFailure ? (
-                 <ActivityIndicator color="#FFFFFF" size="small" />
-               ) : (
-                 <Ionicons 
-                   name="warning" 
-                   size={20} 
-                   color="#FFFFFF" 
-                 />
-               )}
-               <Text style={[styles.testFailureButtonText, { color: '#FFFFFF' }]}>
-                 {isTestingFailure ? 'Testing...' : 'Test Failure'}
-               </Text>
-             </TouchableOpacity>
           </View>
           
           <Text style={[styles.connectedDeviceText, { color: colors.textSecondary }]}>
@@ -766,7 +792,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
-    ...(Platform.OS === 'web' ? {} : {
+    ...(Platform.OS === 'web' ? {
+      boxShadow: `0 4px 8px rgba(0,0,0,0.1)`,
+    } : {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
@@ -1052,6 +1080,153 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  reconnectionPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  reconnectionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  pairedDevicesSection: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  toggleButton: {
+    padding: 4,
+  },
+  pairedDevicesList: {
+    marginBottom: 12,
+  },
+  pairedDeviceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  pairedDeviceCardConnected: {
+    // Applied inline
+  },
+  pairedDeviceInfo: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 12,
+  },
+  pairedDeviceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  pairedDeviceName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  pairedDeviceDetails: {
+    marginLeft: 28,
+  },
+  pairedDeviceDetail: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  pairedDeviceActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    flexShrink: 0,
+  },
+  pairedDeviceAction: {
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    minHeight: 40,
+    borderWidth: 1,
+  },
+  favoriteAction: {
+    // Applied inline
+  },
+  favoriteActionActive: {
+    // Applied inline
+  },
+  deleteAction: {
+    // Applied inline
+  },
+  reconnectAction: {
+    // Applied inline
+  },
+  verifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    flex: 1,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: `0 4px 8px rgba(0,0,0,0.1)`,
+    } : {
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+    }),
+  },
+  verifyButtonActive: {
+    // Applied inline
+  },
+  verifyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  chevronContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 8,
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  pairedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  pairedText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

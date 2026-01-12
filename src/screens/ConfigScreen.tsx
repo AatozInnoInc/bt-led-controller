@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,15 +25,15 @@ import { useBluetoothContext as useBluetooth } from '../contexts/BluetoothContex
 import { useAnalytics } from '../hooks/useAnalytics';
 import { configDomainController } from '../domain/config/configDomainController';
 import { ParameterId } from '../types/commands';
-import { EffectType, HSVColor } from '../types/config';
+import { EffectType } from '../types/config';
 import { BLEError, ErrorCode } from '../types/errors';
 import { ErrorEnvelope, ErrorHandler, formatErrorForUser } from '../domain/common/errorEnvelope';
 import { createAlertFromError, createSuccessAlert, createErrorAlert, AlertMessages } from '../domain/common/alertEnvelope';
 import { validateParameter, validateColor, validateColorAndPower, calculateTotalCurrent } from '../utils/parameterValidation';
 import { BluetoothDevice } from '../types/bluetooth';
-import { DeviceSettings } from '../utils/bleConstants';
-import { hsvToRgb, rgbToHsv, hsvToHex, hexToHsv } from '../utils/colorUtils';
+import { DeviceSettings, RGBColor } from '../utils/bleConstants';
 import { ConfigModeStatus } from '../domain/bluetooth/configurationModule';
+import { hexToRgb } from '../utils/colors';
 
 // Development mode: Set to true to test UI without a real device connection
 const forceDevMode = Constants.expoConfig?.extra?.forceDevMode === true;
@@ -155,10 +156,10 @@ const ConfigScreen: React.FC = () => {
   const { colors: themeColors, isDark } = useTheme();
   const { connectedDevice: realConnectedDevice } = useBluetooth();
   const { trackConfigChange } = useAnalytics();
-  
+
   // Use mock device in dev mode if no real device is connected
   const connectedDevice = DEV_MODE && !realConnectedDevice ? MOCK_DEVICE : realConnectedDevice;
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -168,13 +169,13 @@ const ConfigScreen: React.FC = () => {
   const [config, setConfig] = useState<DeviceSettings | null>(null);
   const [configModeState, setConfigModeState] = useState<ConfigModeStatus>({ state: 'inactive' });
   const [isInConfigMode, setIsInConfigMode] = useState(false);
-  
+
   // Slider refs to prevent flashing (not used directly, kept for potential future use)
   // const brightnessSliderRef = useRef<Slider>(null);
   // const speedSliderRef = useRef<Slider>(null);
   const [brightness, setBrightness] = useState(50);
   const [speed, setSpeed] = useState(30);
-  const [selectedColor, setSelectedColor] = useState<HSVColor>({ h: 160, s: 255, v: 255 }); // HSV format
+  const [selectedColor, setSelectedColor] = useState<RGBColor>([0, 122, 255]); // RGB format: iOS blue
   const [effectType, setEffectType] = useState<EffectType>(EffectType.SOLID);
   const [powerState, setPowerState] = useState(false);
 
@@ -198,37 +199,246 @@ const ConfigScreen: React.FC = () => {
     { id: EffectType.WAVE, name: 'Wave', icon: 'water' },
     { id: EffectType.STROBE, name: 'Strobe', icon: 'flash' },
     { id: EffectType.CUSTOM, name: 'Custom', icon: 'settings' },
+/*     { id: EffectType.SOLID, name: 'Solid', icon: 'radio-button-on', color: themeColors.text },
+    { id: EffectType.PULSE, name: 'Pulse', icon: 'pulse', color: themeColors.primary },
+    { id: EffectType.RAINBOW, name: 'Rainbow', icon: 'color-palette', color: themeColors.primary },
+    { id: EffectType.WAVE, name: 'Wave', icon: 'water', color: themeColors.primary },
+    { id: EffectType.STROBE, name: 'Strobe', icon: 'flash', color: themeColors.warning },
+    { id: EffectType.CUSTOM, name: 'Custom', icon: 'settings', color: themeColors.text }, */
   ];
 
-  // Initialize config when device connects
-  useEffect(() => {
-    if (connectedDevice) {
-      // Reset state before loading new config to prevent showing stale/default values
-      setConfig(null);
-      setIsInConfigMode(false);
-      setError(null);
-      setErrorEnvelope(null);
-      
-      // Always load current config from device on connect/reconnect
-      initializeConfig();
-      
-      // Setup disconnection listener for graceful handling
-      if (Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id) {
-        const { bluetoothService } = require('../utils/bluetoothService');
-        bluetoothService.onDisconnection(connectedDevice.id, (deviceId: string) => {
-          handleDisconnection();
-        });
+  // Animated effect icon component
+  const AnimatedEffectIcon: React.FC<{ effect: typeof effects[0] }> = ({ effect }) => {
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const waveAnim = useRef(new Animated.Value(0)).current;
+    const strobeAnim = useRef(new Animated.Value(1)).current;
+    const [waveColor, setWaveColor] = useState('#4ECDC4');
+
+    useEffect(() => {
+      if (effect.name === 'Pulse') {
+        const pulseAnimation = Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, {
+              toValue: 1.3,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnim, {
+              toValue: 1,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+        pulseAnimation.start();
+        return () => pulseAnimation.stop();
       }
-    } else if (!DEV_MODE) {
+
+      if (effect.name === 'Wave') {
+        const waveColors = ['#4ECDC4', '#45B7D1', '#96CEB4', '#4ECDC4'];
+        let colorIndex = 0;
+        
+        const waveAnimation = Animated.loop(
+          Animated.timing(waveAnim, {
+            toValue: 1,
+            duration: 7500,
+            useNativeDriver: false,
+          })
+        );
+
+        waveAnim.addListener(({ value }) => {
+          const newIndex = Math.floor(value * 4) % 4;
+          if (newIndex !== colorIndex) {
+            colorIndex = newIndex;
+            setWaveColor(waveColors[colorIndex]);
+          }
+        });
+
+        waveAnimation.start();
+        return () => {
+          waveAnimation.stop();
+          waveAnim.removeAllListeners();
+        };
+      }
+
+      if (effect.name === 'Strobe') {
+        const strobeAnimation = Animated.loop(
+          Animated.sequence([
+            Animated.timing(strobeAnim, {
+              toValue: 0.3,
+              duration: 750,
+              useNativeDriver: true,
+            }),
+            Animated.timing(strobeAnim, {
+              toValue: 1,
+              duration: 750,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+        strobeAnimation.start();
+        return () => strobeAnimation.stop();
+      }
+    }, [effect.name]);
+
+    if (effect.name === 'Rainbow') {
+      return (
+        <View style={styles.rainbowIconContainer}>
+          <LinearGradient
+            colors={['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.rainbowGradient}
+          >
+            <Ionicons name={effect.icon as any} size={24} color="#FFFFFF" />
+          </LinearGradient>
+        </View>
+      );
+    }
+
+    if (effect.name === 'Pulse') {
+      return (
+        <View style={styles.iconContainer}>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <Ionicons name={effect.icon as any} size={24} color={themeColors.primary} />
+          </Animated.View>
+        </View>
+      );
+    }
+
+    if (effect.name === 'Wave') {
+      return (
+        <View style={styles.iconContainer}>
+          <Ionicons name="analytics" size={24} color={waveColor} />
+        </View>
+      );
+    }
+
+    if (effect.name === 'Strobe') {
+      return (
+        <View style={styles.iconContainer}>
+          <Animated.View style={{ opacity: strobeAnim }}>
+            <Ionicons name={effect.icon as any} size={24} color={themeColors.warning} />
+          </Animated.View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.iconContainer}>
+        <Ionicons name={effect.icon as any} size={24} color={themeColors.text} />
+      </View>
+    );
+  };
+
+  // Initialize config domain controller with subscription pattern
+  useEffect(() => {
+    const initialize = async () => {
+      if (connectedDevice) {
+        // Reset state before loading new config to prevent showing stale/default values
+        setIsLoading(true);
+        setError(null);
+        setErrorEnvelope(null);
+        setConfig(null);
+        setIsInConfigMode(false);
+
+        // Setup disconnection listener for graceful handling
+        if (Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id) {
+          const { bluetoothService } = require('../utils/bluetoothService');
+          bluetoothService.onDisconnection(connectedDevice.id, (deviceId: string) => {
+            handleDisconnection();
+          });
+        }
+    }
+
+    if (!DEV_MODE) {
       // Only reset if not in dev mode (dev mode uses mock device)
       handleDisconnection();
-    }
-    
-    // Cleanup disconnection listener on unmount or device change
-    return () => {
-      if (connectedDevice && Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id) {
-        const { bluetoothService } = require('../utils/bluetoothService');
+
+        try {
+          await configDomainController.initialize(connectedDevice);
+          const result = await configDomainController.enterConfigMode();
+
+          if (result.success && result.config) {
+            setConfig(result.config);
+            setBrightness(result.config.brightness);
+            setSpeed(result.config.speed);
+            setSelectedColor(result.config.color);
+            setEffectType(result.config.effectType);
+            setPowerState(result.config.powerState);
+            setConfigModeState({ state: 'active' });
+            setIsInConfigMode(true);
+          } else if (result.error) {
+            setErrorEnvelope(result.error);
+            setError(formatErrorForUser(result.error));
+          }
+        } catch (err: any) {
+          if (err instanceof BLEError) {
+            const envelope = ErrorHandler.fromError(err);
+            setErrorEnvelope(envelope);
+            setError(formatErrorForUser(envelope));
+          } else {
+            const envelope: ErrorEnvelope = {
+              code: ErrorCode.UNKNOWN_ERROR,
+              message: err?.message || 'Failed to initialize config mode',
+              timestamp: Date.now(),
+            };
+            setErrorEnvelope(envelope);
+            setError(formatErrorForUser(envelope));
+          }
+        } finally {
+          setIsLoading(false);
+        }
+      } else if (!connectedDevice) {
+        // No device connected, reset
+        configDomainController.reset();
+        setConfig(null);
+        setConfigModeState({ state: 'inactive' });
+        setIsInConfigMode(false);
+      }
+    };
+
+    initialize();
+
+    // Subscribe to config updates
+    const unsubscribeConfig = configDomainController.subscribeToConfigUpdates((updatedConfig) => {
+      setConfig(updatedConfig);
+      setBrightness(updatedConfig.brightness);
+      setSpeed(updatedConfig.speed);
+      setSelectedColor(updatedConfig.color);
+      setEffectType(updatedConfig.effectType);
+      setPowerState(updatedConfig.powerState);
+    });
+
+    // Subscribe to errors
+    const unsubscribeErrors = configDomainController.subscribeToErrors((errorEnvelope) => {
+      setErrorEnvelope(errorEnvelope);
+      setError(formatErrorForUser(errorEnvelope));
+    });
+
+    // Get initial config mode state
+    setConfigModeState(configDomainController.getConfigModeState());
+
+    // Setup disconnection listener for graceful handling
+    let disconnectionCleanup: (() => void) | null = null;
+    if (connectedDevice && Platform.OS !== 'web' && connectedDevice.id !== MOCK_DEVICE.id) {
+      const { bluetoothService } = require('../utils/bluetoothService');
+      bluetoothService.onDisconnection(connectedDevice.id, (deviceId: string) => {
+        handleDisconnection();
+      });
+      disconnectionCleanup = () => {
         bluetoothService.removeDisconnectionListener(connectedDevice.id);
+      };
+    }
+
+    return () => {
+      unsubscribeConfig();
+      unsubscribeErrors();
+      if (disconnectionCleanup) {
+        disconnectionCleanup();
+      }
+      if (connectedDevice && !DEV_MODE) {
+        configDomainController.exitConfigMode().catch(() => {});
       }
     };
   }, [connectedDevice]);
@@ -287,106 +497,6 @@ const ConfigScreen: React.FC = () => {
     }, [connectedDevice])
   );
 
-  const initializeConfig = async () => {
-    if (!connectedDevice) return;
-    
-    setIsLoading(true);
-    setError(null);
-    setErrorEnvelope(null);
-    
-    // Reset UI state to prevent showing stale/default values
-    // These will be set from the device config once loaded
-    setBrightness(50); // Temporary default, will be overwritten
-    setSpeed(30); // Temporary default, will be overwritten
-    setSelectedColor({ h: 160, s: 255, v: 255 }); // Temporary default
-    setEffectType(EffectType.SOLID); // Temporary default
-    setPowerState(false); // Temporary default
-    
-    try {
-      // In dev mode with mock device, use default config without BLE
-      if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
-        console.log("Setting up DEV_MODE mock device")
-        // Use default values for mock device
-        const mockConfig: DeviceSettings = {
-          brightness: 50,
-          currentPattern: 0,
-          powerMode: 0,
-          autoOff: 0,
-          maxEffects: 10,
-          defaultColor: [0, 122, 255],
-          speed: 30,
-          color: { h: 160, s: 255, v: 255 },
-          effectType: 0,
-          powerState: false,
-        };
-        setConfig(mockConfig);
-        setBrightness(mockConfig.brightness);
-        setSpeed(mockConfig.speed);
-        setSelectedColor(mockConfig.color);
-        setEffectType(mockConfig.effectType);
-        setPowerState(mockConfig.powerState);
-        setConfigModeState({ state: 'active' });
-        setIsInConfigMode(true);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Initialize controller with connected device
-      await configDomainController.initialize(connectedDevice);
-      
-      // Enter config mode and get CURRENT config from device
-      // This ensures we always show the device's actual current settings
-      const result = await configDomainController.enterConfigMode();
-      
-      if (result.success && result.config) {
-        // Load the device's current settings into UI state
-        console.log('Loaded current device config:', result.config);
-        setConfig(result.config);
-        setBrightness(result.config.brightness);
-        setSpeed(result.config.speed);
-        setSelectedColor(result.config.color);
-        setEffectType(result.config.effectType);
-        setPowerState(result.config.powerState);
-        setConfigModeState({ state: 'active' });
-        setIsInConfigMode(true);
-      } else if (result.error) {
-        setErrorEnvelope(result.error);
-        setError(formatErrorForUser(result.error));
-        const alert = createAlertFromError(result.error);
-        Alert.alert(alert.title, alert.message);
-      }
-    } catch (err) {
-      if (err instanceof BLEError) {
-        const envelope = ErrorHandler.fromError(err);
-        const message = ErrorHandler.processError(envelope);
-        const severity = ErrorHandler.getSeverity(envelope);
-        setErrorEnvelope(envelope);
-        setErrorSeverity(severity);
-        setError(message);
-        
-        // Show alert with recovery option if recoverable
-        if (ErrorHandler.isRecoverable(envelope)) {
-          Alert.alert(
-            severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Info',
-            message,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Retry', onPress: () => initializeConfig() },
-            ]
-          );
-        } else {
-          Alert.alert('Error', message);
-        }
-      } else {
-        setError('Failed to initialize configuration');
-        setErrorSeverity('error');
-        setErrorEnvelope(null);
-        Alert.alert('Error', 'Failed to initialize configuration');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Debounce timers per parameter to prevent crosstalk
   const parameterDebounceTimers = useRef<Map<ParameterId, NodeJS.Timeout>>(new Map());
@@ -452,7 +562,7 @@ const ConfigScreen: React.FC = () => {
     if (parameterId === ParameterId.BRIGHTNESS || parameterId === ParameterId.POWER_STATE) {
       const testBrightness = parameterId === ParameterId.BRIGHTNESS ? value : brightness;
       const testPowerState = parameterId === ParameterId.POWER_STATE ? (value > 0) : powerState;
-      
+
       const powerValidation = validateColorAndPower(selectedColor, testBrightness, testPowerState);
       if (!powerValidation.isValid) {
         setValidationError(powerValidation.error || 'Power consumption too high');
@@ -547,7 +657,7 @@ const ConfigScreen: React.FC = () => {
           if (err.message.includes('not connected')) {
             handleDisconnection();
           }
-          
+
           // Auto-recover for recoverable errors
           if (ErrorHandler.isRecoverable(envelope) && envelope.code === ErrorCode.NOT_IN_CONFIG_MODE) {
             // Try to re-enter config mode and retry
@@ -579,12 +689,12 @@ const ConfigScreen: React.FC = () => {
     parameterDebounceTimers.current.set(parameterId, timer);
   }, [connectedDevice, config, isInConfigMode, brightness, speed, effectType, powerState, trackConfigChange]);
 
-  // Update color as a whole HSV value
+  // Update color as RGB value
   const updateColor = useCallback(async (hexColor: string) => {
     if (!connectedDevice || !config) return;
 
-    // Convert HEX to HSV for internal processing
-    const color = hexToHsv(hexColor);
+    // Convert HEX to RGB for internal processing
+    const color = hexToRgb(hexColor);
 
     // Validate color before sending
     const validation = validateColor(color);
@@ -616,9 +726,9 @@ const ConfigScreen: React.FC = () => {
     // Get old color for analytics
     const oldColor = selectedColor;
     const colorChanged = 
-      oldColor.h !== color.h || 
-      oldColor.s !== color.s || 
-      oldColor.v !== color.v;
+      oldColor[0] !== color[0] ||
+      oldColor[1] !== color[1] ||
+      oldColor[2] !== color[2];
 
     // Clear existing timeout
     if (colorDebounceTimer.current) {
@@ -643,117 +753,55 @@ const ConfigScreen: React.FC = () => {
 
     // Debounce BLE command to prevent flooding
     colorDebounceTimer.current = setTimeout(async () => {
-      try {
-        // Ensure we're in config mode
-        if (!isInConfigMode) {
-          await configDomainController.enterConfigMode();
-          setIsInConfigMode(true);
-        }
-
-        // Send HSV directly to device (firmware uses FastLED HSV)
-        const result = await configDomainController.updateColor(color);
-        if (result.success) {
-          setError(null);
-          setErrorEnvelope(null);
-        } else if (result.error) {
-          setErrorEnvelope(result.error);
-          setError(formatErrorForUser(result.error));
-        }
-      } catch (err) {
-        if (err instanceof BLEError) {
-          const envelope = ErrorHandler.fromError(err);
-          const message = ErrorHandler.processError(envelope);
-          const severity = ErrorHandler.getSeverity(envelope);
-          setErrorEnvelope(envelope);
-          setErrorSeverity(severity);
-          setError(message);
-        } else {
-          setError('Failed to update color');
-          setErrorSeverity('error');
-          setErrorEnvelope(null);
-        }
-        console.error('Color update error:', err);
-      } finally {
-        colorDebounceTimer.current = null;
-      }
+      await handleColorChange(color);
+      colorDebounceTimer.current = null;
     }, 150); // 150ms debounce
-  }, [connectedDevice, config, isInConfigMode, selectedColor, trackConfigChange]);
+  }, [connectedDevice, config, isInConfigMode, selectedColor, trackConfigChange, powerState, brightness]);
 
   const handleSave = async () => {
-    if (!connectedDevice) {
-      Alert.alert('Error', 'No device connected');
+    if (!connectedDevice || !config) {
+      const alert = createErrorAlert(AlertMessages.NO_DEVICE_CONNECTED);
+      Alert.alert(alert.title, alert.message);
       return;
     }
 
     setIsSaving(true);
     setError(null);
+    setErrorEnvelope(null);
 
     try {
       // In dev mode with mock device, simulate save
       if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
-        // Simulate save delay
         await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Update config to reflect current state
-        const savedConfig: DeviceSettings = {
-          brightness,
-          currentPattern: effectType,
-          powerMode: 0,
-          autoOff: 0,
-          maxEffects: 10,
-          defaultColor: [0, 122, 255],
-          speed,
-          color: selectedColor,
-          effectType,
-          powerState,
-        };
-        console.log('💾 Saved config:', savedConfig);
-        setConfig(savedConfig);
-        setIsInConfigMode(false);
-        
-        Alert.alert('Success', 'Configuration saved successfully! (Mock Mode)');
+        const alert = createSuccessAlert(AlertMessages.CONFIG_SAVED);
+        Alert.alert(alert.title, alert.message + ' (Mock Mode)');
         setIsSaving(false);
         return;
       }
 
-      await configDomainController.commitConfig();
-      await configDomainController.exitConfigMode();
-      setIsInConfigMode(false);
-      
-      // Reload config to reflect saved state - keep current UI state
-      // (commitConfig saves the current cached config)
-      
-      Alert.alert('Success', 'Configuration saved successfully!');
-      setError(null);
-      setErrorEnvelope(null);
-    } catch (err) {
-      if (err instanceof BLEError) {
-        const envelope = ErrorHandler.fromError(err);
-        const message = ErrorHandler.processError(envelope);
-        const severity = ErrorHandler.getSeverity(envelope);
-        setErrorEnvelope(envelope);
-        setErrorSeverity(severity);
-        setError(message);
-        
-        // Show alert with recovery option if recoverable
-        if (ErrorHandler.isRecoverable(envelope)) {
-          Alert.alert(
-            severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Info',
-            message,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Retry', onPress: () => handleSave() },
-            ]
-          );
-        } else {
-          Alert.alert('Error', message);
-        }
-      } else {
-        setError('Failed to save configuration');
-        setErrorSeverity('error');
-        setErrorEnvelope(null);
-        Alert.alert('Error', 'Failed to save configuration');
+      const result = await configDomainController.commitConfig();
+
+      if (result.success) {
+        const alert = createSuccessAlert(AlertMessages.CONFIG_SAVED);
+        Alert.alert(alert.title, alert.message);
+        await configDomainController.exitConfigMode();
+        setIsInConfigMode(false);
+      } else if (result.error) {
+        setErrorEnvelope(result.error);
+        setError(formatErrorForUser(result.error));
+        const alert = createAlertFromError(result.error);
+        Alert.alert(alert.title, alert.message);
       }
+    } catch (err: any) {
+      const errorEnvelope: ErrorEnvelope = {
+        code: ErrorCode.UNKNOWN_ERROR,
+        message: err?.message || AlertMessages.CONFIG_FAILED,
+        timestamp: Date.now(),
+      };
+      setErrorEnvelope(errorEnvelope);
+      setError(formatErrorForUser(errorEnvelope));
+      const alert = createAlertFromError(errorEnvelope);
+      Alert.alert(alert.title, alert.message);
     } finally {
       setIsSaving(false);
     }
@@ -764,30 +812,86 @@ const ConfigScreen: React.FC = () => {
     await updateParameter(ParameterId.POWER_STATE, value ? 1 : 0);
   };
 
+  const handleBrightnessChange = async (value: number) => {
+    if (!connectedDevice) return;
+
+    try {
+      const result = await configDomainController.updateBrightness(Math.round(value));
+      if (!result.success && result.error) {
+        setErrorEnvelope(result.error);
+        setError(formatErrorForUser(result.error));
+      }
+    } catch (err: any) {
+      console.error('Failed to update brightness:', err);
+    }
+  };
+
+  const handlePatternChange = async (pattern: number) => {
+    if (!connectedDevice) return;
+
+    try {
+      const result = await configDomainController.updatePattern(pattern);
+      if (!result.success && result.error) {
+        setErrorEnvelope(result.error);
+        setError(formatErrorForUser(result.error));
+      }
+    } catch (err: any) {
+      console.error('Failed to update pattern:', err);
+    }
+  };
+
   const handleEffectSelect = async (effectId: EffectType) => {
     setEffectType(effectId);
-    await updateParameter(ParameterId.EFFECT_TYPE, effectId);
+    await handlePatternChange(effectId);
   };
 
   const handleColorSelect = async (hexColor: string) => {
     await updateColor(hexColor);
   };
 
+  const handleColorChange = async (color: RGBColor) => {
+    if (!connectedDevice) return;
+
+    try {
+      const result = await configDomainController.updateColor(color);
+      if (!result.success && result.error) {
+        setErrorEnvelope(result.error);
+        setError(formatErrorForUser(result.error));
+      }
+    } catch (err: any) {
+      console.error('Failed to update color:', err);
+    }
+  };
+
+  const handleSpeedChange = async (value: number) => {
+    if (!connectedDevice) return;
+
+    try {
+      const result = await configDomainController.updateSpeed(Math.round(value));
+      if (!result.success && result.error) {
+        setErrorEnvelope(result.error);
+        setError(formatErrorForUser(result.error));
+      }
+    } catch (err: any) {
+      console.error('Failed to update speed:', err);
+    }
+  };
+
   const ColorPicker: React.FC = () => {
-    // Convert predefined HEX colors to HSV for comparison (since selectedColor is HSV)
-    const colorHsvValues = colors.map(hex => hexToHsv(hex));
+    // Convert predefined HEX colors to RGB for comparison
+    const colorRgbValues = colors.map(hex => hexToRgb(hex));
     
     return (
     <View style={styles.colorPickerContainer}>
         <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Color</Text>
       <View style={styles.colorGrid}>
           {colors.map((hexColor: string, index: number) => {
-            // Compare HSV values directly (with small tolerance for rounding)
-            const colorHsv = colorHsvValues[index];
+            // Compare RGB values directly (with small tolerance for rounding)
+            const colorRgb = colorRgbValues[index];
             const isSelected = 
-              Math.abs(selectedColor.h - colorHsv.h) < 2 &&
-              Math.abs(selectedColor.s - colorHsv.s) < 2 &&
-              Math.abs(selectedColor.v - colorHsv.v) < 2;
+              Math.abs(selectedColor[0] - colorRgb[0]) < 2 &&
+              Math.abs(selectedColor[1] - colorRgb[1]) < 2 &&
+              Math.abs(selectedColor[2] - colorRgb[2]) < 2;
 
             return (
           <TouchableOpacity
@@ -838,16 +942,25 @@ const ConfigScreen: React.FC = () => {
     return (
       <View style={styles.fullScreen}>
         <LinearGradient
-              colors={[themeColors.gradientStart, themeColors.gradientEnd]}
+          colors={[themeColors.gradientStart, themeColors.gradientEnd]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject as any}
         />
         <SafeAreaView edges={['top']} style={styles.safeArea}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={themeColors.primary} />
-            <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading configuration...</Text>
-          </View>
+          <ScrollView 
+            style={styles.container} 
+            contentInsetAdjustmentBehavior="never"
+            scrollIndicatorInsets={{ bottom: tabBarHeight }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.loadingCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+                <ActivityIndicator size="large" color={themeColors.primary} />
+                <Text style={[styles.loadingText, { color: themeColors.text }]}>Entering config mode...</Text>
+              </BlurView>
+            </View>
+          </ScrollView>
         </SafeAreaView>
       </View>
     );
@@ -922,60 +1035,62 @@ const ConfigScreen: React.FC = () => {
             })()
           )}
 
-          {/* Status Bar */}
-          {isInConfigMode && (
-            <View style={[styles.statusBar, { backgroundColor: isDark ? 'rgba(0,122,255,0.2)' : 'rgba(0,122,255,0.1)', borderColor: isDark ? 'rgba(0,122,255,0.3)' : 'rgba(0,122,255,0.2)' }]}>
-              <View style={[styles.statusIndicator, { backgroundColor: themeColors.primary }]} />
-              <Text style={[styles.statusText, { color: themeColors.primary }]}>Configuration Mode Active</Text>
+          {/* Connection Status */}
+          {!connectedDevice && !DEV_MODE && (
+            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: themeColors.warning }]}>
+                <Ionicons name="warning" size={24} color={themeColors.warning} />
+                <Text style={[styles.errorText, { color: themeColors.text }]}>No device connected. Please connect a device first.</Text>
+              </BlurView>
+            </View>
+          )}
+
+          {/* Error Display */}
+          {error && errorEnvelope && (
+            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>
+                <Ionicons 
+                  name={errorSeverity === 'warning' ? 'warning' : errorSeverity === 'info' ? 'information-circle' : 'alert-circle'} 
+                  size={24} 
+                  color={errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error} 
+                />
+                <Text style={[styles.errorText, { color: themeColors.text }]}>{error}</Text>
+                <TouchableOpacity onPress={() => { setError(null); setErrorEnvelope(null); }} style={styles.dismissButton}>
+                  <Text style={[styles.dismissButtonText, { color: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>Dismiss</Text>
+                </TouchableOpacity>
+              </BlurView>
+            </View>
+          )}
+
+          {/* Config Mode Status */}
+          {connectedDevice && configModeState.state !== 'inactive' && (
+            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.statusCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+                <View style={styles.statusRow}>
+                  <Ionicons 
+                    name={configModeState.state === 'active' ? 'checkmark-circle' : 'time-outline'} 
+                    size={20} 
+                    color={configModeState.state === 'active' ? themeColors.success : themeColors.warning} 
+                  />
+                  <Text style={[styles.statusText, { color: themeColors.text }]}>
+                    Config Mode: {configModeState.state === 'active' ? 'Active' : configModeState.state}
+                  </Text>
+                </View>
+                {configDomainController.hasUnsavedChanges() && (
+                  <Text style={[styles.unsavedText, { color: themeColors.textSecondary }]}>You have unsaved changes</Text>
+                )}
+              </BlurView>
             </View>
           )}
 
           {validationError && (
-            <View style={[styles.errorBar, { backgroundColor: isDark ? 'rgba(255,149,0,0.2)' : 'rgba(255,149,0,0.1)', borderColor: isDark ? 'rgba(255,149,0,0.3)' : 'rgba(255,149,0,0.2)' }]}>
-              <Ionicons name="warning" size={16} color={themeColors.warning} />
-              <Text style={[styles.errorText, { color: themeColors.warning }]}>
-                {validationError}
-              </Text>
-            </View>
-          )}
-
-          {error && (
-            <View style={[
-              styles.errorBar,
-              errorSeverity === 'warning' && { backgroundColor: isDark ? 'rgba(255,149,0,0.2)' : 'rgba(255,149,0,0.1)', borderColor: isDark ? 'rgba(255,149,0,0.3)' : 'rgba(255,149,0,0.2)' },
-              errorSeverity === 'info' && { backgroundColor: isDark ? 'rgba(0,122,255,0.2)' : 'rgba(0,122,255,0.1)', borderColor: isDark ? 'rgba(0,122,255,0.3)' : 'rgba(0,122,255,0.2)' },
-              errorSeverity === 'error' && { backgroundColor: isDark ? 'rgba(255,59,48,0.2)' : 'rgba(255,59,48,0.1)', borderColor: isDark ? 'rgba(255,59,48,0.3)' : 'rgba(255,59,48,0.2)' },
-            ]}>
-              <Ionicons 
-                name={errorSeverity === 'warning' ? 'warning' : errorSeverity === 'info' ? 'information-circle' : 'alert-circle'} 
-                size={16} 
-                color={errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error} 
-              />
-              <Text style={[
-                styles.errorText,
-                { color: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }
-              ]}>
-                {error}
-              </Text>
-              {errorEnvelope && ErrorHandler.isRecoverable(errorEnvelope) && (
-                <TouchableOpacity
-                  onPress={async () => {
-                    if (errorEnvelope.code === ErrorCode.NOT_IN_CONFIG_MODE) {
-                      try {
-                        await configDomainController.enterConfigMode();
-                        setIsInConfigMode(true);
-                        setError(null);
-                        setErrorEnvelope(null);
-                      } catch (retryErr) {
-                        console.error('Recovery failed:', retryErr);
-                      }
-                    }
-                  }}
-                  style={styles.recoveryButton}
-                >
-                  <Text style={[styles.recoveryButtonText, { color: themeColors.primary }]}>Retry</Text>
-                </TouchableOpacity>
-              )}
+            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: themeColors.warning }]}>
+                <Ionicons name="warning" size={24} color={themeColors.warning} />
+                <Text style={[styles.errorText, { color: themeColors.text }]}>
+                  {validationError}
+                </Text>
+              </BlurView>
             </View>
           )}
 
@@ -1006,24 +1121,30 @@ const ConfigScreen: React.FC = () => {
       </View>
 
       {/* Color Picker */}
-      <View style={styles.section}>
-        <ColorPicker />
-      </View>
+      {config && (
+        <View style={styles.section}>
+          <ColorPicker />
+        </View>
+      )}
 
       {/* Brightness Control */}
-      <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Brightness</Text>
-        <SliderControl
-          title="Brightness"
-          value={brightness}
-          onValueChange={setBrightness}
-          icon="sunny"
-              parameterId={ParameterId.BRIGHTNESS}
-              themeColors={themeColors}
-              isDark={isDark}
-              onUpdateParameter={updateParameter}
-        />
-      </View>
+      {config && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Brightness</Text>
+          <SliderControl
+            title="Brightness"
+            value={brightness}
+            onValueChange={setBrightness}
+            icon="sunny"
+            parameterId={ParameterId.BRIGHTNESS}
+            themeColors={themeColors}
+            isDark={isDark}
+            onUpdateParameter={async (paramId, value) => {
+              await handleBrightnessChange(value);
+            }}
+          />
+        </View>
+      )}
 
       {/* Speed Control */}
       <View style={styles.section}>
@@ -1036,44 +1157,66 @@ const ConfigScreen: React.FC = () => {
               parameterId={ParameterId.SPEED}
               themeColors={themeColors}
               isDark={isDark}
-              onUpdateParameter={updateParameter}
+              onUpdateParameter={async (paramId, value) => {
+              await handleSpeedChange(value);
+            }}
         />
       </View>
 
       {/* Effects */}
-      <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Effects</Text>
-        <View style={styles.effectsGrid}>
-          {effects.map((effect) => (
-                <TouchableOpacity
-                  key={effect.id}
-                  activeOpacity={0.7}
-                  style={styles.effectCardWrapper}
-                  onPress={() => handleEffectSelect(effect.id)}
+      {config && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Effects</Text>
+          <View style={styles.effectsGrid}>
+            {effects.map((effect) => (
+              <TouchableOpacity
+                key={effect.id}
+                activeOpacity={0.7}
+                style={styles.effectCardWrapper}
+                onPress={() => handleEffectSelect(effect.id)}
+              >
+                <BlurView
+                  intensity={20}
+                  tint={isDark ? "dark" : "light"}
+                  style={[
+                    styles.effectCard,
+                    { backgroundColor: themeColors.card, borderColor: themeColors.border },
+                    effectType === effect.id && { borderColor: themeColors.primary, backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' },
+                  ]}
                 >
-                  <BlurView
-                    intensity={20}
-                    tint={isDark ? "dark" : "light"}
+                  <AnimatedEffectIcon effect={effect} />
+                  <Text
                     style={[
-                      styles.effectCard,
-                      { backgroundColor: themeColors.card, borderColor: themeColors.border },
-                      effectType === effect.id && { borderColor: themeColors.primary, backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' },
+                      styles.effectName,
+                      { color: themeColors.text },
+                      effectType === effect.id && { color: themeColors.primary, fontWeight: '600' },
                     ]}
                   >
-                    <Ionicons
-                      name={effect.icon as any}
-                      size={24}
-                      color={effectType === effect.id ? themeColors.primary : themeColors.text}
-                    />
-                    <Text
-                      style={[
-                        styles.effectName,
-                        { color: themeColors.text },
-                        effectType === effect.id && { color: themeColors.primary, fontWeight: '600' },
-                      ]}
-                    >
-                      {effect.name}
-                    </Text>
+                    {effect.name}
+                  </Text>
+                </BlurView>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Presets */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Presets</Text>
+        <View style={styles.presetsList}>
+          {[
+            { name: 'Rock Mode', description: 'High energy, fast pulse' },
+            { name: 'Jazz Mode', description: 'Smooth, slow fade' },
+            { name: 'Classical Mode', description: 'Gentle, solid glow' },
+          ].map((preset, index) => (
+            <TouchableOpacity key={index} activeOpacity={0.7} style={styles.presetCardWrapper}>
+              <BlurView intensity={20} tint={isDark ? "dark" : "light"} style={[styles.presetCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+                <View style={styles.presetInfo}>
+                  <Text style={[styles.presetName, { color: themeColors.text }]}>{preset.name}</Text>
+                  <Text style={[styles.presetDescription, { color: themeColors.textSecondary }]}>{preset.description}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
               </BlurView>
             </TouchableOpacity>
           ))}
@@ -1108,6 +1251,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     position: 'relative',
+    ...(Platform.OS === 'web' && {
+      // @ts-ignore - Web-specific styles
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      MozUserSelect: 'none',
+      msUserSelect: 'none',
+    }),
   },
   backgroundDecor: {
     position: 'absolute',
@@ -1150,11 +1300,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#007AFF',
     marginRight: 8,
-  },
-  statusText: {
-    color: '#007AFF',
-    fontSize: 12,
-    fontWeight: '500',
   },
   errorBar: {
     flexDirection: 'row',
@@ -1301,7 +1446,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   effectCardWrapper: {
-    // Wrapper for effect card
+    ...(Platform.OS === 'web' && { cursor: 'pointer' }),
   },
   effectCard: {
     padding: 16,
@@ -1332,6 +1477,97 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     borderRadius: 28,
     overflow: 'hidden',
+  },
+  rainbowIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rainbowGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  presetsList: {
+    marginTop: 12,
+  },
+  presetCardWrapper: {
+    ...(Platform.OS === 'web' && { cursor: 'pointer' }),
+  },
+  presetCard: {
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  presetInfo: {
+    flex: 1,
+  },
+  presetName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  presetDescription: {
+    fontSize: 14,
+  },
+  errorCard: {
+    padding: 20,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    gap: 12,
+  },
+  loadingCard: {
+    padding: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+  },
+  statusCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  unsavedText: {
+    fontSize: 12,
+    marginTop: 8,
+  },
+  dismissButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 59, 48, 0.2)',
+  },
+  dismissButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

@@ -2,8 +2,9 @@ import { BluetoothDevice } from '../types/bluetooth';
 import { NUS_SERVICE_UUID, NUS_NOTIFY_CHAR_UUID, NUS_WRITE_CHAR_UUID } from './bleConstants';
 import { CommandResponse, ResponseType } from '../types/commands';
 import { BLECommandEncoder } from './bleCommandEncoder';
-import { BLEError } from '../types/errors';
+import { BLEError, ErrorCode } from '../types/errors';
 import { configurationModule } from '../domain/bluetooth/configurationModule';
+import { getErrorMessage } from '../domain/common/errorEnvelope';
 
 class BluetoothWebService {
   private isSupported: boolean = false;
@@ -235,6 +236,17 @@ class BluetoothWebService {
             this.responseCallback(responseText);
             this.responseCallback = null; // Clear the callback after use
           }
+          // TODO FOR AGENT: DO WE WANT TO DO THIS INSTEAD? IS IT POINTLESS TO HAVE MULTIPLE LISTENERS???
+          /*
+          // Notify all response listeners
+          this.responseListeners.forEach(listener => {
+            try {
+              listener(dataArray);
+            } catch (error) {
+              console.error('Error in response listener:', error);
+            }
+          });
+          */
         } catch (decodeError) {
           console.error('Error decoding response:', decodeError);
         }
@@ -282,7 +294,7 @@ class BluetoothWebService {
 
       // Get the UART service
       const service = await server.getPrimaryService(NUS_SERVICE_UUID);
-      
+
       // Get the write characteristic
       const writeCharacteristic = await service.getCharacteristic(NUS_WRITE_CHAR_UUID);
 
@@ -305,7 +317,7 @@ class BluetoothWebService {
       await writeCharacteristic.writeValue(bytes);
       const hexBytes = Array.from(bytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
       console.log('Raw bytes sent successfully via Web Bluetooth:', hexBytes);
-      
+
       // Give the Arduino a moment to process the message
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -527,6 +539,19 @@ class BluetoothWebService {
     return this.selectedDevice;
   }
 
+  /* TODO FOR AGENT: OLD SUBSCRIPTION PATTERN
+   * Subscribe to response notifications
+   */
+  /*
+  subscribeToResponses(listener: (data: Uint8Array | string) => void): () => void {
+    this.responseListeners.push(listener);
+    return () => {
+      this.responseListeners = this.responseListeners.filter(l => l !== listener);
+    };
+  }
+}
+  */
+
   // Format binary response with meaning
   private formatBinaryResponse(bytes: Uint8Array): string {
     if (bytes.length === 0) {
@@ -541,23 +566,21 @@ class BluetoothWebService {
     // Interpret response based on protocol
     switch (firstByte) {
       case 0x90:
-        return `✓ ACK_SUCCESS [${hexString}]`;
+        // 0x90 can be: CONFIG_MODE ack (1 byte), config response (8 bytes), or error envelope (variable)
+        if (bytes.length === 1) {
+          return `✓ ACK_CONFIG_MODE [${hexString}]`;
+        } else if (bytes.length === 8) {
+          return `📋 Config Response [${hexString}]`;
+        } else {
+          // Error envelope
+          const errorCode = bytes.length > 1 ? bytes[1] : ErrorCode.UNKNOWN_ERROR;
+          const errorMsg = getErrorMessage(errorCode);
+          return `✗ Error: ${errorMsg} [${hexString}]`;
+        }
       case 0x91:
-        const errorCode = bytes.length > 1 ? bytes[1] : 0;
-        const errorMessages: Record<number, string> = {
-          0x01: 'Invalid command',
-          0x02: 'Invalid parameter',
-          0x03: 'Out of range',
-          0x04: 'Not in config mode',
-          0x05: 'Already in config mode',
-          0x06: 'Flash write failed',
-          0x07: 'Validation failed',
-          0x08: 'Not owner',
-          0x09: 'Already claimed',
-          0xFF: 'Unknown error',
-        };
-        const errorMsg = errorMessages[errorCode] || `Error 0x${errorCode.toString(16)}`;
-        return `✗ ACK_ERROR: ${errorMsg} [${hexString}]`;
+        return `✓ ACK_COMMIT [${hexString}]`;
+      case 0x92:
+        return `✓ ACK_SUCCESS [${hexString}]`;
       case 0xA0:
         return `📊 Analytics batch [${hexString}]`;
       default:

@@ -4,15 +4,14 @@
  */
 
 import { ParameterId } from '../types/commands';
-import { HSVColor } from '../types/config';
-import { hsvToRgb } from './colorUtils';
+import { RGBColor } from '../utils/bleConstants';
 
 /**
  * Minimal config interface for power validation
  */
 interface PowerValidationConfig {
   brightness: number;
-  color: HSVColor;
+  color: RGBColor;
   powerState: boolean;
 }
 
@@ -92,36 +91,35 @@ export function validateParameter(parameterId: ParameterId, value: number): Vali
 
 /**
  * Calculate current draw for a single LED based on color and brightness
- * @param color HSV color (0-255 for each component)
+ * @param color RGB color [R, G, B] (0-255 for each component)
  * @param brightness Brightness level (0-100)
  * @returns Current draw in mA
  */
-export function calculateLEDCurrent(color: HSVColor, brightness: number): number {
-  // Convert HSV to RGB
-  const rgb = hsvToRgb(color);
+export function calculateLEDCurrent(color: RGBColor, brightness: number): number {
+  const [r, g, b] = color;
   
   // Calculate current based on RGB values
   // White (255, 255, 255) at 100% brightness = 60mA
   // Other colors are proportional to (R + G + B) / (255 * 3)
-  const rgbSum = rgb.r + rgb.g + rgb.b;
+  const rgbSum = r + g + b;
   const maxRgbSum = 255 * 3; // Maximum possible (white)
-  
+
   // Current is proportional to RGB sum and brightness
   const colorFactor = rgbSum / maxRgbSum;
   const brightnessFactor = brightness / 100;
-  
+
   return colorFactor * brightnessFactor * MAX_CURRENT_PER_LED_WHITE;
 }
 
 /**
  * Calculate total current draw for all LEDs
- * @param color HSV color
+ * @param color RGB color [R, G, B]
  * @param brightness Brightness level (0-100)
  * @param ledCount Number of LEDs (defaults to MAX_LED_COUNT for worst case)
  * @returns Total current draw in mA
  */
 export function calculateTotalCurrent(
-  color: HSVColor,
+  color: RGBColor,
   brightness: number,
   ledCount: number = MAX_LED_COUNT
 ): number {
@@ -170,37 +168,46 @@ export function validatePowerConsumption(
 }
 
 /**
- * Validate HSV color
+ * Validate RGB color
  */
-export function validateColor(color: HSVColor): ValidationResult {
-  const hValidation = validateParameter(ParameterId.COLOR_HUE, color.h);
-  if (!hValidation.isValid) {
-    return hValidation;
+export function validateColor(color: RGBColor): ValidationResult {
+  const [r, g, b] = color;
+
+  if (!Array.isArray(color) || color.length !== 3) {
+    return {
+      isValid: false,
+      error: 'Color must be an array of 3 values [R, G, B]',
+    };
   }
   
-  const sValidation = validateParameter(ParameterId.COLOR_SATURATION, color.s);
-  if (!sValidation.isValid) {
-    return sValidation;
+  const rValidation = validateParameter(ParameterId.COLOR_HUE, r); // Reusing parameter IDs for RGB
+  if (!rValidation.isValid) {
+    return { ...rValidation, error: `Red component ${rValidation.error}` };
   }
-  
-  const vValidation = validateParameter(ParameterId.COLOR_VALUE, color.v);
-  if (!vValidation.isValid) {
-    return vValidation;
+
+  const gValidation = validateParameter(ParameterId.COLOR_SATURATION, g);
+  if (!gValidation.isValid) {
+    return { ...gValidation, error: `Green component ${gValidation.error}` };
   }
-  
+
+  const bValidation = validateParameter(ParameterId.COLOR_VALUE, b);
+  if (!bValidation.isValid) {
+    return { ...bValidation, error: `Blue component ${bValidation.error}` };
+  }
+
   return { isValid: true };
 }
 
 /**
  * Validate color and power consumption together
- * @param color HSV color
+ * @param color RGB color [R, G, B]
  * @param brightness Brightness level (0-100)
  * @param powerState Whether power is on
  * @param ledCount Number of LEDs (defaults to MAX_LED_COUNT)
  * @returns Validation result
  */
 export function validateColorAndPower(
-  color: HSVColor,
+  color: RGBColor,
   brightness: number,
   powerState: boolean,
   ledCount: number = MAX_LED_COUNT

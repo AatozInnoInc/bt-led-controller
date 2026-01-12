@@ -4,6 +4,11 @@ import { NUS_SERVICE_UUID, NUS_WRITE_CHAR_UUID, NUS_NOTIFY_CHAR_UUID, isUuidLike
 import { CommandResponse, AnalyticsBatch, ResponseType } from '../types/commands';
 import { ErrorEnvelope, BLEError, ErrorCode } from '../types/errors';
 import { BLECommandEncoder } from './bleCommandEncoder';
+import { bluetoothWebService } from './bluetoothWebService';
+
+// TODO For Agent
+// - We have listeners and callbacks. They should be handled in a more centralized way. RIght now it feels a bit one-shotty.
+// - We need to determine whether or not we need to use BLEConnection and NUS_SERVICE_UUID
 
 // Only import react-native-ble-plx on native platforms
 let BleManager: any, Device: any, State: any;
@@ -140,6 +145,9 @@ class BluetoothService {
 
   async connectToDevice(deviceId: string): Promise<any> {
     try {
+      if (Platform.OS === 'web')
+        return await bluetoothWebService.connectToDevice(deviceId);
+
       const device = await this.manager.connectToDevice(deviceId);
       await device.discoverAllServicesAndCharacteristics();
       console.log('Successfully connected to device:', device.name || deviceId);
@@ -219,6 +227,43 @@ class BluetoothService {
   removeDisconnectionListener(deviceId: string): void {
     this.disconnectionListeners.delete(deviceId);
   }
+
+  // TODO FOR Agent: The old version used this pattern of subscriptions, with push for responses
+  // Which is a more stable approach?
+  // Implications: converting callbacks to subscriptions
+
+ /*    * Subscribe to response notifications
+  subscribeToResponses(listener: (data: Uint8Array | string) => void): () => void {
+    // Delegate to web service if on web platform
+    if (Platform.OS === 'web') {
+      return bluetoothWebService.subscribeToResponses(listener);
+    }
+
+    this.responseListeners.push(listener);
+    return () => {
+      this.responseListeners = this.responseListeners.filter(l => l !== listener);
+    };
+  }
+
+  async disconnectDevice(deviceId: string): Promise<void> {
+    // Delegate to web service if on web platform
+    if (Platform.OS === 'web') {
+      return await bluetoothWebService.disconnectDevice(deviceId);
+    }
+
+    try {
+      // Remove notification subscription
+      const subscription = this.notificationSubscriptions.get(deviceId);
+      if (subscription) {
+        subscription.remove();
+        this.notificationSubscriptions.delete(deviceId);
+      }
+
+      await this.manager.cancelDeviceConnection(deviceId);
+    } catch (error) {
+      console.error('Failed to disconnect device:', error);
+    }
+  } */
 
   /**
    * Setup notification listener for device responses
@@ -372,12 +417,20 @@ class BluetoothService {
    * Confirm receipt of analytics batch
    */
   async confirmAnalytics(deviceId: string, batchId: number): Promise<CommandResponse> {
+    if (Platform.OS === 'web') {
+      console.error('Confirm analytics not supported on web'); // return await bluetoothWebService.confirmAnalytics(deviceId, batchId);
+      throw new Error('Confirm analytics not yet supported on web');
+    }
+
     const command = BLECommandEncoder.encodeConfirmAnalytics(batchId);
     return this.sendCommand(deviceId, command);
   }
 
   async disconnectDevice(deviceId: string): Promise<void> {
     try {
+      if (Platform.OS === 'web')
+        return await bluetoothWebService.disconnectDevice(deviceId);
+
       // Remove notification subscription
       const subscription = this.notificationSubscriptions.get(deviceId);
       if (subscription) {
@@ -417,7 +470,7 @@ class BluetoothService {
       // Setup response callback
       this.responseCallbacks.set(deviceId, (response: CommandResponse | ErrorEnvelope | AnalyticsBatch) => {
         clearTimeout(timeoutId);
-        
+
         if ('code' in response) {
           // It's an ErrorEnvelope
           reject(new BLEError(response));
@@ -492,7 +545,12 @@ class BluetoothService {
     try {
       console.log('🔍 Attempting to send message to device:', deviceId);
       console.log('📝 Message:', message);
-      
+
+      if (Platform.OS === 'web') {
+        await bluetoothWebService.sendMessage(deviceId, message);
+        return;
+      }
+
       const device = await this.manager.devices([deviceId]);
       if (device.length === 0) {
         throw new Error('Device not found');
@@ -500,7 +558,7 @@ class BluetoothService {
 
       const connectedDevice = device[0];
       console.log('📱 Connected device:', connectedDevice.name || deviceId);
-      
+
       if (!connectedDevice.isConnected()) {
         throw new Error('Device not connected');
       }
@@ -508,7 +566,7 @@ class BluetoothService {
       // Find the UART service and characteristic
       const services = await connectedDevice.services();
       console.log('🔧 Available services:', services.map((s: any) => s.uuid));
-      
+
       // Look for Nordic UART Service (standard) or Adafruit BLE UART service
       const uartService = services.find((service: any) => isUuidLikelyUart(service.uuid));
 
@@ -525,7 +583,7 @@ class BluetoothService {
         uuid: c.uuid,
         properties: c.properties
       })));
-      
+
       // Look for write characteristic (Nordic UART Write or similar)
       const writeCharacteristic = characteristics.find((char: any) => {
         const uuid = char.uuid.toLowerCase();
@@ -576,6 +634,9 @@ class BluetoothService {
 
   async getConnectedDevices(): Promise<any[]> {
     try {
+      if (Platform.OS === 'web')
+        return await bluetoothWebService.getConnectedDevices();
+
       return await this.manager.connectedDevices([]);
     } catch (error) {
       console.error('Failed to get connected devices:', error);
