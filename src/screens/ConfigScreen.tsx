@@ -351,10 +351,8 @@ const ConfigScreen: React.FC = () => {
         }
     }
 
-    if (!DEV_MODE) {
-      // Only reset if not in dev mode (dev mode uses mock device)
-      handleDisconnection();
-
+    if (!DEV_MODE && connectedDevice) {
+      // Initialize config mode for real device
         try {
           await configDomainController.initialize(connectedDevice);
           const result = await configDomainController.enterConfigMode();
@@ -364,8 +362,11 @@ const ConfigScreen: React.FC = () => {
             setBrightness(result.config.brightness);
             setSpeed(result.config.speed);
             setSelectedColor(result.config.color);
-            setEffectType(result.config.effectType);
-            setPowerState(result.config.powerState);
+            // Map Arduino pattern to EffectType
+            const mappedEffectType = arduinoPatternToEffectType(result.config.currentPattern);
+            setEffectType(mappedEffectType);
+            // Power state is on if pattern is not OFF (0)
+            setPowerState(result.config.currentPattern !== 0);
             setConfigModeState({ state: 'active' });
             setIsInConfigMode(true);
           } else if (result.error) {
@@ -406,8 +407,11 @@ const ConfigScreen: React.FC = () => {
       setBrightness(updatedConfig.brightness);
       setSpeed(updatedConfig.speed);
       setSelectedColor(updatedConfig.color);
-      setEffectType(updatedConfig.effectType);
-      setPowerState(updatedConfig.powerState);
+      // Map Arduino pattern to EffectType
+      const mappedEffectType = arduinoPatternToEffectType(updatedConfig.currentPattern);
+      setEffectType(mappedEffectType);
+      // Power state is on if pattern is not OFF (0)
+      setPowerState(updatedConfig.currentPattern !== 0);
     });
 
     // Subscribe to errors
@@ -442,6 +446,48 @@ const ConfigScreen: React.FC = () => {
       }
     };
   }, [connectedDevice]);
+
+  // Map EffectType to Arduino pattern numbers
+  const effectTypeToArduinoPattern = useCallback((effectType: EffectType): number => {
+    // Arduino patterns: OFF=0, SOLID_WHITE=1, RAINBOW=2, PULSE=3, FADE=4, CHASE=5, TWINKLE=6, WAVE=7, BREATH=8, STROBE=9
+    // EffectType: SOLID=0, PULSE=1, RAINBOW=2, WAVE=3, STROBE=4, CUSTOM=5
+    switch (effectType) {
+      case EffectType.SOLID:
+        return 1; // PATTERN_SOLID_WHITE
+      case EffectType.PULSE:
+        return 3; // PATTERN_PULSE
+      case EffectType.RAINBOW:
+        return 2; // PATTERN_RAINBOW
+      case EffectType.WAVE:
+        return 7; // PATTERN_WAVE
+      case EffectType.STROBE:
+        return 9; // PATTERN_STROBE
+      case EffectType.CUSTOM:
+        return 1; // Default to SOLID_WHITE for custom
+      default:
+        return 1; // Default to SOLID_WHITE
+    }
+  }, []);
+  
+  // Map Arduino pattern to EffectType
+  const arduinoPatternToEffectType = useCallback((pattern: number): EffectType => {
+    switch (pattern) {
+      case 0:
+        return EffectType.SOLID; // OFF maps to SOLID (will be handled by powerState)
+      case 1:
+        return EffectType.SOLID; // PATTERN_SOLID_WHITE
+      case 2:
+        return EffectType.RAINBOW; // PATTERN_RAINBOW
+      case 3:
+        return EffectType.PULSE; // PATTERN_PULSE
+      case 7:
+        return EffectType.WAVE; // PATTERN_WAVE
+      case 9:
+        return EffectType.STROBE; // PATTERN_STROBE
+      default:
+        return EffectType.SOLID;
+    }
+  }, []);
 
   // Handle graceful disconnection
   const handleDisconnection = useCallback(() => {
@@ -809,7 +855,23 @@ const ConfigScreen: React.FC = () => {
 
   const handlePowerToggle = async (value: boolean) => {
     setPowerState(value);
-    await updateParameter(ParameterId.POWER_STATE, value ? 1 : 0);
+    if (!connectedDevice) return;
+    
+    try {
+      // Map power state to pattern: false = PATTERN_OFF (0), true = restore previous pattern
+      if (value) {
+        // Turn on: restore the selected effect pattern
+        const arduinoPattern = effectTypeToArduinoPattern(effectType);
+        await configDomainController.updatePattern(arduinoPattern);
+      } else {
+        // Turn off: set pattern to OFF (0)
+        await configDomainController.updatePattern(0);
+      }
+    } catch (err: any) {
+      console.error('Failed to toggle power:', err);
+      // Revert state on error
+      setPowerState(!value);
+    }
   };
 
   const handleBrightnessChange = async (value: number) => {
@@ -842,7 +904,11 @@ const ConfigScreen: React.FC = () => {
 
   const handleEffectSelect = async (effectId: EffectType) => {
     setEffectType(effectId);
-    await handlePatternChange(effectId);
+    // Only update pattern if power is on
+    if (powerState) {
+      const arduinoPattern = effectTypeToArduinoPattern(effectId);
+      await handlePatternChange(arduinoPattern);
+    }
   };
 
   const handleColorSelect = async (hexColor: string) => {

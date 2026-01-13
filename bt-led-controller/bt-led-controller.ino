@@ -37,9 +37,12 @@ BLEUart bleuart;
 
 // Use hardware SPI for maximum speed and minimal EMI
 // When using hardware SPI, pass DATAPIN=0, CLOCKPIN=0 to constructor
-// Then call setSPISpeed() to set high frequency (8MHz recommended for APA102)
+// SPI speed is configured via SPI.beginTransaction() in showLeds() (8MHz recommended for APA102)
 // Hardware SPI uses MOSI (data) and SCK (clock) pins automatically
 Adafruit_DotStar strip(LED_COUNT, 0, 0, DOTSTAR_BRG);
+
+// SPI settings for DotStar at 8MHz - minimizes EMI by keeping signals in MHz range
+static SPISettings dotStarSPISettings(8000000, MSBFIRST, SPI_MODE0);
 
 // A small staging buffer so we can keep most of your pattern logic intact
 // while moving away from FastLED’s CRGB/CHSV APIs.
@@ -60,7 +63,9 @@ static inline void showLeds() {
   for (int i = 0; i < LED_COUNT; i++) {
     strip.setPixelColor(i, strip.Color(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b));
   }
+  SPI.beginTransaction(dotStarSPISettings);
   strip.show();
+  SPI.endTransaction();
   idle_low();
 }
 
@@ -221,6 +226,8 @@ void handleEnterConfigMode();
 void handleExitConfigMode();
 void handleCommitConfig();
 void handleConfigUpdate();
+void handleRequestAnalytics();
+void handleConfirmAnalytics();
 
 void sendErrorResponse(uint8_t errorCode, const char* message);
 void sendConfigModeAck();
@@ -256,16 +263,15 @@ void setup() {
   // Initialize FS + settings
   initializeSettings();
 
+  // Init SPI for hardware communication
+  SPI.begin();
+  
   // Init DotStar/APA102 with hardware SPI at high frequency
   // Hardware SPI reduces EMI by operating at consistent high frequency
   // 8MHz is optimal for APA102 - fast enough to avoid audio interference
+  // SPI speed is configured via SPISettings in showLeds() (8MHz)
   strip.begin();
   strip.setBrightness(currentSettings.brightness);
-  
-  // Set SPI speed to 8MHz (8000000 Hz) for high-frequency operation
-  // This minimizes EMI by keeping signals in MHz range, well above audio frequencies
-  // Higher frequencies also mean shorter transmission times, reducing exposure
-  strip.setSPISpeed(8000000);
   
   clearBuf();
   showLeds(); // ensure off
@@ -330,6 +336,8 @@ void loop() {
     if (command == CMD_CLAIM_DEVICE)  { handleClaimDevice(); return; }
     if (command == CMD_VERIFY_OWNERSHIP) { handleVerifyOwnership(); return; }
     if (command == CMD_UNCLAIM_DEVICE) { handleUnclaimDevice(); return; }
+    if (command == CMD_REQUEST_ANALYTICS) { handleRequestAnalytics(); return; }
+    if (command == CMD_CONFIRM_ANALYTICS) { handleConfirmAnalytics(); return; }
 
     sendErrorResponse(ERROR_INVALID_COMMAND, "Unknown command");
   }
@@ -983,6 +991,70 @@ void sendErrorResponse(uint8_t errorCode, const char* message) {
 void sendConfigModeAck() { uint8_t ack = RESPONSE_ACK_CONFIG_MODE; bleuart.write(&ack, 1); }
 void sendCommitAck()     { uint8_t ack = RESPONSE_ACK_COMMIT;      bleuart.write(&ack, 1); }
 void sendSuccessAck()    { uint8_t ack = RESPONSE_ACK_SUCCESS;     bleuart.write(&ack, 1); }
+
+// ========================================
+// Analytics Handlers
+// ========================================
+
+void handleRequestAnalytics() {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
+  Serial.println("Request analytics batch");
+  
+  // Send analytics batch response with empty data (0 sessions)
+  // Format: [RESPONSE_TYPE(1)] [BATCH_ID(1)] [SESSION_COUNT(1)] [FLASH_READS(2)] 
+  //          [FLASH_WRITES(2)] [ERROR_COUNT(2)] [LAST_ERROR_CODE(1)] 
+  //          [LAST_ERROR_TIMESTAMP(4)] [AVG_POWER(2)] [PEAK_POWER(2)]
+  //          [SESSIONS...]
+  
+  const uint8_t HEADER_SIZE = 1 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 2 + 2; // 18 bytes
+  uint8_t payload[HEADER_SIZE];
+  uint8_t idx = 0;
+  
+  payload[idx++] = RESPONSE_ANALYTICS_BATCH;
+  payload[idx++] = 0; // batchId (placeholder)
+  payload[idx++] = 0; // sessionCount (no sessions yet)
+  
+  // Flash reads (2 bytes, big-endian)
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  
+  // Flash writes (2 bytes)
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  
+  // Error count (2 bytes)
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  
+  // Last error code (1 byte, 0 = no error)
+  payload[idx++] = 0;
+  
+  // Last error timestamp (4 bytes, big-endian, 0 = no error)
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  
+  // Average power (2 bytes, 0 = not available)
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  
+  // Peak power (2 bytes, 0 = not available)
+  payload[idx++] = 0;
+  payload[idx++] = 0;
+  
+  bleuart.write(payload, HEADER_SIZE);
+  Serial.println("Analytics batch sent (empty)");
+}
+
+void handleConfirmAnalytics() {
+  CHECK_OWNERSHIP_OR_RETURN();
+  
+  Serial.println("Confirm analytics batch received");
+  // For now, just acknowledge - future implementation can clear sent analytics
+  sendSuccessAck();
+}
 
 // ========================================
 // Pattern functions (DotStar-backed)

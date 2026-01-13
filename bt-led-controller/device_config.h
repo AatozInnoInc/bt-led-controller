@@ -96,6 +96,8 @@
 #define CMD_CLAIM_DEVICE 0x13    // Claim device ownership (one-time, sets owner)
 #define CMD_VERIFY_OWNERSHIP 0x14 // Verify user can access device (per-session)
 #define CMD_UNCLAIM_DEVICE 0x15   // Unclaim device ownership (removes owner)
+#define CMD_REQUEST_ANALYTICS 0x20 // Request analytics batch from controller
+#define CMD_CONFIRM_ANALYTICS 0x21 // Confirm receipt of analytics batch
 
 // Message Types
 #define MSG_TYPE_COMMAND 0x01
@@ -125,6 +127,7 @@
 #define RESPONSE_ACK_CONFIG_MODE 0x90  // Acknowledge config mode entry
 #define RESPONSE_ACK_COMMIT 0x91       // Acknowledge config commit
 #define RESPONSE_ACK_SUCCESS 0x92      // General success acknowledgment
+#define RESPONSE_ANALYTICS_BATCH 0xA0  // Analytics batch response
 
 // Ownership Configuration
 #define MAX_USER_ID_LENGTH 64  // Maximum length for user ID string
