@@ -31,6 +31,12 @@ BLEDfu bledfu;
 BLEDis bledis;
 BLEUart bleuart;
 
+// Frame rate limiting for LED updates to reduce noise
+// FastLED typically runs at 30-60 FPS, we'll use 30 FPS (33ms between frames)
+#define LED_UPDATE_INTERVAL_MS 33  // ~30 FPS
+unsigned long lastLedUpdate = 0;
+bool ledBufferChanged = false;
+
 // ----------------------------------------
 // DotStar / APA102 LED setup
 // ----------------------------------------
@@ -210,11 +216,6 @@ bool lastSavedStateValid = false;
 
 char verifiedUserId[MAX_USER_ID_LENGTH + 1] = {0};
 
-// Frame rate limiting for LED updates to reduce noise
-// FastLED typically runs at 30-60 FPS, we'll use 30 FPS (33ms between frames)
-#define LED_UPDATE_INTERVAL_MS 33  // ~30 FPS
-unsigned long lastLedUpdate = 0;
-bool ledBufferChanged = false;
 
 const char* DEVELOPER_USER_IDS[] = { nullptr };
 const char* TEST_USER_IDS[] = { nullptr };
@@ -896,7 +897,7 @@ void handleConfigUpdate() {
   }
 
   int paramType = bleuart.read();
-  Serial.printf("Config update: paramType=0x%02X\n", paramType);
+  Serial.printf("Config update: paramType=0x%02X, available bytes: %d\n", paramType, bleuart.available());
 
   bool updated = false;
 
@@ -921,12 +922,17 @@ void handleConfigUpdate() {
     case 0x01: { // Pattern
       if (bleuart.available() >= 1) {
         int pattern = bleuart.read();
+        Serial.printf("  Pattern update: %d (current: %d)\n", pattern, currentSettings.currentPattern);
         if (validatePattern(pattern)) {
           ramBuffer.currentPattern = pattern;
+          // Also update currentSettings for immediate preview in loop
+          currentSettings.currentPattern = pattern;
           updated = true;
 
+          Serial.printf("  Setting pattern to: %d\n", pattern);
           setPattern((uint8_t)pattern);
           showLeds();
+          Serial.printf("  Pattern set and LEDs shown\n");
         } else {
           sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid pattern");
           return;
@@ -939,6 +945,7 @@ void handleConfigUpdate() {
         int r = bleuart.read();
         int g = bleuart.read();
         int b = bleuart.read();
+        Serial.printf("  Color update: RGB(%d, %d, %d), current pattern: %d\n", r, g, b, ramBuffer.currentPattern);
         if (validateColor(r, g, b)) {
           ramBuffer.color[0] = r;
           ramBuffer.color[1] = g;
@@ -950,13 +957,11 @@ void handleConfigUpdate() {
           updated = true;
           
           // Apply color immediately for real-time preview
-          // If current pattern uses color, update it
-          if (ramBuffer.currentPattern == PATTERN_SOLID_WHITE || 
-              ramBuffer.currentPattern == PATTERN_PULSE || 
-              ramBuffer.currentPattern == PATTERN_FADE) {
-            fill_solid_buf(r, g, b);
-            showLeds();
-          }
+          // Re-apply current pattern with new color so all patterns see the change
+          Serial.printf("  Re-applying pattern %d with new color\n", ramBuffer.currentPattern);
+          setPattern(ramBuffer.currentPattern);
+          showLeds();
+          Serial.printf("  Color applied and LEDs shown\n");
         } else {
           sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid color");
           return;
@@ -983,8 +988,13 @@ void handleConfigUpdate() {
         int speed = bleuart.read();
         if (speed >= 0 && speed <= 100) {
           ramBuffer.speed = speed;
+          // Also update currentSettings for immediate preview in loop
+          currentSettings.speed = speed;
           updated = true;
-          Serial.printf("Speed updated to: %d%%\n", speed);
+          Serial.printf("  Speed updated to: %d%% (pattern: %d)\n", speed, ramBuffer.currentPattern);
+          // Re-apply pattern so speed change is visible immediately
+          setPattern(ramBuffer.currentPattern);
+          showLeds();
         } else {
           sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid speed (must be 0-100)");
           return;
@@ -1160,6 +1170,8 @@ void updatePattern() {
 }
 
 void setPattern(uint8_t pattern) {
+  Serial.printf("[setPattern] Setting pattern %d, color RGB(%d, %d, %d), speed: %d\n", 
+                pattern, currentSettings.color[0], currentSettings.color[1], currentSettings.color[2], currentSettings.speed);
   switch (pattern) {
     case PATTERN_OFF:
       clearBuf();
@@ -1203,11 +1215,13 @@ void setPattern(uint8_t pattern) {
       break;
 
     default:
+      Serial.printf("[setPattern] Unknown pattern %d, clearing\n", pattern);
       clearBuf();
       break;
   }
 
   showLeds();
+  Serial.printf("[setPattern] Pattern %d applied, buffer changed: %d\n", pattern, ledBufferChanged);
 }
 
 // === Effect: Rainbow (Red-White-Blue Blend Cycle) ===
