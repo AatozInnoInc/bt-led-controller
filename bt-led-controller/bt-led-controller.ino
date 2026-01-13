@@ -13,7 +13,7 @@
 *********************************************************************/
 
 // LED Guitar Controller with Settings Storage and Error Handling
-// Converted from FastLED to Adafruit_DotStar (software SPI on explicit pins)
+// Using Adafruit_DotStar with hardware SPI for high-frequency operation (reduces EMI/noise)
 
 #include <Arduino.h>
 #include <bluefruit.h>
@@ -35,9 +35,11 @@ BLEUart bleuart;
 // DotStar / APA102 LED setup
 // ----------------------------------------
 
-// If your strip expects BGR, Adafruit’s constant is DOTSTAR_BRG
-// (Adafruit names it by the *byte order it sends*: B,R,G)
-Adafruit_DotStar strip(LED_COUNT, DATA_PIN, CLOCK_PIN, DOTSTAR_BRG);
+// Use hardware SPI for maximum speed and minimal EMI
+// When using hardware SPI, pass DATAPIN=0, CLOCKPIN=0 to constructor
+// Then call setSPISpeed() to set high frequency (8MHz recommended for APA102)
+// Hardware SPI uses MOSI (data) and SCK (clock) pins automatically
+Adafruit_DotStar strip(LED_COUNT, 0, 0, DOTSTAR_BRG);
 
 // A small staging buffer so we can keep most of your pattern logic intact
 // while moving away from FastLED’s CRGB/CHSV APIs.
@@ -46,11 +48,10 @@ struct RGB {
 };
 static RGB ledBuf[LED_COUNT];
 
+// Hardware SPI doesn't need manual pin control, but we keep this for compatibility
 static inline void idle_low() {
-  pinMode(DATA_PIN, OUTPUT);
-  pinMode(CLOCK_PIN, OUTPUT);
-  digitalWrite(DATA_PIN, LOW);
-  digitalWrite(CLOCK_PIN, LOW);
+  // With hardware SPI, pins are managed by SPI peripheral
+  // No manual pin control needed, but keeping function for compatibility
 }
 
 // Apply ledBuf -> strip pixels and show.
@@ -255,14 +256,21 @@ void setup() {
   // Initialize FS + settings
   initializeSettings();
 
-  // Init DotStar/APA102
-  idle_low();
-  delay(50);
-
+  // Init DotStar/APA102 with hardware SPI at high frequency
+  // Hardware SPI reduces EMI by operating at consistent high frequency
+  // 8MHz is optimal for APA102 - fast enough to avoid audio interference
   strip.begin();
   strip.setBrightness(currentSettings.brightness);
+  
+  // Set SPI speed to 8MHz (8000000 Hz) for high-frequency operation
+  // This minimizes EMI by keeping signals in MHz range, well above audio frequencies
+  // Higher frequencies also mean shorter transmission times, reducing exposure
+  strip.setSPISpeed(8000000);
+  
   clearBuf();
   showLeds(); // ensure off
+  
+  Serial.printf("DotStar initialized: Hardware SPI at 8MHz\n");
 
   // Init Bluefruit
   Bluefruit.begin();
