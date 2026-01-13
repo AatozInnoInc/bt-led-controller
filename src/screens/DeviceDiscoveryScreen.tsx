@@ -65,6 +65,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('microcontrollers');
   const [pairedDeviceIds, setPairedDeviceIds] = useState<Set<string>>(new Set());
   const [showPairedDevices, setShowPairedDevices] = useState(true);
+  const [userPairedDevices, setUserPairedDevices] = useState<PairedDevice[]>([]);
 
   useEffect(() => {
     initialize();
@@ -83,15 +84,22 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           const paired = await getUserPairedDevices(user.userId);
           const deviceIds = new Set(paired.map(d => d.deviceId));
           setPairedDeviceIds(deviceIds);
+          
+          // Filter pairedDevices to only show devices paired to current user
+          const filtered = pairedDevices.filter(device => deviceIds.has(device.id));
+          setUserPairedDevices(filtered);
         } catch (error) {
           console.error('Failed to load paired devices:', error);
+          setUserPairedDevices([]);
         }
       } else {
         setPairedDeviceIds(new Set());
+        setUserPairedDevices([]);
       }
     };
     loadPairedDevices();
-  }, [user?.userId]);
+  }, [user?.userId, pairedDevices]);
+
 
   const getFilteredDevices = (): BluetoothDevice[] => {
     let filtered = devices;
@@ -495,7 +503,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       )}
 
       {/* Paired Devices Section */}
-      {pairedDevices.length > 0 && (
+      {userPairedDevices.length > 0 && (
         <View style={styles.pairedDevicesSection}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Paired Devices</Text>
@@ -512,7 +520,7 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           </View>
           {showPairedDevices && (
             <FlatList
-              data={pairedDevices}
+              data={userPairedDevices}
               renderItem={renderPairedDevice}
               keyExtractor={(item) => item.id}
               scrollEnabled={true}
