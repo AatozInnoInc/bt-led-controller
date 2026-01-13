@@ -61,7 +61,8 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   } = useBluetooth();
   // moved into BluetoothContext
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('all');
+  // Auto-select microcontrollers filter on mount
+  const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('microcontrollers');
   const [pairedDeviceIds, setPairedDeviceIds] = useState<Set<string>>(new Set());
   const [showPairedDevices, setShowPairedDevices] = useState(true);
 
@@ -322,7 +323,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
   const renderDevice = ({ item }: { item: BluetoothDevice }) => {
     const isMicrocontroller = isLedGuitarDevice(item);
-    const isPaired = pairedDevices.some(paired => paired.id === item.id);
+    // Only show "Paired" badge if device is actually paired to current user
+    // Don't show it for all devices in the scanned list
+    const isPaired = false; // Removed - paired devices are shown in separate section
 
     return (
       <TouchableOpacity
@@ -346,11 +349,6 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             />
             <Text style={[styles.deviceName, { color: colors.text }]}>{item.name}</Text>
             <View style={styles.badgeContainer}>
-              {isPaired && (
-                <View style={[styles.pairedBadge, { backgroundColor: colors.warning }]}>
-                  <Text style={[styles.pairedText, { color: colors.text }]}>Paired</Text>
-                </View>
-              )}
               {item.isConnected && (
                 <View style={[styles.connectedBadge, { backgroundColor: colors.success }]}>
                   <Text style={[styles.connectedText, { color: colors.text }]}>Connected</Text>
@@ -517,7 +515,8 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
               data={pairedDevices}
               renderItem={renderPairedDevice}
               keyExtractor={(item) => item.id}
-              scrollEnabled={false}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
               style={styles.pairedDevicesList}
             />
           )}
@@ -702,7 +701,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.deviceList}
         ListEmptyComponent={renderEmptyState}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
       />
 
       {/* Error Message */}

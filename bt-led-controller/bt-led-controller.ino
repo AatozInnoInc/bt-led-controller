@@ -35,14 +35,12 @@ BLEUart bleuart;
 // DotStar / APA102 LED setup
 // ----------------------------------------
 
-// Use hardware SPI for maximum speed and minimal EMI
-// When using hardware SPI, pass DATAPIN=0, CLOCKPIN=0 to constructor
-// SPI speed is configured via SPI.beginTransaction() in showLeds() (8MHz recommended for APA102)
-// Hardware SPI uses MOSI (data) and SCK (clock) pins automatically
-Adafruit_DotStar strip(LED_COUNT, 0, 0, DOTSTAR_BRG);
-
-// SPI settings for DotStar at 8MHz - minimizes EMI by keeping signals in MHz range
-static SPISettings dotStarSPISettings(8000000, MSBFIRST, SPI_MODE0);
+// Use software SPI with explicit pins for reliable operation
+// Hardware SPI (pins 0, 0) was causing issues, so using software SPI with defined pins
+// Software SPI is more reliable and gives better control over timing
+// Use DOTSTAR_RGB for correct color order (Red-Green-Blue)
+// If colors appear wrong, try DOTSTAR_BRG instead
+Adafruit_DotStar strip(LED_COUNT, DATA_PIN, CLOCK_PIN, DOTSTAR_RGB);
 
 // A small staging buffer so we can keep most of your pattern logic intact
 // while moving away from FastLED’s CRGB/CHSV APIs.
@@ -51,28 +49,47 @@ struct RGB {
 };
 static RGB ledBuf[LED_COUNT];
 
-// Hardware SPI doesn't need manual pin control, but we keep this for compatibility
+// Idle the data line low to reduce floating-line artifacts
 static inline void idle_low() {
-  // With hardware SPI, pins are managed by SPI peripheral
-  // No manual pin control needed, but keeping function for compatibility
+  // With software SPI, we can control pins directly if needed
+  // For now, this is a placeholder for potential future pin control
 }
 
 // Apply ledBuf -> strip pixels and show.
-// Also optionally idle the lines low to reduce floating-line artifacts.
+// Frame rate limited to reduce noise - only updates at ~30 FPS max
+// This matches FastLED's approach of consistent timing
 static inline void showLeds() {
+  unsigned long now = millis();
+  
+  // Frame rate limiting: only update if enough time has passed
+  if (now - lastLedUpdate < LED_UPDATE_INTERVAL_MS && !ledBufferChanged) {
+    return; // Skip update if too soon and buffer hasn't changed
+  }
+  
   for (int i = 0; i < LED_COUNT; i++) {
+    // Adafruit_DotStar Color() function takes RGB order
+    // DOTSTAR_RGB flag means chip uses RGB, so we pass RGB as normal
     strip.setPixelColor(i, strip.Color(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b));
   }
-  SPI.beginTransaction(dotStarSPISettings);
+  
+  // With software SPI, the library handles all communication
   strip.show();
-  SPI.endTransaction();
+  
+  // Small delay to let signals settle (similar to FastLED's timing)
+  // This helps reduce noise by ensuring clean signal transitions
+  delayMicroseconds(50);
+  
   idle_low();
+  
+  lastLedUpdate = now;
+  ledBufferChanged = false;
 }
 
 static inline void clearBuf() {
   for (int i = 0; i < LED_COUNT; i++) {
     ledBuf[i] = {0, 0, 0};
   }
+  ledBufferChanged = true; // Mark buffer as changed
 }
 
 // "FastLED-like" helpers (minimal subset)
@@ -81,6 +98,7 @@ static inline void fill_solid_buf(uint8_t r, uint8_t g, uint8_t b) {
   for (int i = 0; i < LED_COUNT; i++) {
     ledBuf[i] = {r, g, b};
   }
+  ledBufferChanged = true; // Mark buffer as changed
 }
 
 static inline uint8_t qadd8(uint8_t a, uint8_t b) {
@@ -100,6 +118,7 @@ static inline void fadeToBlackBy_buf(uint8_t amount) {
     ledBuf[i].g = (uint8_t)((uint16_t)ledBuf[i].g * scale / 255);
     ledBuf[i].b = (uint8_t)((uint16_t)ledBuf[i].b * scale / 255);
   }
+  ledBufferChanged = true; // Mark buffer as changed
 }
 
 // Linear blend between two RGB colors (t=0..255)
@@ -191,6 +210,12 @@ bool lastSavedStateValid = false;
 
 char verifiedUserId[MAX_USER_ID_LENGTH + 1] = {0};
 
+// Frame rate limiting for LED updates to reduce noise
+// FastLED typically runs at 30-60 FPS, we'll use 30 FPS (33ms between frames)
+#define LED_UPDATE_INTERVAL_MS 33  // ~30 FPS
+unsigned long lastLedUpdate = 0;
+bool ledBufferChanged = false;
+
 const char* DEVELOPER_USER_IDS[] = { nullptr };
 const char* TEST_USER_IDS[] = { nullptr };
 
@@ -263,20 +288,15 @@ void setup() {
   // Initialize FS + settings
   initializeSettings();
 
-  // Init SPI for hardware communication
-  SPI.begin();
-  
-  // Init DotStar/APA102 with hardware SPI at high frequency
-  // Hardware SPI reduces EMI by operating at consistent high frequency
-  // 8MHz is optimal for APA102 - fast enough to avoid audio interference
-  // SPI speed is configured via SPISettings in showLeds() (8MHz)
+  // Init DotStar/APA102 with software SPI
+  // Using explicit pins (DATA_PIN, CLOCK_PIN) for reliable operation
   strip.begin();
   strip.setBrightness(currentSettings.brightness);
   
   clearBuf();
   showLeds(); // ensure off
   
-  Serial.printf("DotStar initialized: Hardware SPI at 8MHz\n");
+  Serial.printf("DotStar initialized: Software SPI on pins %d (data), %d (clock)\n", DATA_PIN, CLOCK_PIN);
 
   // Init Bluefruit
   Bluefruit.begin();
@@ -382,6 +402,22 @@ void connect_callback(uint16_t conn_handle) {
 
   memset(verifiedUserId, 0, sizeof(verifiedUserId));
   Serial.println("LED Guitar Controller ready for commands!");
+  
+  // Flash LEDs to indicate connection (3 quick flashes)
+  for (int flash = 0; flash < 3; flash++) {
+    fill_solid_buf(0, 255, 0); // Green flash
+    showLeds();
+    delay(100);
+    clearBuf();
+    showLeds();
+    delay(100);
+  }
+  
+  // Restore previous pattern if any
+  if (currentSettings.currentPattern != PATTERN_OFF) {
+    setPattern(currentSettings.currentPattern);
+    showLeds();
+  }
 }
 
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
@@ -1061,59 +1097,66 @@ void handleConfirmAnalytics() {
 // ========================================
 
 void updatePattern() {
-  if (currentSettings.currentPattern == PATTERN_OFF) return;
+  if (currentSettings.currentPattern == PATTERN_OFF) {
+    // For OFF pattern, clear buffer but don't update constantly
+    if (ledBufferChanged || millis() - lastLedUpdate > 100) {
+      clearBuf();
+      showLeds();
+    }
+    return;
+  }
 
+  // Update pattern logic (this modifies ledBuf)
   switch (currentSettings.currentPattern) {
     case PATTERN_SOLID_WHITE:
       // Use current color from settings (RGB values from React app)
       fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
-      showLeds();
       break;
 
     case PATTERN_RAINBOW:
       rainbow();
-      showLeds();
+      ledBufferChanged = true;
       break;
 
     case PATTERN_PULSE:
-      // placeholder: original pulse() was static red; keep same semantics
-      fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
-      showLeds();
+      pulse();
       break;
 
     case PATTERN_FADE:
       fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
-      showLeds();
       break;
 
     case PATTERN_CHASE:
       chase();
-      showLeds();
+      ledBufferChanged = true;
       break;
 
     case PATTERN_TWINKLE:
       twinkle();
-      showLeds();
+      ledBufferChanged = true;
       break;
 
     case PATTERN_WAVE:
       wave();
-      showLeds();
+      ledBufferChanged = true;
       break;
 
     case PATTERN_BREATH:
       breath();
-      showLeds();
+      ledBufferChanged = true;
       break;
 
     case PATTERN_STROBE:
       strobe();
-      showLeds();
+      ledBufferChanged = true;
       break;
 
     default:
       break;
   }
+  
+  // Only show LEDs if frame rate allows (showLeds() handles the rate limiting)
+  showLeds();
 }
 
 void setPattern(uint8_t pattern) {
@@ -1183,8 +1226,27 @@ void rainbow() {
 }
 
 void pulse() {
-  // Original was "Red pulse effect" but it was static; keep it simple.
-  fill_solid_buf(255, 0, 0);
+  // Pulse effect: fade brightness in and out using sine wave
+  // Use current color from settings
+  uint8_t r = currentSettings.color[0];
+  uint8_t g = currentSettings.color[1];
+  uint8_t b = currentSettings.color[2];
+  
+  // Calculate pulse brightness (0-255) using sine wave
+  uint32_t now = millis();
+  // Speed control: use currentSettings.speed (0-100) to control pulse rate
+  // Map speed to pulse period: 0 = slow (4000ms), 100 = fast (500ms)
+  uint16_t pulsePeriod = map(currentSettings.speed, 0, 100, 4000, 500);
+  uint8_t pulsePhase = (uint8_t)((now % pulsePeriod) * 255 / pulsePeriod);
+  uint8_t pulseBrightness = sin8_approx(pulsePhase);
+  
+  // Apply pulse brightness to color
+  for (int i = 0; i < LED_COUNT; i++) {
+    ledBuf[i].r = (uint8_t)((uint16_t)r * pulseBrightness / 255);
+    ledBuf[i].g = (uint8_t)((uint16_t)g * pulseBrightness / 255);
+    ledBuf[i].b = (uint8_t)((uint16_t)b * pulseBrightness / 255);
+  }
+  ledBufferChanged = true;
 }
 
 void fade() {
@@ -1209,18 +1271,31 @@ void twinkle() {
     if (random(10) < 3) ledBuf[i] = {255, 255, 255};
     else ledBuf[i] = {0, 0, 0};
   }
+  // Note: ledBufferChanged is set by caller
 }
 
 void wave() {
+  // Wave effect: traveling wave of color across the strip
+  // Use speed setting to control wave speed
   uint32_t now = millis();
+  // Map speed to wave speed: 0 = slow (>> 4), 100 = fast (>> 1)
+  uint8_t speedShift = map(currentSettings.speed, 0, 100, 4, 1);
+  uint8_t timePhase = (uint8_t)(now >> speedShift);
+  
   for (int i = 0; i < LED_COUNT; i++) {
-    uint8_t phase = (uint8_t)((i * 255) / LED_COUNT);
-    uint8_t sineVal = sin8_approx((uint8_t)((now >> 3) + phase));
+    // Create a wave that travels along the strip
+    // Each LED has a phase offset based on position
+    uint8_t positionPhase = (uint8_t)((i * 255) / LED_COUNT);
+    // Combine time and position for traveling wave
+    uint8_t wavePhase = timePhase + positionPhase;
+    uint8_t sineVal = sin8_approx(wavePhase);
     uint8_t g = gamma8[sineVal];
 
-    RGB rgb = hsv2rgb(phase, 255, g);
+    // Use HSV color space for smooth color transitions
+    RGB rgb = hsv2rgb(wavePhase, 255, g);
     ledBuf[i] = rgb;
   }
+  ledBufferChanged = true;
 }
 
 void breath() {
@@ -1228,11 +1303,22 @@ void breath() {
   // Original used HSV(0,0,brightness) => grayscale
   ledBuf[0] = {b, b, b};
   for (int i = 1; i < LED_COUNT; i++) ledBuf[i] = ledBuf[0];
+  // Note: ledBufferChanged is set by caller
 }
 
 void strobe() {
-  static bool strobeState = false;
-  strobeState = !strobeState;
-  if (strobeState) fill_solid_buf(255, 255, 255);
-  else clearBuf();
+  // Strobe effect: rapid on/off flashing
+  // Use speed setting to control strobe rate: 0 = slow, 100 = fast
+  uint32_t now = millis();
+  // Map speed to strobe period: 0 = 1000ms (1Hz), 100 = 50ms (20Hz)
+  uint16_t strobePeriod = map(currentSettings.speed, 0, 100, 1000, 50);
+  bool strobeState = ((now / strobePeriod) % 2) == 0;
+  
+  if (strobeState) {
+    // Use current color from settings at full brightness
+    fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
+  } else {
+    clearBuf();
+  }
+  ledBufferChanged = true;
 }
