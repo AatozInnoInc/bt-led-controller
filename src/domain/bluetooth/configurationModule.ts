@@ -335,7 +335,7 @@ export class ConfigurationModule {
 
     // IMPORTANT: Check for config response BEFORE error envelope
     // Both use 0x90 as first byte, but config is exactly 8 bytes
-    // Config response: [0x90, brightness, speed, h, s, v, effectType, powerState] (8 bytes)
+    // Config response: [0x90, brightness, speed, r, g, b, effectType, powerState] (8 bytes)
     // Error envelope: [0x90, errorCode, ...messageBytes] (variable length, typically not 8 bytes)
     if (arrayData.length === 8 && arrayData[0] === 0x90) {
       console.log('[ConfigurationModule] Received 8-byte binary config response');
@@ -383,7 +383,7 @@ export class ConfigurationModule {
 
   /**
    * Parse config from device response
-   * Format: [0x90, brightness, speed, h, s, v, effectType, powerState] (8 bytes)
+   * Format: [0x90, brightness, speed, r, g, b, effectType, powerState] (8 bytes)
    */
   private parseConfigFromResponse(data: Uint8Array): any | null {
     console.log('[ConfigurationModule] parseConfigFromResponse called, data length:', data.length, 'first byte:', data.length > 0 ? '0x' + data[0].toString(16) : 'N/A');
@@ -396,11 +396,7 @@ export class ConfigurationModule {
       return {
         brightness: data[1],
         speed: data[2],
-        color: {
-          h: data[3],
-          s: data[4],
-          v: data[5],
-        },
+        color: [data[3], data[4], data[5]] as [number, number, number], // RGB format
         effectType: data[6],
         powerState: data[7] > 0,
       };
