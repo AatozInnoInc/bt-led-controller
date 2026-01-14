@@ -159,6 +159,37 @@ static inline RGB hsv2rgb(uint8_t h, uint8_t s, uint8_t v) {
   }
 }
 
+// RGB -> HSV conversion (0-255 ranges)
+static inline void rgb2hsv(uint8_t r, uint8_t g, uint8_t b, uint8_t* h, uint8_t* s, uint8_t* v) {
+  uint8_t minVal = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
+  uint8_t maxVal = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
+  
+  *v = maxVal;
+  
+  if (maxVal == 0) {
+    *s = 0;
+    *h = 0;
+    return;
+  }
+  
+  uint16_t delta = maxVal - minVal;
+  *s = (uint8_t)((uint16_t)delta * 255 / maxVal);
+  
+  if (delta == 0) {
+    *h = 0;
+    return;
+  }
+  
+  if (maxVal == r) {
+    *h = (uint8_t)(43 * ((g - b) * 255 / delta) / 255);
+    if (*h > 42) *h = 0;
+  } else if (maxVal == g) {
+    *h = (uint8_t)(85 + 43 * ((b - r) * 255 / delta) / 255);
+  } else {
+    *h = (uint8_t)(170 + 43 * ((r - g) * 255 / delta) / 255);
+  }
+}
+
 // Sine approximation for 0..255 input -> 0..255 output (FastLED sin8-like)
 static inline uint8_t sin8_approx(uint8_t x) {
   // Use Arduino's float sin for simplicity (nRF52 can handle it),
@@ -831,8 +862,23 @@ void handleEnterConfigMode() {
 
   memcpy(&ramBuffer, &currentSettings, sizeof(DeviceSettings));
 
-  sendConfigModeAck();
-  Serial.println("Config mode active");
+  // Send 8-byte config response: [0x90, brightness, speed, r, g, b, effectType, powerState]
+  // Note: App expects RGB color, not HSV
+  uint8_t configResponse[8];
+  configResponse[0] = RESPONSE_ACK_CONFIG_MODE;  // 0x90
+  configResponse[1] = currentSettings.brightness;
+  configResponse[2] = currentSettings.speed;
+  configResponse[3] = currentSettings.color[0];  // R
+  configResponse[4] = currentSettings.color[1];  // G
+  configResponse[5] = currentSettings.color[2];  // B
+  configResponse[6] = currentSettings.currentPattern;
+  configResponse[7] = currentSettings.powerMode > 0 ? 1 : 0;
+  
+  bleuart.write(configResponse, 8);
+  Serial.printf("Config mode active - sent config data: brightness=%d, speed=%d, color=(%d,%d,%d), pattern=%d\n",
+                currentSettings.brightness, currentSettings.speed,
+                currentSettings.color[0], currentSettings.color[1], currentSettings.color[2],
+                currentSettings.currentPattern);
 }
 
 void handleExitConfigMode() {
