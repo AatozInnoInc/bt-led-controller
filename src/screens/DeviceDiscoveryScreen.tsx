@@ -61,9 +61,11 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
   } = useBluetooth();
   // moved into BluetoothContext
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('all');
+  // Auto-select microcontrollers filter on mount
+  const [filterType, setFilterType] = useState<'all' | 'microcontrollers' | 'named'>('microcontrollers');
   const [pairedDeviceIds, setPairedDeviceIds] = useState<Set<string>>(new Set());
   const [showPairedDevices, setShowPairedDevices] = useState(true);
+  const [userPairedDevices, setUserPairedDevices] = useState<PairedDevice[]>([]);
 
   useEffect(() => {
     initialize();
@@ -82,15 +84,22 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
           const paired = await getUserPairedDevices(user.userId);
           const deviceIds = new Set(paired.map(d => d.deviceId));
           setPairedDeviceIds(deviceIds);
+          
+          // Filter pairedDevices to only show devices paired to current user
+          const filtered = pairedDevices.filter(device => deviceIds.has(device.id));
+          setUserPairedDevices(filtered);
         } catch (error) {
           console.error('Failed to load paired devices:', error);
+          setUserPairedDevices([]);
         }
       } else {
         setPairedDeviceIds(new Set());
+        setUserPairedDevices([]);
       }
     };
     loadPairedDevices();
-  }, [user?.userId]);
+  }, [user?.userId, pairedDevices]);
+
 
   const getFilteredDevices = (): BluetoothDevice[] => {
     let filtered = devices;
@@ -322,7 +331,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
 
   const renderDevice = ({ item }: { item: BluetoothDevice }) => {
     const isMicrocontroller = isLedGuitarDevice(item);
-    const isPaired = pairedDevices.some(paired => paired.id === item.id);
+    // Only show "Paired" badge if device is actually paired to current user
+    // Don't show it for all devices in the scanned list
+    const isPaired = false; // Removed - paired devices are shown in separate section
 
     return (
       <TouchableOpacity
@@ -346,11 +357,6 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
             />
             <Text style={[styles.deviceName, { color: colors.text }]}>{item.name}</Text>
             <View style={styles.badgeContainer}>
-              {isPaired && (
-                <View style={[styles.pairedBadge, { backgroundColor: colors.warning }]}>
-                  <Text style={[styles.pairedText, { color: colors.text }]}>Paired</Text>
-                </View>
-              )}
               {item.isConnected && (
                 <View style={[styles.connectedBadge, { backgroundColor: colors.success }]}>
                   <Text style={[styles.connectedText, { color: colors.text }]}>Connected</Text>
@@ -497,39 +503,33 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       )}
 
       {/* Paired Devices Section */}
-      {(() => {
-        // Filter paired devices to only show devices actually paired to the current user
-        const userPairedDevices = user?.userId 
-          ? pairedDevices.filter(device => pairedDeviceIds.has(device.id))
-          : [];
-        
-        return userPairedDevices.length > 0 && (
-          <View style={styles.pairedDevicesSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Paired Devices</Text>
-              <TouchableOpacity
-                style={styles.toggleButton}
-                onPress={() => setShowPairedDevices(!showPairedDevices)}
-              >
-                <Ionicons 
-                  name={showPairedDevices ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={colors.textSecondary} 
-                />
-              </TouchableOpacity>
-            </View>
-            {showPairedDevices && (
-              <FlatList
-                data={userPairedDevices}
-                renderItem={renderPairedDevice}
-                keyExtractor={(item) => item.id}
-                scrollEnabled={false}
-                style={styles.pairedDevicesList}
+      {userPairedDevices.length > 0 && (
+        <View style={styles.pairedDevicesSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Paired Devices</Text>
+            <TouchableOpacity
+              style={styles.toggleButton}
+              onPress={() => setShowPairedDevices(!showPairedDevices)}
+            >
+              <Ionicons 
+                name={showPairedDevices ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={colors.textSecondary} 
               />
-            )}
+            </TouchableOpacity>
           </View>
-        );
-      })()}
+          {showPairedDevices && (
+            <FlatList
+              data={userPairedDevices}
+              renderItem={renderPairedDevice}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+              style={styles.pairedDevicesList}
+            />
+          )}
+        </View>
+      )}
 
       {/* Scan Button */}
       <View style={styles.scanSection}>
@@ -709,7 +709,9 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.deviceList}
         ListEmptyComponent={renderEmptyState}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
       />
 
       {/* Error Message */}

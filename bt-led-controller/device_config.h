@@ -11,12 +11,10 @@
 #define MANUFACTURER_NAME "LED_GUITAR_CONTROLLER"
 
 // Hardware Configuration - APA102 (DotStar) LEDs
-// NOTE: Code now uses hardware SPI (MOSI/SCK pins automatically)
-// DATA_PIN and CLOCK_PIN definitions kept for reference but not used
-// Hardware SPI uses board's default SPI pins (typically MOSI=D11, SCK=D13 on nRF52)
-// Hardware SPI at 8MHz reduces EMI/noise compared to software SPI
-#define DATA_PIN 24                     // Not used with hardware SPI (kept for reference)
-#define CLOCK_PIN 25                    // Not used with hardware SPI (kept for reference)
+// Using software SPI with explicit pins for reliable operation
+// Hardware SPI (pins 0, 0) was causing issues, so using software SPI
+#define DATA_PIN 24                     // Data pin for APA102 (DI)
+#define CLOCK_PIN 25                    // Clock pin for APA102 (CI)
 #define LED_COUNT 10                    // Number of LEDs in your strip
 #define MAX_POWER_MILLIAMPS 500       // Max current draw in milliamps
 #define BRIGHTNESS_FACTOR 0.50f       // Brightness factor (0.0-1.0)

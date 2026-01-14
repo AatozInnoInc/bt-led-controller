@@ -177,7 +177,6 @@ const ConfigScreen: React.FC = () => {
   const [speed, setSpeed] = useState(30);
   const [selectedColor, setSelectedColor] = useState<RGBColor>([0, 122, 255]); // RGB format: iOS blue
   const [effectType, setEffectType] = useState<EffectType>(EffectType.SOLID);
-  const [powerState, setPowerState] = useState(false);
 
   // Predefined colors in HEX format (for UI display)
   const colors: string[] = [
@@ -365,8 +364,6 @@ const ConfigScreen: React.FC = () => {
             // Map Arduino pattern to EffectType
             const mappedEffectType = arduinoPatternToEffectType(result.config.currentPattern);
             setEffectType(mappedEffectType);
-            // Power state is on if pattern is not OFF (0)
-            setPowerState(result.config.currentPattern !== 0);
             setConfigModeState({ state: 'active' });
             setIsInConfigMode(true);
           } else if (result.error) {
@@ -410,8 +407,6 @@ const ConfigScreen: React.FC = () => {
       // Map Arduino pattern to EffectType
       const mappedEffectType = arduinoPatternToEffectType(updatedConfig.currentPattern);
       setEffectType(mappedEffectType);
-      // Power state is on if pattern is not OFF (0)
-      setPowerState(updatedConfig.currentPattern !== 0);
     });
 
     // Subscribe to errors
@@ -473,7 +468,7 @@ const ConfigScreen: React.FC = () => {
   const arduinoPatternToEffectType = useCallback((pattern: number): EffectType => {
     switch (pattern) {
       case 0:
-        return EffectType.SOLID; // OFF maps to SOLID (will be handled by powerState)
+        return EffectType.SOLID; // OFF maps to SOLID
       case 1:
         return EffectType.SOLID; // PATTERN_SOLID_WHITE
       case 2:
@@ -570,9 +565,6 @@ const ConfigScreen: React.FC = () => {
             case ParameterId.EFFECT_TYPE:
               setEffectType(correctedValue);
               break;
-            case ParameterId.POWER_STATE:
-              setPowerState(correctedValue > 0);
-              break;
           }
         }
         // Clear validation error after a moment
@@ -599,26 +591,16 @@ const ConfigScreen: React.FC = () => {
       case ParameterId.EFFECT_TYPE:
         oldValue = effectType;
         break;
-      case ParameterId.POWER_STATE:
-        oldValue = powerState ? 1 : 0;
-        break;
     }
 
-    // Validate power consumption if brightness or power state is changing
-    if (parameterId === ParameterId.BRIGHTNESS || parameterId === ParameterId.POWER_STATE) {
-      const testBrightness = parameterId === ParameterId.BRIGHTNESS ? value : brightness;
-      const testPowerState = parameterId === ParameterId.POWER_STATE ? (value > 0) : powerState;
-
-      const powerValidation = validateColorAndPower(selectedColor, testBrightness, testPowerState);
+    // Validate power consumption if brightness is changing
+    if (parameterId === ParameterId.BRIGHTNESS) {
+      const powerValidation = validateColorAndPower(selectedColor, value, true);
       if (!powerValidation.isValid) {
         setValidationError(powerValidation.error || 'Power consumption too high');
         // Revert to previous safe value
         if (!skipStateUpdate && oldValue !== undefined) {
-          if (parameterId === ParameterId.BRIGHTNESS) {
-            setBrightness(oldValue);
-          } else if (parameterId === ParameterId.POWER_STATE) {
-            setPowerState(oldValue > 0);
-          }
+          setBrightness(oldValue);
         }
         // Do not send the command
         return;
@@ -647,9 +629,6 @@ const ConfigScreen: React.FC = () => {
           break;
         case ParameterId.EFFECT_TYPE:
           setEffectType(value);
-          break;
-        case ParameterId.POWER_STATE:
-          setPowerState(value > 0);
           break;
         // Note: Color components are handled separately via updateColor()
       }
@@ -733,7 +712,7 @@ const ConfigScreen: React.FC = () => {
 
     // Store timer reference for this parameter
     parameterDebounceTimers.current.set(parameterId, timer);
-  }, [connectedDevice, config, isInConfigMode, brightness, speed, effectType, powerState, trackConfigChange]);
+  }, [connectedDevice, config, isInConfigMode, brightness, speed, effectType, trackConfigChange]);
 
   // Update color as RGB value
   const updateColor = useCallback(async (hexColor: string) => {
@@ -754,19 +733,17 @@ const ConfigScreen: React.FC = () => {
       setValidationError(null);
     }
 
-    // Validate power consumption if power is on
-    if (powerState) {
-      const powerValidation = validateColorAndPower(color, brightness, powerState);
-      if (!powerValidation.isValid) {
-        setValidationError(powerValidation.error || 'Power consumption too high');
-        // Revert to previous safe color
-        setSelectedColor(selectedColor);
-        return; // Block sending
-      } else if (powerValidation.error) {
-        // Warning (high but still safe)
-        setValidationError(powerValidation.error);
-        setTimeout(() => setValidationError(null), 3000);
-      }
+    // Validate power consumption
+    const powerValidation = validateColorAndPower(color, brightness, true);
+    if (!powerValidation.isValid) {
+      setValidationError(powerValidation.error || 'Power consumption too high');
+      // Revert to previous safe color
+      setSelectedColor(selectedColor);
+      return; // Block sending
+    } else if (powerValidation.error) {
+      // Warning (high but still safe)
+      setValidationError(powerValidation.error);
+      setTimeout(() => setValidationError(null), 3000);
     }
 
     // Get old color for analytics
@@ -802,7 +779,7 @@ const ConfigScreen: React.FC = () => {
       await handleColorChange(color);
       colorDebounceTimer.current = null;
     }, 150); // 150ms debounce
-  }, [connectedDevice, config, isInConfigMode, selectedColor, trackConfigChange, powerState, brightness]);
+  }, [connectedDevice, config, isInConfigMode, selectedColor, trackConfigChange, brightness]);
 
   const handleSave = async () => {
     if (!connectedDevice || !config) {
@@ -853,26 +830,6 @@ const ConfigScreen: React.FC = () => {
     }
   };
 
-  const handlePowerToggle = async (value: boolean) => {
-    setPowerState(value);
-    if (!connectedDevice) return;
-    
-    try {
-      // Map power state to pattern: false = PATTERN_OFF (0), true = restore previous pattern
-      if (value) {
-        // Turn on: restore the selected effect pattern
-        const arduinoPattern = effectTypeToArduinoPattern(effectType);
-        await configDomainController.updatePattern(arduinoPattern);
-      } else {
-        // Turn off: set pattern to OFF (0)
-        await configDomainController.updatePattern(0);
-      }
-    } catch (err: any) {
-      console.error('Failed to toggle power:', err);
-      // Revert state on error
-      setPowerState(!value);
-    }
-  };
 
   const handleBrightnessChange = async (value: number) => {
     if (!connectedDevice) return;
@@ -904,11 +861,9 @@ const ConfigScreen: React.FC = () => {
 
   const handleEffectSelect = async (effectId: EffectType) => {
     setEffectType(effectId);
-    // Only update pattern if power is on
-    if (powerState) {
-      const arduinoPattern = effectTypeToArduinoPattern(effectId);
-      await handlePatternChange(arduinoPattern);
-    }
+    // Update pattern immediately when effect is selected
+    const arduinoPattern = effectTypeToArduinoPattern(effectId);
+    await handlePatternChange(arduinoPattern);
   };
 
   const handleColorSelect = async (hexColor: string) => {
@@ -1070,7 +1025,7 @@ const ConfigScreen: React.FC = () => {
           )}
 
           {/* Power Consumption Indicator */}
-          {powerState && config && (
+          {config && (
             (() => {
               const currentDraw = calculateTotalCurrent(selectedColor, brightness);
               const percentage = (currentDraw / 400) * 100; // Percentage of safe limit
@@ -1160,31 +1115,6 @@ const ConfigScreen: React.FC = () => {
             </View>
           )}
 
-      {/* Power Control */}
-      <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
-        <View style={styles.sectionHeader}>
-              <Ionicons name="hardware-chip" size={24} color={themeColors.text} />
-          <View style={styles.sectionTitleContainer}>
-                <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Microcontroller</Text>
-                <Text style={[styles.sectionSubtitle, { color: themeColors.textSecondary }]}>Control LED system power and effects</Text>
-          </View>
-        </View>
-            <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.powerCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
-          <View style={styles.powerInfo}>
-                <Text style={[styles.powerTitle, { color: themeColors.text }]}>Guitar LED Controller</Text>
-                <Text style={[styles.powerSubtitle, { color: themeColors.textSecondary }]}>
-                  {powerState ? 'LED system active' : 'LED system disabled'}
-            </Text>
-          </View>
-          <Switch
-                trackColor={{ false: '#3A3A3C', true: 'rgba(0,122,255,0.5)' }}
-                thumbColor={powerState ? '#007AFF' : '#FFFFFF'}
-                ios_backgroundColor="#3A3A3C"
-                onValueChange={handlePowerToggle}
-                value={powerState}
-          />
-        </BlurView>
-      </View>
 
       {/* Color Picker */}
       {config && (
