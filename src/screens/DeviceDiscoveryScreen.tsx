@@ -497,32 +497,39 @@ const DeviceDiscoveryScreen: React.FC<DeviceDiscoveryScreenProps> = ({ navigatio
       )}
 
       {/* Paired Devices Section */}
-      {pairedDevices.length > 0 && (
-        <View style={styles.pairedDevicesSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Paired Devices</Text>
-            <TouchableOpacity
-              style={styles.toggleButton}
-              onPress={() => setShowPairedDevices(!showPairedDevices)}
-            >
-              <Ionicons 
-                name={showPairedDevices ? "chevron-up" : "chevron-down"} 
-                size={20} 
-                color={colors.textSecondary} 
+      {(() => {
+        // Filter paired devices to only show devices actually paired to the current user
+        const userPairedDevices = user?.userId 
+          ? pairedDevices.filter(device => pairedDeviceIds.has(device.id))
+          : [];
+        
+        return userPairedDevices.length > 0 && (
+          <View style={styles.pairedDevicesSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Paired Devices</Text>
+              <TouchableOpacity
+                style={styles.toggleButton}
+                onPress={() => setShowPairedDevices(!showPairedDevices)}
+              >
+                <Ionicons 
+                  name={showPairedDevices ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color={colors.textSecondary} 
+                />
+              </TouchableOpacity>
+            </View>
+            {showPairedDevices && (
+              <FlatList
+                data={userPairedDevices}
+                renderItem={renderPairedDevice}
+                keyExtractor={(item) => item.id}
+                scrollEnabled={false}
+                style={styles.pairedDevicesList}
               />
-            </TouchableOpacity>
+            )}
           </View>
-          {showPairedDevices && (
-            <FlatList
-              data={pairedDevices}
-              renderItem={renderPairedDevice}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              style={styles.pairedDevicesList}
-            />
-          )}
-        </View>
-      )}
+        );
+      })()}
 
       {/* Scan Button */}
       <View style={styles.scanSection}>
