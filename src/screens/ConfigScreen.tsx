@@ -1016,7 +1016,14 @@ const ConfigScreen: React.FC = () => {
 
           {/* Connection Status Indicator */}
           {connectedDevice && (
-            <View style={[styles.statusBar, { backgroundColor: isDark ? 'rgba(52,199,89,0.2)' : 'rgba(52,199,89,0.1)', borderColor: isDark ? 'rgba(52,199,89,0.3)' : 'rgba(52,199,89,0.2)' }]}>
+            <View style={[
+              styles.statusBar, 
+              { 
+                backgroundColor: isDark ? 'rgba(52,199,89,0.2)' : 'rgba(52,199,89,0.1)', 
+                borderColor: isDark ? 'rgba(52,199,89,0.3)' : 'rgba(52,199,89,0.2)',
+                marginTop: (DEV_MODE && connectedDevice?.id === MOCK_DEVICE.id) ? 8 : (Platform.OS === 'ios' ? 60 : 16)
+              }
+            ]}>
               <View style={[styles.statusIndicator, { backgroundColor: themeColors.success }]} />
               <Text style={[styles.statusText, { color: themeColors.success }]}>
                 Connected: {connectedDevice.name || 'Unknown Device'}
@@ -1031,10 +1038,14 @@ const ConfigScreen: React.FC = () => {
               const percentage = (currentDraw / 400) * 100; // Percentage of safe limit
               const isHigh = currentDraw > 400 * 0.8; // Above 80% of safe limit
               const isOverLimit = currentDraw > 400;
+              const isFirstStatusBar = !(DEV_MODE && connectedDevice?.id === MOCK_DEVICE.id) && !connectedDevice;
               
               return (
                 <View style={[
                   styles.statusBar,
+                  {
+                    marginTop: isFirstStatusBar ? (Platform.OS === 'ios' ? 60 : 16) : 8,
+                  },
                   isOverLimit
                     ? { backgroundColor: isDark ? 'rgba(255,59,48,0.2)' : 'rgba(255,59,48,0.1)', borderColor: isDark ? 'rgba(255,59,48,0.3)' : 'rgba(255,59,48,0.2)' }
                     : isHigh
@@ -1058,7 +1069,7 @@ const ConfigScreen: React.FC = () => {
 
           {/* Connection Status */}
           {!connectedDevice && !DEV_MODE && (
-            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+            <View style={[styles.section, { marginTop: Platform.OS === 'ios' ? 60 : 16, paddingTop: 0 }]}>
               <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: themeColors.warning }]}>
                 <Ionicons name="warning" size={24} color={themeColors.warning} />
                 <Text style={[styles.errorText, { color: themeColors.text }]}>No device connected. Please connect a device first.</Text>
@@ -1068,7 +1079,7 @@ const ConfigScreen: React.FC = () => {
 
           {/* Error Display */}
           {error && errorEnvelope && (
-            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+            <View style={[styles.section, { marginTop: 8, paddingTop: 0 }]}>
               <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>
                 <Ionicons 
                   name={errorSeverity === 'warning' ? 'warning' : errorSeverity === 'info' ? 'information-circle' : 'alert-circle'} 
@@ -1085,7 +1096,7 @@ const ConfigScreen: React.FC = () => {
 
           {/* Config Mode Status */}
           {connectedDevice && configModeState.state !== 'inactive' && (
-            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+            <View style={[styles.section, { marginTop: 8, paddingTop: 0 }]}>
               <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.statusCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
                 <View style={styles.statusRow}>
                   <Ionicons 
@@ -1105,7 +1116,7 @@ const ConfigScreen: React.FC = () => {
           )}
 
           {validationError && (
-            <View style={[styles.section, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+            <View style={[styles.section, { marginTop: 8, paddingTop: 0 }]}>
               <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: themeColors.warning }]}>
                 <Ionicons name="warning" size={24} color={themeColors.warning} />
                 <Text style={[styles.errorText, { color: themeColors.text }]}>
@@ -1285,7 +1296,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     marginHorizontal: 20,
-    marginTop: Platform.OS === 'ios' ? 60 : 16,
+    marginTop: 8, // Default spacing - will be overridden for first item
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(0,122,255,0.3)',
