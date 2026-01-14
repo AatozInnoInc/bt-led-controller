@@ -13,16 +13,13 @@
 *********************************************************************/
 
 // LED Guitar Controller with Settings Storage and Error Handling
-// Using Adafruit_DotStar with hardware SPI for high-frequency operation (reduces EMI/noise)
+// Using custom bitbang SPI for full control over clock frequency (reduces EMI/noise)
 
 #include <Arduino.h>
 #include <bluefruit.h>
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
-
-#include <Adafruit_DotStar.h>
-#include <SPI.h>
 
 #include "device_config.h"
 
@@ -38,30 +35,112 @@ unsigned long lastLedUpdate = 0;
 bool ledBufferChanged = false;
 
 // ----------------------------------------
-// DotStar / APA102 LED setup
+// Bitbang SPI Configuration for EMI Control
 // ----------------------------------------
+// Clock delay controls the time between clock transitions
+// Longer delay = Slower frequency = Less EMI
+// Shorter delay = Faster frequency = More EMI risk
+//
+// Mode 0: 100µs delay  (~5 kHz) - EXTREMELY slow, guaranteed no EMI
+// Mode 1: 50µs delay   (~10 kHz) - Very slow
+// Mode 2: 20µs delay   (~25 kHz) - Slow
+// Mode 3: 10µs delay   (~50 kHz) - Moderately slow [RECOMMENDED START]
+// Mode 4: 5µs delay    (~100 kHz) - Medium-slow
+// Mode 5: 2µs delay    (~250 kHz) - Medium
+// Mode 6: 1µs delay    (~500 kHz) - Fast
+// Mode 7: 0µs delay    (~2 MHz) - Maximum speed (limited by digitalWrite)
 
-// Use software SPI with explicit pins for reliable operation
-// Hardware SPI (pins 0, 0) was causing issues, so using software SPI with defined pins
-// Software SPI is more reliable and gives better control over timing
-// Use DOTSTAR_RGB for correct color order (Red-Green-Blue)
-// If colors appear wrong, try DOTSTAR_BRG instead
-Adafruit_DotStar strip(LED_COUNT, DATA_PIN, CLOCK_PIN, DOTSTAR_RGB);
+#define BITBANG_FREQUENCY_MODE 3  // Start with Mode 3 for EMI reduction
+
+const uint8_t CLOCK_DELAYS[] = {
+  100,  // Mode 0: ~5 kHz (extremely slow baseline)
+  50,   // Mode 1: ~10 kHz
+  20,   // Mode 2: ~25 kHz
+  10,   // Mode 3: ~50 kHz (RECOMMENDED START - should eliminate EMI)
+  5,    // Mode 4: ~100 kHz
+  2,    // Mode 5: ~250 kHz
+  1,    // Mode 6: ~500 kHz
+  0     // Mode 7: ~2 MHz (maximum bitbang speed)
+};
+
+const uint8_t CURRENT_CLOCK_DELAY = CLOCK_DELAYS[BITBANG_FREQUENCY_MODE];
+
+// Global brightness level (0-255) - applied per-LED in APA102 protocol
+uint8_t globalBrightness = DEFAULT_BRIGHTNESS;
 
 // A small staging buffer so we can keep most of your pattern logic intact
-// while moving away from FastLED’s CRGB/CHSV APIs.
+// while moving away from FastLED's CRGB/CHSV APIs.
 struct RGB {
   uint8_t r, g, b;
 };
 static RGB ledBuf[LED_COUNT];
 
-// Idle the data line low to reduce floating-line artifacts
-static inline void idle_low() {
-  // With software SPI, we can control pins directly if needed
-  // For now, this is a placeholder for potential future pin control
+// ----------------------------------------
+// Low-Level APA102 Bitbang Functions
+// ----------------------------------------
+
+// Send a single bit with configurable clock delay
+static inline void sendBit(bool bit) {
+  digitalWrite(DATA_PIN, bit ? HIGH : LOW);
+  if (CURRENT_CLOCK_DELAY > 0) delayMicroseconds(CURRENT_CLOCK_DELAY);
+  digitalWrite(CLOCK_PIN, HIGH);
+  if (CURRENT_CLOCK_DELAY > 0) delayMicroseconds(CURRENT_CLOCK_DELAY);
+  digitalWrite(CLOCK_PIN, LOW);
 }
 
-// Apply ledBuf -> strip pixels and show.
+// Send a byte MSB first
+static inline void sendByte(uint8_t byte) {
+  for (int i = 7; i >= 0; i--) {
+    sendBit(byte & (1 << i));
+  }
+}
+
+// Send start frame (32 bits of 0)
+static inline void sendStartFrame() {
+  for (int i = 0; i < 32; i++) {
+    sendBit(0);
+  }
+}
+
+// Send end frame (32 bits of 1)
+static inline void sendEndFrame() {
+  for (int i = 0; i < 32; i++) {
+    sendBit(1);
+  }
+}
+
+// Send LED frame: 111 + 5-bit brightness + B + G + R
+// APA102 uses BGR order, not RGB
+static inline void sendLED(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness) {
+  // APA102 LED frame: 0b111BBBBB BBBBBBBB GGGGGGGG RRRRRRRR
+  // Where BBBBB is 5-bit brightness (0-31)
+  uint8_t brightnessBits = map(brightness, 0, 255, 0, 31);
+  uint8_t ledHeader = 0b11100000 | brightnessBits;
+  
+  sendByte(ledHeader);
+  sendByte(b);  // APA102 uses BGR order
+  sendByte(g);
+  sendByte(r);
+}
+
+// Update all LEDs - this is our "show()" function
+static inline void bitbangShow() {
+  sendStartFrame();
+  
+  for (int i = 0; i < LED_COUNT; i++) {
+    sendLED(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b, globalBrightness);
+  }
+  
+  sendEndFrame();
+}
+
+// Idle the data line low to reduce floating-line artifacts
+static inline void idle_low() {
+  digitalWrite(DATA_PIN, LOW);
+  digitalWrite(CLOCK_PIN, LOW);
+}
+
+// Apply ledBuf -> LEDs and show.
 // Frame rate limited to reduce noise - only updates at ~30 FPS max
 // This matches FastLED's approach of consistent timing
 static inline void showLeds() {
@@ -72,14 +151,8 @@ static inline void showLeds() {
     return; // Skip update if too soon and buffer hasn't changed
   }
   
-  for (int i = 0; i < LED_COUNT; i++) {
-    // Adafruit_DotStar Color() function takes RGB order
-    // DOTSTAR_RGB flag means chip uses RGB, so we pass RGB as normal
-    strip.setPixelColor(i, strip.Color(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b));
-  }
-  
-  // With software SPI, the library handles all communication
-  strip.show();
+  // Use bitbang SPI to send all LED data
+  bitbangShow();
   
   // Small delay to let signals settle (similar to FastLED's timing)
   // This helps reduce noise by ensuring clean signal transitions
@@ -289,15 +362,22 @@ void setup() {
   // Initialize FS + settings
   initializeSettings();
 
-  // Init DotStar/APA102 with software SPI
-  // Using explicit pins (DATA_PIN, CLOCK_PIN) for reliable operation
-  strip.begin();
-  strip.setBrightness(currentSettings.brightness);
+  // Initialize bitbang SPI pins for APA102 LEDs
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(CLOCK_PIN, OUTPUT);
+  digitalWrite(DATA_PIN, LOW);
+  digitalWrite(CLOCK_PIN, LOW);
+  
+  // Set initial global brightness
+  globalBrightness = currentSettings.brightness;
   
   clearBuf();
   showLeds(); // ensure off
   
-  Serial.printf("DotStar initialized: Software SPI on pins %d (data), %d (clock)\n", DATA_PIN, CLOCK_PIN);
+  Serial.printf("Bitbang SPI initialized: Mode %d (~%d kHz) on pins %d (data), %d (clock)\n", 
+                BITBANG_FREQUENCY_MODE,
+                CURRENT_CLOCK_DELAY > 0 ? (1000 / (CURRENT_CLOCK_DELAY * 2)) : 2000,
+                DATA_PIN, CLOCK_PIN);
 
   // Init Bluefruit
   Bluefruit.begin();
@@ -647,8 +727,8 @@ uint32_t calculateChecksum(DeviceSettings* settings) {
 }
 
 void applySettings() {
-  // Brightness
-  strip.setBrightness(currentSettings.brightness);
+  // Brightness - update global brightness for bitbang
+  globalBrightness = currentSettings.brightness;
 
   // Pattern
   setPattern(currentSettings.currentPattern);
@@ -675,9 +755,9 @@ bool validateColor(uint8_t r, uint8_t g, uint8_t b) { (void)r; (void)g; (void)b;
 
 void applyPowerMode() {
   switch (currentSettings.powerMode) {
-    case 0: strip.setBrightness(currentSettings.brightness); break;
-    case 1: strip.setBrightness(currentSettings.brightness / 2); break;
-    case 2: strip.setBrightness(currentSettings.brightness / 4); break;
+    case 0: globalBrightness = currentSettings.brightness; break;
+    case 1: globalBrightness = currentSettings.brightness / 2; break;
+    case 2: globalBrightness = currentSettings.brightness / 4; break;
   }
   showLeds();
 }
@@ -907,10 +987,12 @@ void handleConfigUpdate() {
         int brightness = bleuart.read();
         if (validateBrightness(brightness)) {
           ramBuffer.brightness = brightness;
+          // Also update currentSettings for immediate preview
+          currentSettings.brightness = brightness;
+          globalBrightness = brightness;
           updated = true;
 
           // preview immediately
-          strip.setBrightness((uint8_t)brightness);
           showLeds();
         } else {
           sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid brightness");
@@ -1103,7 +1185,7 @@ void handleConfirmAnalytics() {
 }
 
 // ========================================
-// Pattern functions (DotStar-backed)
+// Pattern functions (Bitbang SPI-backed)
 // ========================================
 
 void updatePattern() {
