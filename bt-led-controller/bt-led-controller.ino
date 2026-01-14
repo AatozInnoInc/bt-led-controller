@@ -116,7 +116,7 @@ static inline void sendLED(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness) 
   // Where BBBBB is 5-bit brightness (0-31)
   uint8_t brightnessBits = map(brightness, 0, 255, 0, 31);
   uint8_t ledHeader = 0b11100000 | brightnessBits;
-  
+
   sendByte(ledHeader);
   sendByte(b);  // APA102 uses BGR order
   sendByte(g);
@@ -126,11 +126,11 @@ static inline void sendLED(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness) 
 // Update all LEDs - this is our "show()" function
 static inline void bitbangShow() {
   sendStartFrame();
-  
+
   for (int i = 0; i < LED_COUNT; i++) {
     sendLED(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b, globalBrightness);
   }
-  
+
   sendEndFrame();
 }
 
@@ -367,7 +367,7 @@ void setup() {
   pinMode(CLOCK_PIN, OUTPUT);
   digitalWrite(DATA_PIN, LOW);
   digitalWrite(CLOCK_PIN, LOW);
-  
+
   // Set initial global brightness
   globalBrightness = currentSettings.brightness;
   
