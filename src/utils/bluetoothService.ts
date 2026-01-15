@@ -334,13 +334,28 @@ class BluetoothService {
 
             // Pass raw bytes to ConfigurationModule to parse config (if it's an enter config response)
             // This must happen before decodeResponse to preserve the full response
-            // Format: 8 bytes [0x90, brightness, speed, h, s, v, effectType, powerState]
+            // Format: 8 bytes [0x90, brightness, speed, r, g, b, effectType, powerState]
             if (bytes.length === 8 && bytes[0] === 0x90) {
               try {
                 const { configurationModule } = require('../domain/bluetooth/configurationModule');
                 configurationModule.handleResponse(bytes);
+                // Skip decodeResponse for config responses - they're handled by ConfigurationModule
+                // Still check for callback in case sendCommand is waiting
+                const callback = this.responseCallbacks.get(deviceId);
+                if (callback) {
+                  // Return a success response for the command
+                  callback({
+                    type: ResponseType.ACK_CONFIG_MODE,
+                    isSuccess: true,
+                    data: bytes.slice(1),
+                  });
+                  this.responseCallbacks.delete(deviceId);
+                }
+                return; // Don't process further
               } catch (error) {
-                console.error('Failed to handle config response:', error);
+                // TODO FOR AGENT: Error envelope pattern
+                console.error('[BluetoothService] Failed to handle config response:', error);
+                // Continue to normal processing if config handling fails
               }
             }
 

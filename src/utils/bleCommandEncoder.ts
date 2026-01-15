@@ -202,6 +202,16 @@ export class BLECommandEncoder {
       };
     }
 
+    // Handle 8-byte config response: [0x90, brightness, speed, r, g, b, effectType, powerState]
+    // This is sent when entering config mode and contains the current device settings
+    if (responseType === ResponseType.ACK_CONFIG_MODE && data.length === 8) {
+      return {
+        type: ResponseType.ACK_CONFIG_MODE,
+        isSuccess: true,
+        data: data.slice(1), // Return the 7 config bytes (brightness, speed, r, g, b, effectType, powerState)
+      };
+    }
+
     // Handle commit acknowledgment: 0x91
     if (responseType === ResponseType.ACK_COMMIT) {
       return {

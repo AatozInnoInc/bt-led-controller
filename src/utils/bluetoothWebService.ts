@@ -444,62 +444,31 @@ class BluetoothWebService {
     console.log('📥 Received response bytes:', hexBytes);
 
     // Pass to ConfigurationModule if it's a config response (8 bytes: 0x90 + 7 config bytes)
+    // Format: [0x90, brightness, speed, r, g, b, effectType, powerState] (RGB, not HSV)
     if (responseBytesArray.length === 8 && responseBytesArray[0] === 0x90) {
       try {
-        console.log('[WebBLE] Passing config response to ConfigurationModule');
-        console.log('[WebBLE] Response bytes:', Array.from(responseBytesArray).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
         
-        // Directly parse the config and set it on the module
-        // Format: [0x90, brightness, speed, h, s, v, effectType, powerState]
-        const config = {
-          brightness: responseBytesArray[1],
-          speed: responseBytesArray[2],
-          color: {
-            h: responseBytesArray[3],
-            s: responseBytesArray[4],
-            v: responseBytesArray[5],
-          },
-          effectType: responseBytesArray[6],
-          powerState: responseBytesArray[7] > 0,
-        };
-        
-        console.log('[WebBLE] Directly parsed config:', config);
-        
-        // Try calling handleResponse first
-        try {
-          console.log('[WebBLE] About to call handleResponse...');
-          configurationModule.handleResponse(responseBytesArray);
-          console.log('[WebBLE] handleResponse returned');
-        } catch (error) {
-          console.error('[WebBLE] Error calling handleResponse:', error);
-          console.error('[WebBLE] Error stack:', error instanceof Error ? error.stack : 'No stack');
-        }
+        // Call handleResponse to parse and store the config
+        configurationModule.handleResponse(responseBytesArray);
         
         // Check if the config was set by handleResponse
-        let parsedConfig = configurationModule.getLastReceivedConfig();
+        const parsedConfig = configurationModule.getLastReceivedConfig();
         if (parsedConfig) {
           console.log('[WebBLE] Config successfully parsed by handleResponse:', parsedConfig);
         } else {
-          console.warn('[WebBLE] handleResponse did not set config, using direct method...');
-          // Fallback: set config directly when available to avoid runtime errors if the method is missing
-          try {
-            if (typeof (configurationModule as any).setConfigDirectly === 'function') {
-              configurationModule.setConfigDirectly(config);
-              parsedConfig = configurationModule.getLastReceivedConfig();
-              if (parsedConfig) {
-                console.log('[WebBLE] Config set directly, now available:', parsedConfig);
-              } else {
-                console.error('[WebBLE] Failed to set config even with direct method!');
-              }
-            } else {
-              console.warn('[WebBLE] configurationModule.setConfigDirectly is not available - skipping direct set');
-            }
-          } catch (error) {
-            console.error('[WebBLE] Error setting config directly:', error);
-          }
+          console.warn('[WebBLE] handleResponse did not set config');
         }
+        
+        // Return a success response for the command (skip decodeResponse)
+        return {
+          type: ResponseType.ACK_CONFIG_MODE,
+          isSuccess: true,
+          data: responseBytesArray.slice(1), // Return the 7 config bytes
+        };
       } catch (error) {
+        // TODO FOR AGENT: Error envelope pattern
         console.error('[WebBLE] Failed to handle config response:', error);
+        // Continue to normal processing if config handling fails
       }
     }
 
