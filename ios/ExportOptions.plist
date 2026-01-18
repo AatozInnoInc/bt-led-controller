@@ -12,5 +12,12 @@
     <false/>
     <key>uploadSymbols</key>
     <true/>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.aatozinnovations.myledguitar</key>
+        <string>*[expo] com.aatozinnovations.myledguitar AppStore 2025-08-18T17:10:58.032Z</string>
+    </dict>
 </dict>
 </plist>

@@ -3,12 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>method</key>
-    <string>development</string>
+    <string>ad-hoc</string>
     <key>teamID</key>
     <string>KLZJM4HJLT</string>
     <key>uploadBitcode</key>
     <false/>
     <key>compileBitcode</key>
     <false/>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.aatozinnovations.myledguitar</key>
+        <string>*[expo] com.aatozinnovations.myledguitar AdHoc 1755537675029</string>
+    </dict>
 </dict>
 </plist>
