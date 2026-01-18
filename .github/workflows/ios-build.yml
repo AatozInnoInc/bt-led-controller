@@ -63,6 +63,7 @@ jobs:
       # It will install the Ad Hoc profile for development builds
       # and the App Store profile for production builds
       - name: Setup code signing
+        id: setup-code-signing
         env:
           # Certificate (same for both environments)
           CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -159,6 +160,9 @@ jobs:
           PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "Provisioning profile UUID: $PP_UUID"
           
+          # Save the UUID as a step output so it can be used in the build step
+          echo "PP_UUID=$PP_UUID" >> $GITHUB_OUTPUT
+          
           # Rename the profile to use its UUID as the filename
           # This is the naming convention Xcode expects in the Provisioning Profiles directory
           mv ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision \
@@ -174,6 +178,7 @@ jobs:
       - name: Build iOS app
         env:
           BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
+          PP_UUID: ${{ steps.setup-code-signing.outputs.PP_UUID }}
         working-directory: ios
         run: |
           # The workspace name should match your actual .xcworkspace file
@@ -186,11 +191,14 @@ jobs:
             
             # For production, we build in Release configuration
             # This enables optimizations and strips debug symbols
+            # PROVISIONING_PROFILE_SPECIFIER tells xcodebuild which profile to use for manual signing
             xcodebuild -workspace $WORKSPACE \
               -scheme $SCHEME \
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
+              CODE_SIGN_STYLE=Manual \
               archive
             
             # Export the archive as an IPA suitable for App Store submission
@@ -205,11 +213,14 @@ jobs:
             # For development, we can use Debug or Release configuration
             # Debug includes more debugging information but is larger
             # Using Release here to keep file sizes down and match production behavior
+            # PROVISIONING_PROFILE_SPECIFIER tells xcodebuild which profile to use for manual signing
             xcodebuild -workspace $WORKSPACE \
               -scheme $SCHEME \
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
+              CODE_SIGN_STYLE=Manual \
               archive
             
             # Export as an Ad Hoc IPA that can be installed on registered devices
