@@ -3,13 +3,14 @@ import { Platform, AppState } from 'react-native';
 import { BluetoothDevice } from '../types/bluetooth';
 import { bluetoothWebService } from '../utils/bluetoothWebService';
 import { bluetoothService } from '../utils/bluetoothService';
-import { getDeviceDisplayName } from '../utils/bleUtils';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { AnalyticsEventType } from '../types/analytics';
 import { getUserPairedDevices, isDevicePaired } from '../utils/devicePairing';
 import { useUser } from './UserContext';
 import { configDomainController } from '../domain/config/configDomainController';
-import { deviceStorage } from '../utils/deviceStorage';
+import { deviceStorage, PairedDevice } from '../utils/deviceStorage';
+import { getDeviceDisplayName } from '../utils/bleConstants';
+import Toast, { ToastType } from '../components/Toast';
 
 export type FilterType = 'all' | 'microcontrollers' | 'named';
 
@@ -24,6 +25,9 @@ interface BluetoothContextValue {
   lastResponse: string | null;
   isWebBluetoothSupported: boolean;
   isBluetoothInitialized: boolean;
+  pairedDevices: PairedDevice[];
+  isAutoReconnecting: boolean;
+  showReconnectionPrompt: boolean;
   initialize: () => Promise<boolean>;
   startScan: () => Promise<void>;
   stopScan: () => Promise<void>;
@@ -31,6 +35,10 @@ interface BluetoothContextValue {
   disconnect: () => Promise<void>;
   send: (message: string) => Promise<void>;
   sendFailureTest: () => Promise<void>;
+  removePairedDevice: (deviceId: string) => Promise<void>;
+  toggleFavorite: (deviceId: string) => Promise<void>;
+  refreshPairedDevices: () => Promise<void>;
+  verifyCurrentConnection: () => Promise<void>;
 }
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -46,7 +54,19 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
+  const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([]);
+  const [isAutoReconnecting, setIsAutoReconnecting] = useState(false);
+  const isAutoReconnectingRef = useRef(false);
+  const [showReconnectionPrompt, setShowReconnectionPrompt] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<ToastType>('info');
   const autoConnectAttempted = useRef<Set<string>>(new Set());
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isAutoReconnectingRef.current = isAutoReconnecting;
+  }, [isAutoReconnecting]);
 
   const isWebBluetoothSupported = useMemo(
     () => (Platform.OS === 'web' ? bluetoothWebService.isWebBluetoothSupported() : false),
@@ -190,7 +210,9 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
             const updated = [...prev, unifiedDevice];
 
             // Save discovered device to local storage for easy reconnection
-            deviceStorage.addPairedDevice(unifiedDevice).catch((err) => {
+            deviceStorage.addPairedDevice(unifiedDevice).then(() => {
+              refreshPairedDevices();
+            }).catch((err) => {
               console.error('Failed to save discovered device to storage:', err);
             });
             
@@ -209,12 +231,14 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
                 if (isPaired && !connectedDevice) {
                   setTimeout(() => {
                     connect(unifiedDevice).catch((err) => {
+                      // TODO For agent: Error envelope pattern
                       console.log('Auto-connect failed:', err);
                       autoConnectAttempted.current.delete(unifiedDevice.id);
                     });
                   }, 500);
                 }
               }).catch((err) => {
+                // TODO For agent: Error envelope pattern
                 console.error('Failed to check auto-reconnect or pairing status:', err);
                 autoConnectAttempted.current.delete(unifiedDevice.id);
               });
@@ -292,7 +316,26 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
       const connectedDeviceWithStatus = { ...device, isConnected: true };
       setConnectedDevice(connectedDeviceWithStatus);
       setDevices(prev => prev.map(d => (d.id === device.id ? { ...d, isConnected: true } : d)));
-      
+
+      // Show success toast if this was an auto-reconnect
+      // Use ref to get current value since connect callback may have stale closure
+      if (isAutoReconnectingRef.current) {
+        setIsAutoReconnecting(false);
+        setShowReconnectionPrompt(false);
+        // Update toast to show success
+        setToastMessage(`Connected to ${device.name}`);
+        setToastType('success');
+        setToastVisible(true);
+      }
+
+      // Update device storage connection status and refresh paired devices
+      try {
+        await deviceStorage.updateDeviceConnection(device.id, true);
+        await refreshPairedDevices();
+      } catch (err) {
+        console.error('Failed to update device connection in storage:', err);
+      }
+
       if (user?.userId) {
         try {
           const isPaired = await isDevicePaired(device.id, user.userId);
@@ -308,7 +351,7 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
           console.error('Failed to check pairing status:', pairingError);
         }
       }
-      
+
       await trackConnection(
         AnalyticsEventType.CONNECTION_SUCCESS,
         device.id,
@@ -369,7 +412,15 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
       setDevices(prev => prev.map(d => (d.id === deviceId ? { ...d, isConnected: false } : d)));
       setConnectedDevice(null);
       autoConnectAttempted.current.delete(deviceId);
-      
+
+      // Update device storage connection status and refresh paired devices
+      try {
+        await deviceStorage.updateDeviceConnection(deviceId, false);
+        await refreshPairedDevices();
+      } catch (err) {
+        console.error('Failed to update device disconnection in storage:', err);
+      }
+
       await trackConnection(
         AnalyticsEventType.CONNECTION_DISCONNECTED,
         deviceId,
@@ -440,72 +491,189 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, [connectedDevice]);
 
-  // Auto-connect to paired devices on app launch/restore
+  const removePairedDevice = useCallback(async (deviceId: string) => {
+    try {
+      await deviceStorage.removePairedDevice(deviceId);
+      await refreshPairedDevices();
+    } catch (err) {
+      console.error('Failed to remove paired device:', err);
+      throw err;
+    }
+  }, []);
+
+  const toggleFavorite = useCallback(async (deviceId: string) => {
+    try {
+      await deviceStorage.toggleFavorite(deviceId);
+      await refreshPairedDevices();
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+      throw err;
+    }
+  }, []);
+
+  const refreshPairedDevices = useCallback(async () => {
+    try {
+      await deviceStorage.reloadPairedDevices();
+      const devices = deviceStorage.getPairedDevices();
+      setPairedDevices(devices);
+    } catch (err) {
+      console.error('Failed to refresh paired devices:', err);
+    }
+  }, []);
+
+  const verifyCurrentConnection = useCallback(async () => {
+    if (!connectedDevice || !user?.userId) {
+      setError('No device connected or user not logged in');
+      return;
+    }
+    try {
+      setIsSending(true);
+      setError(null);
+      setLastResponse(null);
+      
+      await configDomainController.verifyOwnership(connectedDevice.id, user.userId);
+      setLastResponse('Connection verified successfully');
+    } catch (err) {
+      const errorMessage = (err as Error).message || 'Failed to verify connection';
+      setError(errorMessage);
+      setLastResponse(null);
+    } finally {
+      setIsSending(false);
+    }
+  }, [connectedDevice, user?.userId]);
+
+  // Initialize Bluetooth on app launch
   useEffect(() => {
-    const autoConnectOnLaunch = async () => {
-      if (!user?.userId || !isBluetoothInitializedRef.current || Platform.OS === 'web') {
+    const initOnMount = async () => {
+      await initialize();
+    };
+    initOnMount();
+  }, [initialize]);
+
+  // Load paired devices on mount and when user changes
+  useEffect(() => {
+    refreshPairedDevices();
+  }, [refreshPairedDevices]);
+
+  // Shared auto-reconnect logic
+  const attemptAutoReconnect = useCallback(async (options: {
+    context: string;
+    checkWebPlatform?: boolean;
+    showSearchingToast?: boolean;
+    hideToastOnTimeout?: boolean;
+  }) => {
+    const { context, checkWebPlatform = false, showSearchingToast = false, hideToastOnTimeout = false } = options;
+
+    if (!user?.userId || !isBluetoothInitializedRef.current || connectedDevice) {
+      return;
+    }
+
+    if (checkWebPlatform && Platform.OS === 'web') {
+      return;
+    }
+
+    try {
+      const isAutoReconnectEnabled = await deviceStorage.getAutoReconnectEnabled();
+      if (!isAutoReconnectEnabled) {
         return;
       }
 
-      try {
-        // Check if auto-reconnect is enabled
-        const isAutoReconnectEnabled = await deviceStorage.getAutoReconnectEnabled();
-        if (!isAutoReconnectEnabled) {
-          console.log('Auto-reconnect is disabled, skipping auto-connect');
-          return;
-        }
-
-        const pairedDevices = await getUserPairedDevices(user.userId);
-        if (pairedDevices.length === 0 || connectedDevice) {
-          return;
-        }
+      // On iOS, try to directly connect to last connected device from storage
+      if (Platform.OS === 'ios') {
+        const lastConnected = deviceStorage.getLastConnectedDevice();
         
-        console.log(`Auto-connect: Found ${pairedDevices.length} paired device(s), starting scan to reconnect...`);
-        // Start scanning to find and auto-connect to paired devices
-        await startScan();
-      } catch (error) {
-        console.error('Failed to check paired devices on launch:', error);
-      }
-    };
+        if (lastConnected) {
+          setIsAutoReconnecting(true);
+          setShowReconnectionPrompt(true);
+          
+          const deviceToConnect: BluetoothDevice = {
+            id: lastConnected.id,
+            name: lastConnected.name,
+            rssi: lastConnected.rssi || -50,
+            isConnected: false,
+            manufacturerData: lastConnected.manufacturerData || '',
+            serviceUUIDs: lastConnected.serviceUUIDs || [],
+          };
 
-    if (isBluetoothInitialized) {
-      autoConnectOnLaunch();
+          try {
+            setToastMessage('Auto-connecting');
+            setToastType('loading');
+            setToastVisible(true);
+            
+            await connect(deviceToConnect);
+            return; // Success, exit early
+          } catch (connectError) {
+            console.error(`${context} (iOS): Direct connect failed, falling back to scan:`, connectError);
+            setToastMessage(`Failed to connect to ${lastConnected.name}`);
+            setToastType('error');
+            setToastVisible(true);
+            setIsAutoReconnecting(false);
+            setShowReconnectionPrompt(false);
+          }
+        }
+      }
+
+      // Fallback: Check user paired devices and scan
+      const userPairedDevices = await getUserPairedDevices(user.userId);
+      if (userPairedDevices.length === 0) {
+        return;
+      }
+
+      setIsAutoReconnecting(true);
+      setShowReconnectionPrompt(true);
+      if (showSearchingToast) {
+        setToastMessage('Searching for your device...');
+        setToastType('loading');
+        setToastVisible(true);
+      }
+      await startScan();
+      
+      setTimeout(() => {
+        setShowReconnectionPrompt(false);
+        setIsAutoReconnecting(false);
+        if (hideToastOnTimeout && !connectedDevice) {
+          setToastVisible(false);
+        }
+      }, 10000);
+    } catch (error) {
+      console.error(`${context}: Failed to auto-reconnect:`, error);
+      setToastMessage('Auto-reconnect failed');
+      setToastType('error');
+      setToastVisible(true);
+      setIsAutoReconnecting(false);
+      setShowReconnectionPrompt(false);
     }
-  }, [user?.userId, isBluetoothInitialized, connectedDevice, startScan]);
+  }, [user?.userId, connectedDevice, startScan, connect]);
+
+  // Auto-connect to paired devices on app launch/restore
+  useEffect(() => {
+    if (isBluetoothInitialized && !connectedDevice) {
+      const timer = setTimeout(() => {
+        attemptAutoReconnect({
+          context: 'Auto-connect on launch',
+          checkWebPlatform: true,
+          showSearchingToast: true,
+          hideToastOnTimeout: true,
+        });
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [user?.userId, isBluetoothInitialized, connectedDevice, attemptAutoReconnect]);
 
   // Handle app state changes (foreground/background) for auto-reconnect
   useEffect(() => {
     if (Platform.OS === 'web') {
-      return; // AppState is not reliable on web
+      return;
     }
 
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
-      // When app comes to foreground
-      if (nextAppState === 'active') {
-        // Check if we should auto-reconnect
-        if (!connectedDevice && user?.userId && isBluetoothInitializedRef.current) {
-          try {
-            const isAutoReconnectEnabled = await deviceStorage.getAutoReconnectEnabled();
-            if (!isAutoReconnectEnabled) {
-              return;
-            }
-
-            const pairedDevices = await getUserPairedDevices(user.userId);
-            if (pairedDevices.length > 0) {
-              console.log('App resumed: Starting scan to reconnect to paired devices...');
-              await startScan();
-            }
-          } catch (error) {
-            console.error('Failed to auto-reconnect on app resume:', error);
-          }
-        }
+      if (nextAppState === 'active' && !connectedDevice && user?.userId && isBluetoothInitializedRef.current) {
+        await attemptAutoReconnect({ context: 'App resumed' });
       }
     });
 
-    return () => {
-      subscription.remove();
-    };
-  }, [user?.userId, connectedDevice, startScan]);
+    return () => subscription.remove();
+  }, [user?.userId, connectedDevice, attemptAutoReconnect]);
 
   const value = useMemo(() => ({
     isScanning,
@@ -518,6 +686,9 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     lastResponse,
     isWebBluetoothSupported,
     isBluetoothInitialized,
+    pairedDevices,
+    isAutoReconnecting,
+    showReconnectionPrompt,
     initialize,
     startScan,
     stopScan,
@@ -525,6 +696,10 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     disconnect,
     send,
     sendFailureTest,
+    removePairedDevice,
+    toggleFavorite,
+    refreshPairedDevices,
+    verifyCurrentConnection,
   }), [
     isScanning,
     isConnecting,
@@ -536,6 +711,9 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     lastResponse,
     isWebBluetoothSupported,
     isBluetoothInitialized,
+    pairedDevices,
+    isAutoReconnecting,
+    showReconnectionPrompt,
     initialize,
     startScan,
     stopScan,
@@ -543,11 +721,22 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     disconnect,
     send,
     sendFailureTest,
+    removePairedDevice,
+    toggleFavorite,
+    refreshPairedDevices,
+    verifyCurrentConnection,
   ]);
 
   return (
     <BluetoothContext.Provider value={value}>
       {children}
+      <Toast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        duration={toastType === 'loading' ? 0 : 750}
+        onHide={() => setToastVisible(false)}
+      />
     </BluetoothContext.Provider>
   );
 };

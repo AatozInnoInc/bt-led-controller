@@ -5,21 +5,23 @@
 
 export enum CommandType {
   ENTER_CONFIG        = 0x10,
-  EXIT_CONFIG         = 0x11,
-  COMMIT_CONFIG       = 0x12,
+  COMMIT_CONFIG       = 0x11,
+  EXIT_CONFIG         = 0x12,
   CLAIM_DEVICE        = 0x13, // Claim device ownership (one-time, sets owner)
   VERIFY_OWNERSHIP    = 0x14, // Verify user can access device (per-session)
   UNCLAIM_DEVICE      = 0x15, // Unclaim device ownership (removes owner)
   UPDATE_PARAM        = 0x02,
-  UPDATE_COLOR        = 0x03, // Update HSV color as single command (payload: [H, S, V])
+  UPDATE_COLOR        = 0x03, // Update color as single command (payload: [R, G, B])
   REQUEST_ANALYTICS   = 0x20, // Request analytics batch from controller
   CONFIRM_ANALYTICS   = 0x21, // Confirm receipt of analytics batch
 }
 
 export enum ResponseType {
-  ACK_SUCCESS = 0x90,
-  ACK_ERROR = 0x91,
-  ANALYTICS_BATCH = 0xA0, // Analytics batch response
+  ACK_CONFIG_MODE = 0x90,  // Acknowledge config mode entry (firmware: RESPONSE_ACK_CONFIG_MODE)
+  ACK_COMMIT = 0x91,       // Acknowledge config commit (firmware: RESPONSE_ACK_COMMIT)
+  ACK_SUCCESS = 0x92,      // General success acknowledgment (firmware: RESPONSE_ACK_SUCCESS)
+  ACK_ERROR = 0x90,        // Error envelope marker (same as CONFIG_MODE, distinguished by length) TODO FOR AGENT: NO, USE A DISTINCT ERROR CODE
+  ANALYTICS_BATCH = 0xA0,  // Analytics batch response
 }
 
 export enum ParameterId {

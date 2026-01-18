@@ -2,8 +2,9 @@ import { BluetoothDevice } from '../types/bluetooth';
 import { NUS_SERVICE_UUID, NUS_NOTIFY_CHAR_UUID, NUS_WRITE_CHAR_UUID } from './bleConstants';
 import { CommandResponse, ResponseType } from '../types/commands';
 import { BLECommandEncoder } from './bleCommandEncoder';
-import { BLEError } from '../types/errors';
+import { BLEError, ErrorCode } from '../types/errors';
 import { configurationModule } from '../domain/bluetooth/configurationModule';
+import { getErrorMessage } from '../domain/common/errorEnvelope';
 
 class BluetoothWebService {
   private isSupported: boolean = false;
@@ -235,6 +236,17 @@ class BluetoothWebService {
             this.responseCallback(responseText);
             this.responseCallback = null; // Clear the callback after use
           }
+          // TODO FOR AGENT: DO WE WANT TO DO THIS INSTEAD? IS IT POINTLESS TO HAVE MULTIPLE LISTENERS???
+          /*
+          // Notify all response listeners
+          this.responseListeners.forEach(listener => {
+            try {
+              listener(dataArray);
+            } catch (error) {
+              console.error('Error in response listener:', error);
+            }
+          });
+          */
         } catch (decodeError) {
           console.error('Error decoding response:', decodeError);
         }
@@ -282,7 +294,7 @@ class BluetoothWebService {
 
       // Get the UART service
       const service = await server.getPrimaryService(NUS_SERVICE_UUID);
-      
+
       // Get the write characteristic
       const writeCharacteristic = await service.getCharacteristic(NUS_WRITE_CHAR_UUID);
 
@@ -305,7 +317,7 @@ class BluetoothWebService {
       await writeCharacteristic.writeValue(bytes);
       const hexBytes = Array.from(bytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
       console.log('Raw bytes sent successfully via Web Bluetooth:', hexBytes);
-      
+
       // Give the Arduino a moment to process the message
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -432,62 +444,31 @@ class BluetoothWebService {
     console.log('📥 Received response bytes:', hexBytes);
 
     // Pass to ConfigurationModule if it's a config response (8 bytes: 0x90 + 7 config bytes)
+    // Format: [0x90, brightness, speed, r, g, b, effectType, powerState] (RGB, not HSV)
     if (responseBytesArray.length === 8 && responseBytesArray[0] === 0x90) {
       try {
-        console.log('[WebBLE] Passing config response to ConfigurationModule');
-        console.log('[WebBLE] Response bytes:', Array.from(responseBytesArray).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
         
-        // Directly parse the config and set it on the module
-        // Format: [0x90, brightness, speed, h, s, v, effectType, powerState]
-        const config = {
-          brightness: responseBytesArray[1],
-          speed: responseBytesArray[2],
-          color: {
-            h: responseBytesArray[3],
-            s: responseBytesArray[4],
-            v: responseBytesArray[5],
-          },
-          effectType: responseBytesArray[6],
-          powerState: responseBytesArray[7] > 0,
-        };
-        
-        console.log('[WebBLE] Directly parsed config:', config);
-        
-        // Try calling handleResponse first
-        try {
-          console.log('[WebBLE] About to call handleResponse...');
-          configurationModule.handleResponse(responseBytesArray);
-          console.log('[WebBLE] handleResponse returned');
-        } catch (error) {
-          console.error('[WebBLE] Error calling handleResponse:', error);
-          console.error('[WebBLE] Error stack:', error instanceof Error ? error.stack : 'No stack');
-        }
+        // Call handleResponse to parse and store the config
+        configurationModule.handleResponse(responseBytesArray);
         
         // Check if the config was set by handleResponse
-        let parsedConfig = configurationModule.getLastReceivedConfig();
+        const parsedConfig = configurationModule.getLastReceivedConfig();
         if (parsedConfig) {
           console.log('[WebBLE] Config successfully parsed by handleResponse:', parsedConfig);
         } else {
-          console.warn('[WebBLE] handleResponse did not set config, using direct method...');
-          // Fallback: set config directly when available to avoid runtime errors if the method is missing
-          try {
-            if (typeof (configurationModule as any).setConfigDirectly === 'function') {
-              configurationModule.setConfigDirectly(config);
-              parsedConfig = configurationModule.getLastReceivedConfig();
-              if (parsedConfig) {
-                console.log('[WebBLE] Config set directly, now available:', parsedConfig);
-              } else {
-                console.error('[WebBLE] Failed to set config even with direct method!');
-              }
-            } else {
-              console.warn('[WebBLE] configurationModule.setConfigDirectly is not available - skipping direct set');
-            }
-          } catch (error) {
-            console.error('[WebBLE] Error setting config directly:', error);
-          }
+          console.warn('[WebBLE] handleResponse did not set config');
         }
+        
+        // Return a success response for the command (skip decodeResponse)
+        return {
+          type: ResponseType.ACK_CONFIG_MODE,
+          isSuccess: true,
+          data: responseBytesArray.slice(1), // Return the 7 config bytes
+        };
       } catch (error) {
+        // TODO FOR AGENT: Error envelope pattern
         console.error('[WebBLE] Failed to handle config response:', error);
+        // Continue to normal processing if config handling fails
       }
     }
 
@@ -527,6 +508,19 @@ class BluetoothWebService {
     return this.selectedDevice;
   }
 
+  /* TODO FOR AGENT: OLD SUBSCRIPTION PATTERN
+   * Subscribe to response notifications
+   */
+  /*
+  subscribeToResponses(listener: (data: Uint8Array | string) => void): () => void {
+    this.responseListeners.push(listener);
+    return () => {
+      this.responseListeners = this.responseListeners.filter(l => l !== listener);
+    };
+  }
+}
+  */
+
   // Format binary response with meaning
   private formatBinaryResponse(bytes: Uint8Array): string {
     if (bytes.length === 0) {
@@ -541,23 +535,21 @@ class BluetoothWebService {
     // Interpret response based on protocol
     switch (firstByte) {
       case 0x90:
-        return `✓ ACK_SUCCESS [${hexString}]`;
+        // 0x90 can be: CONFIG_MODE ack (1 byte), config response (8 bytes), or error envelope (variable)
+        if (bytes.length === 1) {
+          return `✓ ACK_CONFIG_MODE [${hexString}]`;
+        } else if (bytes.length === 8) {
+          return `📋 Config Response [${hexString}]`;
+        } else {
+          // Error envelope
+          const errorCode = bytes.length > 1 ? bytes[1] : ErrorCode.UNKNOWN_ERROR;
+          const errorMsg = getErrorMessage(errorCode);
+          return `✗ Error: ${errorMsg} [${hexString}]`;
+        }
       case 0x91:
-        const errorCode = bytes.length > 1 ? bytes[1] : 0;
-        const errorMessages: Record<number, string> = {
-          0x01: 'Invalid command',
-          0x02: 'Invalid parameter',
-          0x03: 'Out of range',
-          0x04: 'Not in config mode',
-          0x05: 'Already in config mode',
-          0x06: 'Flash write failed',
-          0x07: 'Validation failed',
-          0x08: 'Not owner',
-          0x09: 'Already claimed',
-          0xFF: 'Unknown error',
-        };
-        const errorMsg = errorMessages[errorCode] || `Error 0x${errorCode.toString(16)}`;
-        return `✗ ACK_ERROR: ${errorMsg} [${hexString}]`;
+        return `✓ ACK_COMMIT [${hexString}]`;
+      case 0x92:
+        return `✓ ACK_SUCCESS [${hexString}]`;
       case 0xA0:
         return `📊 Analytics batch [${hexString}]`;
       default:

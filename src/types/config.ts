@@ -17,17 +17,12 @@ export enum EffectType {
   CUSTOM = 5,
 }
 
-// FastLED uses HSV color model (0-255 for all components)
-export interface HSVColor {
-  readonly h: number; // 0-255 (Hue)
-  readonly s: number; // 0-255 (Saturation)
-  readonly v: number; // 0-255 (Value/Brightness)
-}
+export type RGBColor = [number, number, number]; // [R, G, B] where each is 0-255
 
 export interface LEDConfig {
   readonly brightness: number; // 0-100
   readonly speed: number; // 0-100
-  readonly color: HSVColor; // HSV color for FastLED compatibility
+  readonly color: RGBColor; // RGB color (Arduino will convert to HSV for FastLED)
   readonly effectType: EffectType;
   readonly powerState: boolean;
 }
@@ -43,7 +38,7 @@ export interface ConfigParameter {
 export const DEFAULT_CONFIG: LEDConfig = {
   brightness: 50,
   speed: 30,
-  color: { h: 160, s: 255, v: 255 }, // HSV: iOS blue (hue ~160, full saturation, full value)
+  color: [0, 122, 255], // RGB: iOS blue
   effectType: EffectType.SOLID,
   powerState: false,
 };

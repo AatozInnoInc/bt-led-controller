@@ -1,4 +1,4 @@
-import { BLE_COMMANDS, RESPONSE_CODES, HSVColor } from '../../utils/bleConstants';
+import { BLE_COMMANDS, RESPONSE_CODES } from '../../utils/bleConstants';
 import { DeviceSettings } from '../../utils/bleConstants';
 
 /**
@@ -105,14 +105,16 @@ export class BLECommandEncoder {
   }
 
   /**
-   * Encode color update (HSV format for FastLED)
-   * Format: [0x03, H, S, V] - matches firmware CMD_UPDATE_COLOR
+   * Encode color update (RGB format)
+   * Format: [0x02, 0x02, R, G, B] - matches firmware CMD_CONFIG_UPDATE with paramType=0x02
    */
-  static encodeColorUpdate(color: HSVColor): Uint8Array {
-    const h = Math.max(0, Math.min(255, Math.round(color.h)));
-    const s = Math.max(0, Math.min(255, Math.round(color.s)));
-    const v = Math.max(0, Math.min(255, Math.round(color.v)));
-    return new Uint8Array([BLE_COMMANDS.CMD_UPDATE_COLOR, h, s, v]);
+  static encodeColorUpdate(color: [number, number, number]): Uint8Array {
+    const [r, g, b] = color;
+    return this.encodeConfigUpdate(0x02, [
+      Math.max(0, Math.min(255, Math.round(r))),
+      Math.max(0, Math.min(255, Math.round(g))),
+      Math.max(0, Math.min(255, Math.round(b))),
+    ]);
   }
 
   /**
@@ -146,12 +148,17 @@ export class BLECommandEncoder {
       commands.push(this.encodePatternUpdate(settings.currentPattern));
     }
 
+    console.log('Updating color:', settings);
     if (settings.color !== undefined) {
       commands.push(this.encodeColorUpdate(settings.color));
     }
 
     if (settings.powerMode !== undefined) {
       commands.push(this.encodePowerModeUpdate(settings.powerMode));
+    }
+
+    if (settings.speed !== undefined) {
+      commands.push(this.encodeSpeedUpdate(settings.speed));
     }
 
     return commands;

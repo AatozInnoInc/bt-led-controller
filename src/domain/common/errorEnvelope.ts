@@ -108,7 +108,7 @@ function getDefaultErrorMessage(errorCode: number): string {
     case ErrorCode.SETTINGS_CORRUPT:
       return 'Device settings are corrupted';
     case ErrorCode.FLASH_FAILURE:
-      return 'Flash memory failure';
+      return 'Failed to save settings to flash memory';
     case ErrorCode.LED_FAILURE:
       return 'LED hardware failure detected';
     case ErrorCode.MEMORY_LOW:
@@ -201,6 +201,7 @@ export function formatErrorForUser(envelope: ErrorEnvelope): string {
 }
 
 /**
+   TODO FOR AGENT: THIS PROBABLY BELONGS IN ANOTOER FILE
  * Error Handler Class
  * Processes and handles error envelopes from microcontroller
  */

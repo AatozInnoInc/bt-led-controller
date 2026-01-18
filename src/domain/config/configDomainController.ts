@@ -3,7 +3,7 @@ import { ConfigRepository, configRepository } from './configRepository';
 import { ConfigurationModule, configurationModule, ConfigModeStatus } from '../bluetooth/configurationModule';
 import { BLECommandEncoder } from '../bluetooth/bleCommandEncoder';
 import { ErrorEnvelope, createErrorEnvelope, ErrorCode } from '../common/errorEnvelope';
-import { DeviceSettings, HSVColor } from '../../utils/bleConstants';
+import { DeviceSettings, RGBColor } from '../../utils/bleConstants';
 import { BluetoothDevice } from '../../types/bluetooth';
 import { bluetoothService } from '../../utils/bluetoothService';
 import { bluetoothWebService } from '../../utils/bluetoothWebService';
@@ -58,6 +58,7 @@ export class ConfigDomainController {
   }
 
   /**
+   TODO FOR AGENT:: DO WE REMOVE THIS? OR DO WE MOVE IT SOMEWHER EELSE?
    * Helper to check if device is connected (DRY pattern from legacy)
    */
   private async ensureDeviceConnected(): Promise<void> {
@@ -222,11 +223,11 @@ export class ConfigDomainController {
         const command = commands[i];
         const hexBytes = Array.from(command).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
         console.log(`  Command ${i + 1}/${commands.length}:`, hexBytes);
-        
+
         // Use sendCommand which handles response checking and errors
         const response = await getBleService().sendCommand(this.connectedDevice.id, command);
         console.log(`  Response ${i + 1}:`, response);
-        
+
         if (!response.isSuccess) {
           throw new Error(`Command failed with response: ${JSON.stringify(response)}`);
         }
@@ -261,9 +262,9 @@ export class ConfigDomainController {
   }
 
   /**
-   * Update color (HSV format for FastLED)
+   * Update color (RGB format - Arduino will convert to HSV for FastLED)
    */
-  async updateColor(color: HSVColor): Promise<ConfigUpdateResult> {
+  async updateColor(color: RGBColor): Promise<ConfigUpdateResult> {
     return this.updateConfig({ color });
   }
 
@@ -275,6 +276,14 @@ export class ConfigDomainController {
   }
 
   /**
+   * Update speed (convenience method)
+   */
+  async updateSpeed(speed: number): Promise<ConfigUpdateResult> {
+    return this.updateConfig({ speed });
+  }
+
+  /**
+    TODO FOR AGENT: REMOVE UPDATE PAREMTER. KEEP DEVICE CLAIMING THINGS
    * Update individual parameter (legacy method for finer-grained control)
    */
   async updateParameter(parameterId: ParameterId, value: number): Promise<ConfigUpdateResult> {
@@ -464,10 +473,10 @@ export class ConfigDomainController {
       const command = BLECommandEncoder.encodeCommitConfig();
       const hexBytes = Array.from(command).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
       console.log('💾 Committing config with command:', hexBytes);
-      
+
       const response = await getBleService().sendCommand(this.connectedDevice.id, command);
       console.log('💾 Commit response:', response);
-      
+
       if (!response.isSuccess) {
         throw new Error(`Commit failed with response: ${JSON.stringify(response)}`);
       }

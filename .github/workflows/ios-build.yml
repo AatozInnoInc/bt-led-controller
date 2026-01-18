@@ -1,0 +1,147 @@
+name: iOS Build
+
+on:
+  # Trigger on pushes to main for production builds
+  push:
+    branches:
+      - main
+  # Trigger on pushes to develop for dev builds
+  push:
+    branches:
+      - develop
+  # Allow manual triggers with environment selection
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Build environment'
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+
+jobs:
+  build-ios:
+    runs-on: macos-latest  # GitHub provides macOS runners with Xcode pre-installed
+    
+    steps:
+      # Step 1: Check out your repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Step 2: Determine which environment to build
+      # If manually triggered, use the input; otherwise infer from branch
+      - name: Set environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=development" >> $GITHUB_OUTPUT
+          fi
+      
+      # Step 3: Set up Node.js (adjust version to match your project)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.0'
+          cache: 'npm'  # or 'yarn' if you use yarn
+      
+      # Step 4: Install JavaScript dependencies
+      - name: Install dependencies
+        run: npm ci  # Use 'yarn install --frozen-lockfile' if using yarn
+      
+      # Step 5: Set up Ruby (for CocoaPods and Fastlane)
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true  # This caches gems defined in your Gemfile
+      
+      # Step 6: Install CocoaPods dependencies
+      - name: Install Pods
+        working-directory: ios
+        run: |
+          pod install
+      
+      # Step 7: Set up Apple certificates and provisioning profiles
+      # You'll need to store these as GitHub secrets
+      - name: Setup provisioning profile
+        env:
+          # These secrets need to be added to your GitHub repository
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create variables for file paths
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # Decode base64 secrets to files
+          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+          # Create a temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Copy provisioning profile to the correct location
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+      
+      # Step 8: Build the iOS app using Xcode
+      - name: Build iOS app
+        working-directory: ios
+        run: |
+          if [ "${{ steps.set-env.outputs.environment }}" == "production" ]; then
+            # Production build - creates an archive suitable for App Store
+            xcodebuild -workspace MyLedGuitarApp.xcworkspace \
+              -scheme MyLedGuitarApp \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              archive
+            
+            # Export the archive as an IPA
+            xcodebuild -exportArchive \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              -exportOptionsPlist ExportOptions.plist \
+              -exportPath $RUNNER_TEMP/build
+          else
+            # Development build - creates an IPA for testing
+            xcodebuild -workspace MyLedGuitarApp.xcworkspace \
+              -scheme MyLedGuitarApp \
+              -configuration Debug \
+              -destination 'generic/platform=iOS' \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              archive
+            
+            xcodebuild -exportArchive \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              -exportOptionsPlist ExportOptions-Dev.plist \
+              -exportPath $RUNNER_TEMP/build
+          fi
+      
+      # Step 9: Upload the built IPA as an artifact
+      # This makes it downloadable from the GitHub Actions run page
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ steps.set-env.outputs.environment }}-build
+          path: ${{ runner.temp }}/build/*.ipa
+          retention-days: 30  # How long GitHub keeps the artifact
+      
+      # Step 10: Clean up - remove the temporary keychain
+      - name: Clean up keychain
+        if: always()  # Run even if previous steps failed
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true

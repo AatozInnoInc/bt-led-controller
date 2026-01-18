@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// TODO FOR AGENT: INTEGRATE THIS LOGGEER EVERYWHERE. IT SHOULD REPLACE CONSOLE.LOG AND CONSOLE.ERROR AND CONSOLE.WARN AND CONSOLE.DEBUG.
+
 /**
  * Logging Layer
  * Provides structured logging with local storage and future Firebase integration

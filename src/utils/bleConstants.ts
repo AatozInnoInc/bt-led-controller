@@ -1,3 +1,5 @@
+import { BluetoothDevice } from "../types/bluetooth";
+
 // Common BLE UUID constants for Nordic UART Service (NUS)
 export const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 export const NUS_WRITE_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
@@ -92,6 +94,23 @@ export const isUuidLikelyUart = (uuid: string): boolean => {
   );
 };
 
+export const getDeviceDisplayName = (device: Partial<BluetoothDevice> & any): string => {
+  const name = device.name || device.localName;
+
+  if (name && name.trim() !== '')
+    return name.trim();
+
+  // Generate a friendly name based on device characteristics
+  if (isLedGuitarDevice(device)) {
+    return 'LED Guitar Controller';
+  }
+
+  if (device.serviceUUIDs && device.serviceUUIDs.length > 0)
+    return 'BLE Device';
+
+  return 'Unknown Device';
+};
+
 // Enhanced Communication Protocol Commands
 export const BLE_COMMANDS = {
   VERSION: 'V',
@@ -110,11 +129,11 @@ export const BLE_COMMANDS = {
   // TODO for Agent: Unify commands list by using hex or char, but not both.
   // Config Mode Commands (binary)
   CMD_STATUS: 0x00, // Status/ping command for connection verification
-  CMD_ENTER_CONFIG: 0x10,
-  CMD_EXIT_CONFIG: 0x11,   // Fixed: was 0x12, now matches Arduino firmware
-  CMD_COMMIT_CONFIG: 0x12, // Fixed: was 0x11, now matches Arduino firmware
   CMD_CONFIG_UPDATE: 0x02,
-  CMD_UPDATE_COLOR: 0x03
+  CMD_UPDATE_COLOR: 0x03,
+  CMD_ENTER_CONFIG: 0x10,
+  CMD_COMMIT_CONFIG: 0x11,
+  CMD_EXIT_CONFIG: 0x12
 } as const;
 
 // Response Types
@@ -169,12 +188,8 @@ export const POWER_MODES = {
   ECO: 2,
 } as const;
 
-// HSV Color (for compatibility with LEDConfig)
-export interface HSVColor {
-  h: number; // 0-255 (Hue)
-  s: number; // 0-255 (Saturation)
-  v: number; // 0-255 (Value/Brightness)
-}
+// RGB Color type (tuple)
+export type RGBColor = [number, number, number]; // [R, G, B] where each is 0-255
 
 // Device Settings Interface (unified with LEDConfig fields)
 export interface DeviceSettings {
@@ -183,10 +198,8 @@ export interface DeviceSettings {
   powerMode: number;
   autoOff: number;
   maxEffects: number;
-  defaultColor: [number, number, number]; // RGB
-  // LEDConfig compatible fields
   speed: number; // 0-100
-  color: HSVColor; // HSV color
+  color: RGBColor; // RGB color
   effectType: number; // 0-5 (EffectType enum)
   powerState: boolean; // on/off
 }
@@ -281,7 +294,7 @@ const parseSettingsResponse = (response: string): DeviceSettings => {
     if (key && value) {
       if (key === 'COLOR') {
         const colors = value.split(',').map(Number);
-        data.defaultColor = colors as [number, number, number];
+        data.color = colors as [number, number, number];
       } else {
         data[key.toLowerCase()] = Number(value);
       }

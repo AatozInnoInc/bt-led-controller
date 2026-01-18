@@ -124,9 +124,8 @@ export class ConfigRepository {
       powerMode: this.validateRange(config?.powerMode, 0, 2, 0),
       autoOff: this.validateRange(config?.autoOff, 0, 255, 0),
       maxEffects: this.validateRange(config?.maxEffects, 1, 10, 10),
-      defaultColor: this.validateColor(config?.defaultColor),
       speed: this.validateRange(config?.speed, 0, 100, 30),
-      color: this.validateHSVColor(config?.color),
+      color: this.validateColor(config?.color),
       effectType: this.validateRange(config?.effectType, 0, 5, 0),
       powerState: typeof config?.powerState === 'boolean' ? config.powerState : false,
     };
@@ -156,19 +155,6 @@ export class ConfigRepository {
     return [255, 255, 255]; // Default white
   }
 
-  /**
-   * Validate HSV color structure
-   */
-  private validateHSVColor(color: any): { h: number; s: number; v: number } {
-    if (color && typeof color === 'object') {
-      return {
-        h: this.validateRange(color.h, 0, 255, 160),
-        s: this.validateRange(color.s, 0, 255, 255),
-        v: this.validateRange(color.v, 0, 255, 255),
-      };
-    }
-    return { h: 160, s: 255, v: 255 }; // Default iOS blue
-  }
 
   /**
    * Get default config
@@ -180,9 +166,8 @@ export class ConfigRepository {
       powerMode: 0,
       autoOff: 0,
       maxEffects: 10,
-      defaultColor: [255, 255, 255],
       speed: 30,
-      color: { h: 160, s: 255, v: 255 }, // iOS blue in HSV
+      color: [0, 122, 255], // iOS blue in RGB
       effectType: 0, // SOLID
       powerState: false,
     };
@@ -211,9 +196,9 @@ export class ConfigRepository {
       config1.powerMode !== config2.powerMode ||
       config1.autoOff !== config2.autoOff ||
       config1.maxEffects !== config2.maxEffects ||
-      config1.defaultColor[0] !== config2.defaultColor[0] ||
-      config1.defaultColor[1] !== config2.defaultColor[1] ||
-      config1.defaultColor[2] !== config2.defaultColor[2]
+      config1.color[0] !== config2.color[0] ||
+      config1.color[1] !== config2.color[1] ||
+      config1.color[2] !== config2.color[2]
     );
   }
 
@@ -244,11 +229,11 @@ export class ConfigRepository {
     }
 
     if (
-      oldConfig.defaultColor[0] !== newConfig.defaultColor[0] ||
-      oldConfig.defaultColor[1] !== newConfig.defaultColor[1] ||
-      oldConfig.defaultColor[2] !== newConfig.defaultColor[2]
+      oldConfig.color[0] !== newConfig.color[0] ||
+      oldConfig.color[1] !== newConfig.color[1] ||
+      oldConfig.color[2] !== newConfig.color[2]
     ) {
-      diff.defaultColor = newConfig.defaultColor;
+      diff.color = newConfig.color;
     }
 
     return diff;
