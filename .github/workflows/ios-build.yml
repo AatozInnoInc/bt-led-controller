@@ -67,7 +67,6 @@ jobs:
       # You'll need to store these as GitHub secrets
       - name: Setup provisioning profile
         env:
-          # These secrets need to be added to your GitHub repository
           PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
           CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
@@ -78,10 +77,47 @@ jobs:
           PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
-          # Decode base64 secrets to files
-          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+          # Check if secrets are set (without exposing their values)
+          if [ -z "$CERTIFICATE_BASE64" ]; then
+            echo "ERROR: BUILD_CERTIFICATE_BASE64 secret is not set or is empty"
+            exit 1
+          fi
+          
+          if [ -z "$PROVISIONING_PROFILE_BASE64" ]; then
+            echo "ERROR: PROVISIONING_PROFILE_BASE64 secret is not set or is empty"
+            exit 1
+          fi
 
+          # Show length of base64 strings (for debugging, doesn't expose secret)
+          echo "Certificate base64 length: ${#CERTIFICATE_BASE64}"
+          echo "Provisioning profile base64 length: ${#PROVISIONING_PROFILE_BASE64}"
+
+          # Decode base64 secrets to files
+          echo "$CERTIFICATE_BASE64" | base64 --decode > $CERTIFICATE_PATH
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to decode certificate base64"
+            exit 1
+          fi
+          
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > $PP_PATH
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to decode provisioning profile base64"
+            exit 1
+          fi
+
+          # Verify files were created and have content
+          if [ ! -s "$CERTIFICATE_PATH" ]; then
+            echo "ERROR: Certificate file is empty or wasn't created"
+            exit 1
+          fi
+          
+          if [ ! -s "$PP_PATH" ]; then
+            echo "ERROR: Provisioning profile file is empty or wasn't created"
+            exit 1
+          fi
+
+          echo "Successfully decoded certificate and provisioning profile"
+          
           # Create a temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
