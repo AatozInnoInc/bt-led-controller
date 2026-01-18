@@ -149,29 +149,29 @@ jobs:
         run: |
           if [ "${{ steps.set-env.outputs.environment }}" == "production" ]; then
             # Production build - creates an archive suitable for App Store
-            xcodebuild -workspace YourApp.xcworkspace \
-              -scheme YourApp \
+            xcodebuild -workspace MyLedGuitarApp.xcworkspace \
+              -scheme MyLedGuitarApp \
               -configuration Release \
               -destination 'generic/platform=iOS' \
-              -archivePath $RUNNER_TEMP/YourApp.xcarchive \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
               archive
             
             # Export the archive as an IPA
             xcodebuild -exportArchive \
-              -archivePath $RUNNER_TEMP/YourApp.xcarchive \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
               -exportOptionsPlist ExportOptions.plist \
               -exportPath $RUNNER_TEMP/build
           else
             # Development build - creates an IPA for testing
-            xcodebuild -workspace YourApp.xcworkspace \
-              -scheme YourApp \
+            xcodebuild -workspace MyLedGuitarApp.xcworkspace \
+              -scheme MyLedGuitarApp \
               -configuration Debug \
               -destination 'generic/platform=iOS' \
-              -archivePath $RUNNER_TEMP/YourApp.xcarchive \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
               archive
             
             xcodebuild -exportArchive \
-              -archivePath $RUNNER_TEMP/YourApp.xcarchive \
+              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
               -exportOptionsPlist ExportOptions-Dev.plist \
               -exportPath $RUNNER_TEMP/build
           fi
