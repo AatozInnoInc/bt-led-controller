@@ -62,7 +62,7 @@ jobs:
         working-directory: ios
         run: |
           pod install
-      
+
       # Step 7: Set up Apple certificates and provisioning profiles
       # You'll need to store these as GitHub secrets
       - name: Setup provisioning profile
@@ -76,8 +76,12 @@ jobs:
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          # Create temporary files for base64 data
+          CERT_BASE64_FILE=$RUNNER_TEMP/cert.b64
+          PP_BASE64_FILE=$RUNNER_TEMP/pp.b64
 
-          # Check if secrets are set (without exposing their values)
+          # Check if secrets are set
           if [ -z "$CERTIFICATE_BASE64" ]; then
             echo "ERROR: BUILD_CERTIFICATE_BASE64 secret is not set or is empty"
             exit 1
@@ -88,18 +92,22 @@ jobs:
             exit 1
           fi
 
-          # Show length of base64 strings (for debugging, doesn't expose secret)
+          # Show length of base64 strings for debugging
           echo "Certificate base64 length: ${#CERTIFICATE_BASE64}"
           echo "Provisioning profile base64 length: ${#PROVISIONING_PROFILE_BASE64}"
 
-          # Decode base64 secrets to files
-          echo "$CERTIFICATE_BASE64" | base64 --decode > $CERTIFICATE_PATH
+          # Write base64 strings to temporary files
+          echo "$CERTIFICATE_BASE64" > $CERT_BASE64_FILE
+          echo "$PROVISIONING_PROFILE_BASE64" > $PP_BASE64_FILE
+
+          # Decode from files instead of stdin
+          base64 --decode -i $CERT_BASE64_FILE -o $CERTIFICATE_PATH
           if [ $? -ne 0 ]; then
             echo "ERROR: Failed to decode certificate base64"
             exit 1
           fi
           
-          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > $PP_PATH
+          base64 --decode -i $PP_BASE64_FILE -o $PP_PATH
           if [ $? -ne 0 ]; then
             echo "ERROR: Failed to decode provisioning profile base64"
             exit 1
@@ -116,7 +124,8 @@ jobs:
             exit 1
           fi
 
-          echo "Successfully decoded certificate and provisioning profile"
+          echo "Successfully decoded certificate ($(wc -c < $CERTIFICATE_PATH) bytes)"
+          echo "Successfully decoded provisioning profile ($(wc -c < $PP_PATH) bytes)"
           
           # Create a temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
@@ -130,6 +139,9 @@ jobs:
           # Copy provisioning profile to the correct location
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+          
+          # Clean up temporary base64 files
+          rm -f $CERT_BASE64_FILE $PP_BASE64_FILE
       
       # Step 8: Build the iOS app using Xcode
       - name: Build iOS app
