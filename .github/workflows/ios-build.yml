@@ -1,12 +1,10 @@
 name: iOS Build
 
 on:
-  # Trigger on pushes to main (production) or develop (development)
   push:
     branches:
       - main
       - develop
-  # Allow manual triggers with environment selection
   workflow_dispatch:
     inputs:
       environment:
@@ -20,245 +18,212 @@ on:
 jobs:
   build-ios:
     runs-on: macos-latest
-    
+
+    env:
+      TEAM_ID: KLZJM4HJLT
+      BUNDLE_ID: com.aatozinnovations.myledguitar
+      WORKSPACE: MyLedGuitarApp.xcworkspace
+      SCHEME: MyLedGuitarApp
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      # Determine which environment to build based on trigger type and branch
+
       - name: Set environment
         id: set-env
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "environment=production" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
           else
-            echo "environment=development" >> $GITHUB_OUTPUT
+            echo "environment=development" >> "$GITHUB_OUTPUT"
           fi
-          
-          # Log which environment we're building for visibility
-          echo "Building for environment: $(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)"
-      
+          echo "Building for environment: $(grep environment "$GITHUB_OUTPUT" | cut -d'=' -f2)"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
           bundler-cache: true
-      
+
       - name: Install Pods
         working-directory: ios
         run: pod install
-      
-      # This step now handles both provisioning profiles intelligently
-      # It will install the Ad Hoc profile for development builds
-      # and the App Store profile for production builds
-      - name: Setup code signing
+
+      - name: Setup code signing (manual)
         env:
-          # Certificates (different for each environment)
+          BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
+
+          # Certs
           BUILD_CERTIFICATE_DEV_BASE64: ${{ secrets.BUILD_CERTIFICATE_DEV_BASE64 }}
           BUILD_CERTIFICATE_PROD_BASE64: ${{ secrets.BUILD_CERTIFICATE_PROD_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+
+          # Keychain
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          # Provisioning profiles (different for each environment)
+
+          # Profiles
           PROVISIONING_PROFILE_ADHOC_BASE64: ${{ secrets.PROVISIONING_PROFILE_ADHOC_BASE64 }}
           PROVISIONING_PROFILE_APPSTORE_BASE64: ${{ secrets.PROVISIONING_PROFILE_APPSTORE_BASE64 }}
-          BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
         run: |
-          # Create file path variables
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          CERT_BASE64_FILE=$RUNNER_TEMP/cert.b64
-          PP_BASE64_FILE=$RUNNER_TEMP/pp.b64
+          set -euo pipefail
 
-          # Select the correct certificate and provisioning profile based on build environment
-          if [ "$BUILD_ENVIRONMENT" == "production" ]; then
-            echo "Using production certificate and App Store provisioning profile"
-            if [ -z "$BUILD_CERTIFICATE_PROD_BASE64" ]; then
-              echo "ERROR: BUILD_CERTIFICATE_PROD_BASE64 secret is not set"
-              exit 1
-            fi
-            CERTIFICATE_BASE64="$BUILD_CERTIFICATE_PROD_BASE64"
-            if [ -z "$PROVISIONING_PROFILE_APPSTORE_BASE64" ]; then
-              echo "ERROR: PROVISIONING_PROFILE_APPSTORE_BASE64 secret is not set"
-              exit 1
-            fi
-            PROVISIONING_PROFILE_BASE64="$PROVISIONING_PROFILE_APPSTORE_BASE64"
+          CERTIFICATE_PATH="$RUNNER_TEMP/signing_cert.p12"
+          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          if [ "$BUILD_ENVIRONMENT" = "production" ]; then
+            echo "Using production certificate + App Store provisioning profile"
+            CERT_B64="${BUILD_CERTIFICATE_PROD_BASE64:-}"
+            PROF_B64="${PROVISIONING_PROFILE_APPSTORE_BASE64:-}"
+            EXPORT_METHOD="app-store"
           else
-            echo "Using development certificate and Ad Hoc provisioning profile"
-            if [ -z "$BUILD_CERTIFICATE_DEV_BASE64" ]; then
-              echo "ERROR: BUILD_CERTIFICATE_DEV_BASE64 secret is not set"
-              exit 1
-            fi
-            CERTIFICATE_BASE64="$BUILD_CERTIFICATE_DEV_BASE64"
-            if [ -z "$PROVISIONING_PROFILE_ADHOC_BASE64" ]; then
-              echo "ERROR: PROVISIONING_PROFILE_ADHOC_BASE64 secret is not set"
-              exit 1
-            fi
-            PROVISIONING_PROFILE_BASE64="$PROVISIONING_PROFILE_ADHOC_BASE64"
+            echo "Using development (Ad Hoc) certificate + Ad Hoc provisioning profile"
+            CERT_B64="${BUILD_CERTIFICATE_DEV_BASE64:-}"
+            PROF_B64="${PROVISIONING_PROFILE_ADHOC_BASE64:-}"
+            EXPORT_METHOD="ad-hoc"
           fi
 
-          # Show lengths for debugging (doesn't expose actual secrets)
-          echo "Certificate base64 length: ${#CERTIFICATE_BASE64}"
-          echo "Provisioning profile base64 length: ${#PROVISIONING_PROFILE_BASE64}"
+          if [ -z "$CERT_B64" ]; then echo "ERROR: Certificate base64 secret is empty"; exit 1; fi
+          if [ -z "$PROF_B64" ]; then echo "ERROR: Provisioning profile base64 secret is empty"; exit 1; fi
 
-          # Write base64 data to temporary files
-          echo "$CERTIFICATE_BASE64" > $CERT_BASE64_FILE
-          echo "$PROVISIONING_PROFILE_BASE64" > $PP_BASE64_FILE
+          echo "Certificate base64 length: ${#CERT_B64}"
+          echo "Provisioning profile base64 length: ${#PROF_B64}"
 
-          # Decode certificate from base64
-          base64 --decode -i $CERT_BASE64_FILE -o $CERTIFICATE_PATH
-          if [ $? -ne 0 ]; then
-            echo "ERROR: Failed to decode certificate"
-            exit 1
-          fi
-          
-          # Decode provisioning profile from base64
-          base64 --decode -i $PP_BASE64_FILE -o $PP_PATH
-          if [ $? -ne 0 ]; then
-            echo "ERROR: Failed to decode provisioning profile"
+          # Decode (strip newlines defensively)
+          printf '%s' "$CERT_B64" | tr -d '\n\r' | base64 --decode -o "$CERTIFICATE_PATH"
+          printf '%s' "$PROF_B64" | tr -d '\n\r' | base64 --decode -o "$PROFILE_PATH"
+
+          echo "Decoded certificate bytes: $(wc -c < "$CERTIFICATE_PATH")"
+          echo "Decoded profile bytes: $(wc -c < "$PROFILE_PATH")"
+
+          # Hard fail if this is not a real .p12 (PKCS#12)
+          if ! openssl pkcs12 -in "$CERTIFICATE_PATH" -passin pass:"$CERTIFICATE_PASSWORD" -noout >/dev/null 2>&1; then
+            echo "ERROR: Decoded certificate is not a valid .p12 (PKCS#12) or password is wrong."
+            echo "       You likely base64-encoded a .cer instead of exporting a .p12 with private key."
             exit 1
           fi
 
-          # Verify the decoded files have content
-          if [ ! -s "$CERTIFICATE_PATH" ]; then
-            echo "ERROR: Certificate file is empty"
-            exit 1
-          fi
-          
-          if [ ! -s "$PP_PATH" ]; then
-            echo "ERROR: Provisioning profile file is empty"
-            exit 1
-          fi
-
-          echo "Successfully decoded certificate ($(wc -c < $CERTIFICATE_PATH) bytes)"
-          echo "Successfully decoded provisioning profile ($(wc -c < $PP_PATH) bytes)"
-          
-          # Create a temporary keychain for code signing
-          # This keychain is isolated from the system keychain and will be deleted after the build
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
+          # Create + configure isolated keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to keychain search list and set as default for this job
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/"//g')
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+
+          # Import cert+private key into the keychain
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -f pkcs12 -k "$KEYCHAIN_PATH"
+
+          # Allow codesign to access the private key non-interactively
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          #security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -f pkcs12 -k "$KEYCHAIN_PATH"
-          if [ $? -ne 0 ]; then
-            echo "ERROR: security import failed"
-            exit 1
-          fi
+          echo "Codesigning identities (should show Apple Distribution):"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-          echo "Codesigning identities in keychain:"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+          # Install provisioning profile
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
 
-          # Install the provisioning profile in the standard location where Xcode looks for it
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
-          
-          # Get the UUID of the provisioning profile so we can reference it explicitly in the build
-          # Provisioning profiles are XML plists, and the UUID is stored in the file
-          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
+          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
+          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
           echo "Provisioning profile UUID: $PP_UUID"
+          echo "Provisioning profile Name: $PP_NAME"
 
-          # Rename the profile to use its UUID as the filename
-          # This is the naming convention Xcode expects in the Provisioning Profiles directory
-          mv ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision \
-             ~/Library/MobileDevice/Provisioning\ Profiles/$PP_UUID.mobileprovision
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PP_UUID.mobileprovision"
 
-          # Get the profile name for the ExportOptions plist
-          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< $(security cms -D -i $PP_PATH))
-          echo "Provisioning profile name: '$PP_NAME'"
+          # Export for later steps
+          echo "PP_UUID=$PP_UUID" >> "$GITHUB_ENV"
+          echo "PP_NAME=$PP_NAME" >> "$GITHUB_ENV"
+          echo "EXPORT_METHOD=$EXPORT_METHOD" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
-          # Export both UUID and name for use in build and export steps
-          echo "PP_UUID=$PP_UUID" >> $GITHUB_ENV
-          echo "PP_NAME=$PP_NAME" >> $GITHUB_ENV
-          
-          # Clean up temporary base64 files (but keep the decoded files for the build step)
-          rm -f $CERT_BASE64_FILE $PP_BASE64_FILE
-          
-          echo "Code signing setup complete"
-      
-      # Build the app using xcodebuild
-      # The process differs between development and production builds
-      - name: Build iOS app
-        env:
-          BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
-          PP_UUID: ${{ env.PP_UUID }}
-          PP_NAME: ${{ env.PP_NAME }}
+      - name: Build & Archive (manual signing)
         working-directory: ios
+        env:
+          PP_NAME: ${{ env.PP_NAME }}
+          EXPORT_METHOD: ${{ env.EXPORT_METHOD }}
         run: |
-          # The workspace name should match your actual .xcworkspace file
-          WORKSPACE="MyLedGuitarApp.xcworkspace"
-          # The scheme name should match your Xcode scheme
-          SCHEME="MyLedGuitarApp"
-          
-          if [ "$BUILD_ENVIRONMENT" == "production" ]; then
-            echo "Building production release for App Store distribution"
-            
-            # For production, we build in Release configuration
-            # This enables optimizations and strips debug symbols
-            xcodebuild -workspace $WORKSPACE \
-              -scheme $SCHEME \
-              -configuration Release \
-              -destination 'generic/platform=iOS' \
-              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-              PROVISIONING_PROFILE="$PP_UUID" \
-              archive
-            
-            # Export the archive as an IPA suitable for App Store submission
-            # The ExportOptions.plist tells Xcode how to package the IPA
-            xcodebuild -exportArchive \
-              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-              -exportOptionsPlist ExportOptions.plist \
-              -exportPath $RUNNER_TEMP/build
-          else
-            echo "Building development build for Ad Hoc distribution"
-            
-            # For development, we can use Debug or Release configuration
-            # Debug includes more debugging information but is larger
-            # Using Release here to keep file sizes down and match production behavior
-            xcodebuild -workspace $WORKSPACE \
-              -scheme $SCHEME \
-              -configuration Release \
-              -destination 'generic/platform=iOS' \
-              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-              PROVISIONING_PROFILE="$PP_UUID" \
-              archive
-            
-            # Update ExportOptions-Dev.plist to reference the correct provisioning profile
-            /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.aatozinnovations.myledguitar $PP_NAME" ExportOptions-Dev.plist
+          set -euo pipefail
 
-            # Export as an Ad Hoc IPA that can be installed on registered devices
-            xcodebuild -exportArchive \
-              -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-              -exportOptionsPlist ExportOptions-Dev.plist \
-              -exportPath $RUNNER_TEMP/build
-          fi
-          
-          echo "Build completed successfully"
-      
-      # Upload the IPA as a GitHub Actions artifact
-      # This makes the file downloadable from the Actions run page
+          ARCHIVE_PATH="$RUNNER_TEMP/MyLedGuitarApp.xcarchive"
+
+          # Force identity naming to modern "Apple Distribution" to avoid "iOS Distribution" mismatch.
+          # Also prefer PROVISIONING_PROFILE_SPECIFIER (name) over UUID.
+          xcodebuild -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PP_NAME" \
+            archive
+
+          echo "Archive complete: $ARCHIVE_PATH"
+
+      - name: Export IPA
+        working-directory: ios
+        env:
+          PP_NAME: ${{ env.PP_NAME }}
+          EXPORT_METHOD: ${{ env.EXPORT_METHOD }}
+        run: |
+          set -euo pipefail
+
+          ARCHIVE_PATH="$RUNNER_TEMP/MyLedGuitarApp.xcarchive"
+          EXPORT_PATH="$RUNNER_TEMP/build"
+          EXPORT_PLIST="$RUNNER_TEMP/ExportOptions.plist"
+
+          cat > "$EXPORT_PLIST" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>${EXPORT_METHOD}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key>
+              <string>${PP_NAME}</string>
+            </dict>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_PLIST" \
+            -exportPath "$EXPORT_PATH"
+
+          echo "Export complete. Contents:"
+          ls -la "$EXPORT_PATH"
+
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-${{ steps.set-env.outputs.environment }}-build
           path: ${{ runner.temp }}/build/*.ipa
           retention-days: 30
-      
-      # Always clean up the keychain, even if previous steps failed
-      # This prevents secrets from persisting on the runner
+
       - name: Clean up keychain
         if: always()
         run: |
-          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
