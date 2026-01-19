@@ -38,7 +38,7 @@ jobs:
       - name: Setup code signing for App Store
         id: setup-code-signing
         env:
-          CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_PROD_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           PROVISIONING_PROFILE_APPSTORE_BASE64: ${{ secrets.PROVISIONING_PROFILE_APPSTORE_BASE64 }}

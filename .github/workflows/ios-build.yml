@@ -64,8 +64,9 @@ jobs:
       # and the App Store profile for production builds
       - name: Setup code signing
         env:
-          # Certificate (same for both environments)
-          CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          # Certificates (different for each environment)
+          BUILD_CERTIFICATE_DEV_BASE64: ${{ secrets.BUILD_CERTIFICATE_DEV_BASE64 }}
+          BUILD_CERTIFICATE_PROD_BASE64: ${{ secrets.BUILD_CERTIFICATE_PROD_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           # Provisioning profiles (different for each environment)
@@ -80,22 +81,26 @@ jobs:
           CERT_BASE64_FILE=$RUNNER_TEMP/cert.b64
           PP_BASE64_FILE=$RUNNER_TEMP/pp.b64
 
-          # Validate that certificate secret exists
-          if [ -z "$CERTIFICATE_BASE64" ]; then
-            echo "ERROR: BUILD_CERTIFICATE_BASE64 secret is not set"
-            exit 1
-          fi
-
-          # Select the correct provisioning profile based on build environment
+          # Select the correct certificate and provisioning profile based on build environment
           if [ "$BUILD_ENVIRONMENT" == "production" ]; then
-            echo "Using App Store provisioning profile for production build"
+            echo "Using production certificate and App Store provisioning profile"
+            if [ -z "$BUILD_CERTIFICATE_PROD_BASE64" ]; then
+              echo "ERROR: BUILD_CERTIFICATE_PROD_BASE64 secret is not set"
+              exit 1
+            fi
+            CERTIFICATE_BASE64="$BUILD_CERTIFICATE_PROD_BASE64"
             if [ -z "$PROVISIONING_PROFILE_APPSTORE_BASE64" ]; then
               echo "ERROR: PROVISIONING_PROFILE_APPSTORE_BASE64 secret is not set"
               exit 1
             fi
             PROVISIONING_PROFILE_BASE64="$PROVISIONING_PROFILE_APPSTORE_BASE64"
           else
-            echo "Using Ad Hoc provisioning profile for development build"
+            echo "Using development certificate and Ad Hoc provisioning profile"
+            if [ -z "$BUILD_CERTIFICATE_DEV_BASE64" ]; then
+              echo "ERROR: BUILD_CERTIFICATE_DEV_BASE64 secret is not set"
+              exit 1
+            fi
+            CERTIFICATE_BASE64="$BUILD_CERTIFICATE_DEV_BASE64"
             if [ -z "$PROVISIONING_PROFILE_ADHOC_BASE64" ]; then
               echo "ERROR: PROVISIONING_PROFILE_ADHOC_BASE64 secret is not set"
               exit 1
