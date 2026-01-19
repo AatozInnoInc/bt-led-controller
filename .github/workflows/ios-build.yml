@@ -146,11 +146,20 @@ jobs:
           
           # Create a temporary keychain for code signing
           # This keychain is isolated from the system keychain and will be deleted after the build
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          #security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -f pkcs12 -k "$KEYCHAIN_PATH"
+          if [ $? -ne 0 ]; then
+            echo "ERROR: security import failed"
+            exit 1
+          fi
+
+          echo "Codesigning identities in keychain:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
 
           # Install the provisioning profile in the standard location where Xcode looks for it
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
@@ -227,7 +236,7 @@ jobs:
               archive
             
             # Update ExportOptions-Dev.plist to reference the correct provisioning profile
-            /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.aatozinnovations.myledguitar '$PP_NAME'" ExportOptions-Dev.plist
+            /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.aatozinnovations.myledguitar $PP_NAME" ExportOptions-Dev.plist
 
             # Export as an Ad Hoc IPA that can be installed on registered devices
             xcodebuild -exportArchive \
