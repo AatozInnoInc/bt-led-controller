@@ -150,30 +150,50 @@ jobs:
           
           # Create a temporary keychain for code signing
           # This keychain is isolated from the system keychain and will be deleted after the build
+          echo "Creating temporary keychain..."
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Configure the keychain settings before we start using it
+          # The -lut flag sets the timeout to 6 hours (21600 seconds) so it won't lock during the build
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          
+          # Unlock the keychain so we can import items into it
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # CRITICAL: Set this keychain as the default search keychain BEFORE importing
+          # This ensures all subsequent security commands know where to look
+          echo "Setting keychain as default..."
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
 
           # Import the certificate into the temporary keychain
           # The -A flag allows all apps to access this certificate without prompting
+          # The -T flag explicitly grants access to codesign and security tools
+          echo "Importing certificate..."
           security import $CERTIFICATE_PATH \
             -P "$CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k $KEYCHAIN_PATH
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k $KEYCHAIN_PATH \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
           
-          # Set this keychain as the default search keychain
-          security list-keychain -d user -s $KEYCHAIN_PATH
+          # Verify the certificate was imported by listing identities
+          echo "Verifying certificate import..."
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
           
-          # Set the keychain to allow codesign to access certificates without user interaction
-          # This is critical - without it, xcodebuild cannot access the private key
+          # Set the keychain partition list to allow codesign to access the private key
+          # This must happen AFTER the certificate is imported and the keychain is set as default
+          # The -k flag provides the password, -S specifies which tools can access it
+          echo "Configuring keychain access permissions..."
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
             $KEYCHAIN_PATH
           
-          # Debug: List all available code signing identities to verify the certificate was imported correctly
-          echo "Available code signing identities:"
-          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          echo "Code signing identity setup complete"
 
           # Install the provisioning profile in the standard location where Xcode looks for it
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
