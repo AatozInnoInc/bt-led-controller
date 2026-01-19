@@ -2,12 +2,8 @@ name: iOS Publish to TestFlight
 
 on:
   # Only allow manual triggering - you want explicit control over what gets published
+  # This workflow builds a fresh App Store IPA and uploads it to TestFlight
   workflow_dispatch:
-    inputs:
-      build_number:
-        description: 'Build number to publish (optional - leave empty to build fresh)'
-        required: false
-        type: string
 
 jobs:
   publish-testflight:
@@ -36,8 +32,9 @@ jobs:
         working-directory: ios
         run: pod install
       
-      # For TestFlight publishing, we ONLY use the App Store provisioning profile
-      # Ad Hoc builds cannot be uploaded to TestFlight
+      # For TestFlight publishing, we MUST use the App Store provisioning profile
+      # TestFlight will reject any build that isn't signed with an App Store profile
+      # Ad Hoc profiles cannot be used for TestFlight distribution
       - name: Setup code signing for App Store
         id: setup-code-signing
         env:
@@ -94,8 +91,21 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          
+          security import $CERTIFICATE_PATH \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k $KEYCHAIN_PATH
+          
           security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" \
+            $KEYCHAIN_PATH
+          
+          echo "Available code signing identities:"
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
 
           # Install provisioning profile with proper UUID-based naming
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
@@ -103,8 +113,6 @@ jobs:
           
           PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "Provisioning profile UUID: $PP_UUID"
-          
-          # Save the UUID as a step output so it can be used in the build step
           echo "PP_UUID=$PP_UUID" >> $GITHUB_OUTPUT
           
           mv ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision \
@@ -114,7 +122,8 @@ jobs:
           echo "Code signing configured for App Store distribution"
       
       # Build for TestFlight submission
-      # This must be a Release build with the App Store provisioning profile
+      # This MUST be a Release build with the App Store provisioning profile
+      # TestFlight will reject builds signed with any other profile type
       - name: Build for TestFlight
         env:
           PP_UUID: ${{ steps.setup-code-signing.outputs.PP_UUID }}
@@ -123,18 +132,20 @@ jobs:
           WORKSPACE="MyLedGuitarApp.xcworkspace"
           SCHEME="MyLedGuitarApp"
           
-          echo "Building Release configuration for TestFlight"
+          echo "Building Release configuration for TestFlight with App Store provisioning profile"
           
-          # PROVISIONING_PROFILE_SPECIFIER tells xcodebuild which profile to use for manual signing
-          # CODE_SIGN_IDENTITY must match the certificate type (Apple Distribution for App Store)
+          # Build and archive the app with explicit code signing parameters
           xcodebuild -workspace $WORKSPACE \
             -scheme $SCHEME \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-            PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
+            -allowProvisioningUpdates \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_IDENTITY="iOS Distribution" \
+            DEVELOPMENT_TEAM="KLZJM4HJLT" \
+            PROVISIONING_PROFILE="$PP_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
             archive
           
           # Export the archive for App Store distribution
@@ -148,6 +159,8 @@ jobs:
       
       # Upload the IPA to App Store Connect, which makes it available in TestFlight
       # This uses the App Store Connect API for authentication
+      # After upload, the build will be processed by Apple (usually takes 10-30 minutes)
+      # Once processing completes, the build becomes available to your TestFlight testers
       - name: Upload to TestFlight
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -174,6 +187,7 @@ jobs:
           fi
           
           echo "Uploading IPA to TestFlight: $IPA_PATH"
+          echo "Build size: $(du -h "$IPA_PATH" | cut -f1)"
           
           # Upload to App Store Connect using xcrun altool
           # Note: altool is deprecated but still works. Apple recommends using xcrun notarytool
@@ -185,22 +199,31 @@ jobs:
             --apiIssuer $APP_STORE_CONNECT_API_ISSUER_ID
           
           if [ $? -eq 0 ]; then
-            echo "Successfully uploaded to TestFlight!"
-            echo "Your build will be available for testing once it completes processing (usually 10-30 minutes)"
+            echo "✓ Successfully uploaded to TestFlight!"
+            echo ""
+            echo "Next steps:"
+            echo "1. Wait for Apple to process the build (usually 10-30 minutes)"
+            echo "2. Check App Store Connect to see when processing completes"
+            echo "3. Add compliance information if required"
+            echo "4. Enable the build for your test groups"
+            echo "5. Your testers will receive a notification when the build is ready"
           else
             echo "ERROR: Upload to TestFlight failed"
+            echo "Check the error message above for details"
             exit 1
           fi
       
       # Save the IPA as an artifact for backup/manual distribution
+      # This is useful if you need to download the exact build that was uploaded to TestFlight
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-testflight-release
+          name: ios-testflight-release-$(date +%Y%m%d-%H%M%S)
           path: ${{ runner.temp }}/build/*.ipa
           retention-days: 90
       
       # Clean up sensitive files
+      # Always runs even if previous steps failed to ensure secrets don't persist
       - name: Clean up keychain and API key
         if: always()
         run: |

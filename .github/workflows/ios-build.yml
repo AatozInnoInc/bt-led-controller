@@ -26,6 +26,8 @@ jobs:
         uses: actions/checkout@v4
       
       # Determine which environment to build based on trigger type and branch
+      # Development builds use Ad Hoc profiles for direct device installation
+      # Production builds use App Store profiles for TestFlight/App Store distribution
       - name: Set environment
         id: set-env
         run: |
@@ -38,7 +40,14 @@ jobs:
           fi
           
           # Log which environment we're building for visibility
-          echo "Building for environment: $(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)"
+          ENVIRONMENT=$(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)
+          echo "Building for environment: $ENVIRONMENT"
+          
+          if [ "$ENVIRONMENT" == "production" ]; then
+            echo "This build will use the App Store provisioning profile and can be uploaded to TestFlight"
+          else
+            echo "This build will use the Ad Hoc provisioning profile and can be installed on registered devices"
+          fi
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -59,16 +68,15 @@ jobs:
         working-directory: ios
         run: pod install
       
-      # This step now handles both provisioning profiles intelligently
-      # It will install the Ad Hoc profile for development builds
-      # and the App Store profile for production builds
+      # This step sets up code signing by installing the appropriate provisioning profile
+      # For development builds, we use the Ad Hoc profile which allows installation on registered devices
+      # For production builds, we use the App Store profile which is required for TestFlight and App Store
       - name: Setup code signing
+        id: setup-code-signing
         env:
-          # Certificate (same for both environments)
           CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          # Provisioning profiles (different for each environment)
           PROVISIONING_PROFILE_ADHOC_BASE64: ${{ secrets.PROVISIONING_PROFILE_ADHOC_BASE64 }}
           PROVISIONING_PROFILE_APPSTORE_BASE64: ${{ secrets.PROVISIONING_PROFILE_APPSTORE_BASE64 }}
           BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
@@ -87,6 +95,8 @@ jobs:
           fi
 
           # Select the correct provisioning profile based on build environment
+          # Ad Hoc profiles are for direct device installation
+          # App Store profiles are required for TestFlight and App Store submission
           if [ "$BUILD_ENVIRONMENT" == "production" ]; then
             echo "Using App Store provisioning profile for production build"
             if [ -z "$PROVISIONING_PROFILE_APPSTORE_BASE64" ]; then
@@ -103,7 +113,6 @@ jobs:
             PROVISIONING_PROFILE_BASE64="$PROVISIONING_PROFILE_ADHOC_BASE64"
           fi
 
-          # Show lengths for debugging (doesn't expose actual secrets)
           echo "Certificate base64 length: ${#CERTIFICATE_BASE64}"
           echo "Provisioning profile base64 length: ${#PROVISIONING_PROFILE_BASE64}"
 
@@ -145,7 +154,26 @@ jobs:
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
-          security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          # Import the certificate into the temporary keychain
+          # The -A flag allows all apps to access this certificate without prompting
+          security import $CERTIFICATE_PATH \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k $KEYCHAIN_PATH
+          
+          # Set this keychain as the default search keychain
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          # Set the keychain to allow codesign to access certificates without user interaction
+          # This is critical - without it, xcodebuild cannot access the private key
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" \
+            $KEYCHAIN_PATH
+          
+          # Debug: List all available code signing identities to verify the certificate was imported correctly
+          echo "Available code signing identities:"
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
 
           # Install the provisioning profile in the standard location where Xcode looks for it
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
@@ -155,6 +183,9 @@ jobs:
           # Provisioning profiles are XML plists, and the UUID is stored in the file
           PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "Provisioning profile UUID: $PP_UUID"
+          
+          # Save the UUID as a step output so it can be used in the build step
+          echo "PP_UUID=$PP_UUID" >> $GITHUB_OUTPUT
           
           # Rename the profile to use its UUID as the filename
           # This is the naming convention Xcode expects in the Provisioning Profiles directory
@@ -167,10 +198,12 @@ jobs:
           echo "Code signing setup complete"
       
       # Build the app using xcodebuild
-      # The process differs between development and production builds
+      # Development builds create Ad Hoc IPAs for direct device installation
+      # Production builds create App Store IPAs suitable for TestFlight or App Store submission
       - name: Build iOS app
         env:
           BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
+          PP_UUID: ${{ steps.setup-code-signing.outputs.PP_UUID }}
         working-directory: ios
         run: |
           # The workspace name should match your actual .xcworkspace file
@@ -178,16 +211,28 @@ jobs:
           # The scheme name should match your Xcode scheme
           SCHEME="MyLedGuitarApp"
           
+          # Both development and production builds use Release configuration
+          # Release configuration enables optimizations and is suitable for distribution
+          # The key difference is which provisioning profile type we use
+          
           if [ "$BUILD_ENVIRONMENT" == "production" ]; then
-            echo "Building production release for App Store distribution"
+            echo "Building production release with App Store provisioning profile"
+            echo "This build can be uploaded to TestFlight or submitted to the App Store"
             
-            # For production, we build in Release configuration
-            # This enables optimizations and strips debug symbols
+            # Build and archive the app
+            # We explicitly override all code signing settings to use our Distribution certificate and App Store profile
+            # The -allowProvisioningUpdates flag lets xcodebuild accept Distribution profiles
             xcodebuild -workspace $WORKSPACE \
               -scheme $SCHEME \
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              -allowProvisioningUpdates \
+              CODE_SIGN_STYLE=Manual \
+              CODE_SIGN_IDENTITY="iOS Distribution" \
+              DEVELOPMENT_TEAM="KLZJM4HJLT" \
+              PROVISIONING_PROFILE="$PP_UUID" \
+              PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
               archive
             
             # Export the archive as an IPA suitable for App Store submission
@@ -197,16 +242,22 @@ jobs:
               -exportOptionsPlist ExportOptions.plist \
               -exportPath $RUNNER_TEMP/build
           else
-            echo "Building development build for Ad Hoc distribution"
+            echo "Building development build with Ad Hoc provisioning profile"
+            echo "This build can be installed on registered devices but cannot be uploaded to TestFlight"
             
-            # For development, we can use Debug or Release configuration
-            # Debug includes more debugging information but is larger
-            # Using Release here to keep file sizes down and match production behavior
+            # Build and archive the app
+            # Same parameters as production but using the Ad Hoc profile
             xcodebuild -workspace $WORKSPACE \
               -scheme $SCHEME \
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              -allowProvisioningUpdates \
+              CODE_SIGN_STYLE=Manual \
+              CODE_SIGN_IDENTITY="iOS Distribution" \
+              DEVELOPMENT_TEAM="KLZJM4HJLT" \
+              PROVISIONING_PROFILE="$PP_UUID" \
+              PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
               archive
             
             # Export as an Ad Hoc IPA that can be installed on registered devices
@@ -220,6 +271,8 @@ jobs:
       
       # Upload the IPA as a GitHub Actions artifact
       # This makes the file downloadable from the Actions run page
+      # Development builds can be installed directly on registered devices
+      # Production builds can be manually uploaded to TestFlight or downloaded for inspection
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
