@@ -142,7 +142,7 @@ jobs:
             -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
             -allowProvisioningUpdates \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Distribution" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="KLZJM4HJLT" \
             PROVISIONING_PROFILE="$PP_UUID" \
             PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
