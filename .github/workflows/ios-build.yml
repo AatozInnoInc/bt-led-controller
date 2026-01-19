@@ -149,26 +149,31 @@ jobs:
           echo "Successfully decoded provisioning profile ($(wc -c < $PP_PATH) bytes)"
           
           # Create a temporary keychain for code signing
-          # This keychain is isolated from the system keychain and will be deleted after the build
           echo "Creating temporary keychain..."
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           
-          # Configure the keychain settings before we start using it
-          # The -lut flag sets the timeout to 6 hours (21600 seconds) so it won't lock during the build
+          # Configure the keychain settings
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           
-          # Unlock the keychain so we can import items into it
+          # Unlock the keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           
-          # CRITICAL: Set this keychain as the default search keychain BEFORE importing
-          # This ensures all subsequent security commands know where to look
+          # Set this keychain as the default
           echo "Setting keychain as default..."
           security list-keychain -d user -s $KEYCHAIN_PATH
           security default-keychain -s $KEYCHAIN_PATH
 
-          # Import the certificate into the temporary keychain
-          # The -A flag allows all apps to access this certificate without prompting
-          # The -T flag explicitly grants access to codesign and security tools
+          # Before importing, let's examine the p12 file to see what's inside it
+          echo "Examining certificate file..."
+          echo "Certificate file size: $(wc -c < $CERTIFICATE_PATH) bytes"
+          
+          # Try to get information about the p12 file structure
+          # This will help us understand what's inside without importing it
+          echo "Certificate file contents:"
+          openssl pkcs12 -in $CERTIFICATE_PATH -passin pass:"$CERTIFICATE_PASSWORD" -info -noout -legacy 2>&1 || echo "Could not read with legacy flag, trying without..."
+          openssl pkcs12 -in $CERTIFICATE_PATH -passin pass:"$CERTIFICATE_PASSWORD" -info -noout 2>&1 || echo "OpenSSL could not parse the p12 file"
+          
+          # Import the certificate with verbose error checking
           echo "Importing certificate..."
           security import $CERTIFICATE_PATH \
             -P "$CERTIFICATE_PASSWORD" \
@@ -179,13 +184,74 @@ jobs:
             -T /usr/bin/codesign \
             -T /usr/bin/security
           
-          # Verify the certificate was imported by listing identities
-          echo "Verifying certificate import..."
+          IMPORT_RESULT=$?
+          echo "Import command exit code: $IMPORT_RESULT"
+          
+          # Check what actually got imported
+          echo "Checking keychain contents after import..."
+          security dump-keychain $KEYCHAIN_PATH || echo "Could not dump keychain"
+          
+          # Look for any certificates
+          echo "Searching for certificates in keychain..."
+          security find-certificate -a -p $KEYCHAIN_PATH | openssl x509 -noout -subject -dates 2>/dev/null || echo "No certificates found"
+          
+          # Look specifically for code signing identities
+          echo "Searching for code signing identities..."
           security find-identity -v -p codesigning $KEYCHAIN_PATH
           
+          # Count how many valid identities we have
+          IDENTITY_COUNT=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -c "valid identities found")
+          echo "Found identities: $IDENTITY_COUNT"
+          
+          # If no identities found, try alternative import method
+          if security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -q "0 valid identities found"; then
+            echo "ERROR: No valid code signing identities found after import"
+            echo "Attempting alternative import method..."
+            
+            # Try extracting and importing certificate and key separately
+            echo "Extracting certificate from p12..."
+            openssl pkcs12 -in $CERTIFICATE_PATH -passin pass:"$CERTIFICATE_PASSWORD" -clcerts -nokeys -out $RUNNER_TEMP/cert.pem -legacy 2>&1
+            
+            echo "Extracting private key from p12..."
+            openssl pkcs12 -in $CERTIFICATE_PATH -passin pass:"$CERTIFICATE_PASSWORD" -nocerts -nodes -out $RUNNER_TEMP/key.pem -legacy 2>&1
+            
+            # Check if extraction succeeded
+            if [ -s "$RUNNER_TEMP/cert.pem" ] && [ -s "$RUNNER_TEMP/key.pem" ]; then
+              echo "Successfully extracted certificate and key, importing separately..."
+              
+              # Import certificate
+              security import $RUNNER_TEMP/cert.pem -k $KEYCHAIN_PATH -T /usr/bin/codesign -T /usr/bin/security
+              
+              # Import key
+              security import $RUNNER_TEMP/key.pem -k $KEYCHAIN_PATH -T /usr/bin/codesign -T /usr/bin/security
+              
+              # Check again for identities
+              echo "Checking for identities after separate import..."
+              security find-identity -v -p codesigning $KEYCHAIN_PATH
+              
+              # Clean up PEM files
+              rm -f $RUNNER_TEMP/cert.pem $RUNNER_TEMP/key.pem
+            else
+              echo "ERROR: Could not extract certificate or key from p12 file"
+              echo "The p12 file may be corrupted or in an unsupported format"
+              exit 1
+            fi
+          fi
+          
+          # Final verification that we have a valid identity
+          if security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -q "0 valid identities found"; then
+            echo "ERROR: Still no valid code signing identities found"
+            echo "Please verify:"
+            echo "1. The certificate has not expired"
+            echo "2. The p12 file was exported correctly from Keychain Access"
+            echo "3. The certificate password is correct"
+            echo "4. The certificate is an iOS Distribution certificate"
+            exit 1
+          fi
+          
+          echo "Successfully imported code signing identity"
+          
           # Set the keychain partition list to allow codesign to access the private key
-          # This must happen AFTER the certificate is imported and the keychain is set as default
-          # The -k flag provides the password, -S specifies which tools can access it
           echo "Configuring keychain access permissions..."
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
