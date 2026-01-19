@@ -155,11 +155,19 @@ jobs:
           # Provisioning profiles are XML plists, and the UUID is stored in the file
           PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "Provisioning profile UUID: $PP_UUID"
-          
+
           # Rename the profile to use its UUID as the filename
           # This is the naming convention Xcode expects in the Provisioning Profiles directory
           mv ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision \
              ~/Library/MobileDevice/Provisioning\ Profiles/$PP_UUID.mobileprovision
+
+          # Get the profile name for the ExportOptions plist
+          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< $(security cms -D -i $PP_PATH))
+          echo "Provisioning profile name: '$PP_NAME'"
+
+          # Export both UUID and name for use in build and export steps
+          echo "PP_UUID=$PP_UUID" >> $GITHUB_ENV
+          echo "PP_NAME=$PP_NAME" >> $GITHUB_ENV
           
           # Clean up temporary base64 files (but keep the decoded files for the build step)
           rm -f $CERT_BASE64_FILE $PP_BASE64_FILE
@@ -171,6 +179,8 @@ jobs:
       - name: Build iOS app
         env:
           BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
+          PP_UUID: ${{ env.PP_UUID }}
+          PP_NAME: ${{ env.PP_NAME }}
         working-directory: ios
         run: |
           # The workspace name should match your actual .xcworkspace file
@@ -188,6 +198,7 @@ jobs:
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              PROVISIONING_PROFILE="$PP_UUID" \
               archive
             
             # Export the archive as an IPA suitable for App Store submission
@@ -207,8 +218,12 @@ jobs:
               -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+              PROVISIONING_PROFILE="$PP_UUID" \
               archive
             
+            # Update ExportOptions-Dev.plist to reference the correct provisioning profile
+            /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.aatozinnovations.myledguitar '$PP_NAME'" ExportOptions-Dev.plist
+
             # Export as an Ad Hoc IPA that can be installed on registered devices
             xcodebuild -exportArchive \
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
