@@ -192,6 +192,7 @@ jobs:
             # For production, we build in Release configuration
             # This enables optimizations and strips debug symbols
             # PROVISIONING_PROFILE_SPECIFIER tells xcodebuild which profile to use for manual signing
+            # CODE_SIGN_IDENTITY must match the certificate type (Apple Distribution for App Store)
             xcodebuild -workspace $WORKSPACE \
               -scheme $SCHEME \
               -configuration Release \
@@ -199,6 +200,7 @@ jobs:
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
               PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
               CODE_SIGN_STYLE=Manual \
+              CODE_SIGN_IDENTITY="Apple Distribution" \
               archive
             
             # Export the archive as an IPA suitable for App Store submission
@@ -214,6 +216,7 @@ jobs:
             # Debug includes more debugging information but is larger
             # Using Release here to keep file sizes down and match production behavior
             # PROVISIONING_PROFILE_SPECIFIER tells xcodebuild which profile to use for manual signing
+            # CODE_SIGN_IDENTITY must match the certificate type (Apple Distribution for Ad Hoc)
             xcodebuild -workspace $WORKSPACE \
               -scheme $SCHEME \
               -configuration Release \
@@ -221,6 +224,7 @@ jobs:
               -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
               PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
               CODE_SIGN_STYLE=Manual \
+              CODE_SIGN_IDENTITY="Apple Distribution" \
               archive
             
             # Export as an Ad Hoc IPA that can be installed on registered devices

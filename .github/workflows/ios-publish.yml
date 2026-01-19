@@ -126,6 +126,7 @@ jobs:
           echo "Building Release configuration for TestFlight"
           
           # PROVISIONING_PROFILE_SPECIFIER tells xcodebuild which profile to use for manual signing
+          # CODE_SIGN_IDENTITY must match the certificate type (Apple Distribution for App Store)
           xcodebuild -workspace $WORKSPACE \
             -scheme $SCHEME \
             -configuration Release \
@@ -133,6 +134,7 @@ jobs:
             -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
             PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             archive
           
           # Export the archive for App Store distribution
