@@ -21,18 +21,27 @@ const Toast: React.FC<ToastProps> = ({
   duration = 2000,
   onHide 
 }) => {
-  const { colors, isDark } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wasVisibleRef = useRef(false);
+  const onHideRef = useRef(onHide);
+
+  // Keep ref in sync with latest onHide callback
+  useEffect(() => {
+    console.log('[Toast] onHide callback changed, updating ref');
+    onHideRef.current = onHide;
+  }, [onHide]);
 
   const hideToast = useCallback(() => {
+    console.log('[Toast] hideToast called');
     if (hideTimerRef.current) {
+      console.log('[Toast] Clearing existing timer');
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
 
+    console.log('[Toast] Starting hide animation');
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -45,15 +54,28 @@ const Toast: React.FC<ToastProps> = ({
         useNativeDriver: true,
       }),
     ]).start(() => {
-      if (onHide) {
-        onHide();
+      console.log('[Toast] Hide animation completed, calling onHide');
+      if (onHideRef.current) {
+        onHideRef.current();
+      } else {
+        console.log('[Toast] WARNING: onHideRef.current is null/undefined');
       }
     });
-  }, [fadeAnim, scaleAnim, onHide]);
+  }, [fadeAnim, scaleAnim]);
 
   useEffect(() => {
+    console.log('[Toast] useEffect triggered', {
+      visible,
+      type,
+      duration,
+      message: message.substring(0, 30),
+      wasVisible: wasVisibleRef.current,
+      hasTimer: !!hideTimerRef.current,
+    });
+
     // Always clear any existing timer first
     if (hideTimerRef.current) {
+      console.log('[Toast] Clearing existing timer in useEffect');
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
@@ -61,6 +83,7 @@ const Toast: React.FC<ToastProps> = ({
     if (visible) {
       // Only animate if transitioning from not visible to visible
       if (!wasVisibleRef.current) {
+        console.log('[Toast] Showing toast - starting animation');
         // Show animation - fade in and scale up
         Animated.parallel([
           Animated.timing(fadeAnim, {
@@ -80,12 +103,17 @@ const Toast: React.FC<ToastProps> = ({
       // Auto-hide after duration (unless it's loading type)
       // Always reset timer when type changes (e.g., from loading to success)
       if (type !== 'loading' && duration > 0) {
+        console.log(`[Toast] Setting auto-hide timer for ${duration}ms (type: ${type})`);
         hideTimerRef.current = setTimeout(() => {
+          console.log('[Toast] Timer fired - calling hideToast');
           hideToast();
         }, duration);
+      } else {
+        console.log(`[Toast] NOT setting timer - type: ${type}, duration: ${duration}`);
       }      
       wasVisibleRef.current = true;
     } else if (wasVisibleRef.current) {
+      console.log('[Toast] Toast becoming invisible - calling hideToast');
       // Only hide if it was previously visible (transitioning from visible to hidden)
       hideToast();
       wasVisibleRef.current = false;
@@ -93,6 +121,7 @@ const Toast: React.FC<ToastProps> = ({
 
     return () => {
       if (hideTimerRef.current) {
+        console.log('[Toast] Cleanup: clearing timer');
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
