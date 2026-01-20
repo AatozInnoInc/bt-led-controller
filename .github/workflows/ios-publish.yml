@@ -27,14 +27,14 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository (required for gh auth context)
+      # Not strictly required when you pass -R / fully-qualified endpoints, but harmless and useful
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Resolve build run ID (provided or auto-pick run that contains artifact)
         env:
           GH_TOKEN: ${{ github.token }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
+          REPO_FULL: ${{ github.repository }} # owner/repo
           INPUT_RUN_ID: ${{ github.event.inputs.build_run_id }}
           ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
           SEARCH_LIMIT: ${{ github.event.inputs.search_limit }}
@@ -55,12 +55,13 @@ jobs:
 
           echo "Auto-picking latest successful 'iOS Build' run that contains artifact: $ARTIFACT_NAME"
           echo "Scanning last $LIMIT successful runs..."
+          echo "Repo: $REPO_FULL"
 
           RUN_IDS=$(gh run list \
             --workflow "iOS Build" \
             --status success \
             --limit "$LIMIT" \
-            --repo "$OWNER/$REPO" \
+            -R "$REPO_FULL" \
             --json databaseId \
             --jq '.[].databaseId')
 
@@ -72,9 +73,9 @@ jobs:
           for RID in $RUN_IDS; do
             ART_ID=$(gh api \
               -H "Accept: application/vnd.github+json" \
-              --repo "$OWNER/$REPO" \
-              "/repos/$OWNER/$REPO/actions/runs/$RID/artifacts" \
-              --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
+              -R "$REPO_FULL" \
+              "/repos/$REPO_FULL/actions/runs/$RID/artifacts" \
+              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" 2>/dev/null | head -n 1 || true)
 
             if [ -n "${ART_ID:-}" ]; then
               echo "Found artifact '$ARTIFACT_NAME' in run: $RID (artifact id: $ART_ID)"
@@ -91,14 +92,14 @@ jobs:
       - name: Download IPA artifact from build run
         env:
           GH_TOKEN: ${{ github.token }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
+          REPO_FULL: ${{ github.repository }}
           BUILD_RUN_ID: ${{ env.BUILD_RUN_ID }}
           ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
           ARTIFACT_ID: ${{ env.ARTIFACT_ID }}
         run: |
           set -euo pipefail
 
+          echo "Repo: $REPO_FULL"
           echo "Using build run: $BUILD_RUN_ID"
           echo "Artifact name: $ARTIFACT_NAME"
 
@@ -106,15 +107,15 @@ jobs:
           if [ -z "${ARTIFACT_ID:-}" ]; then
             ARTIFACT_ID=$(gh api \
               -H "Accept: application/vnd.github+json" \
-              --repo "$OWNER/$REPO" \
-              "/repos/$OWNER/$REPO/actions/runs/$BUILD_RUN_ID/artifacts" \
-              --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
+              -R "$REPO_FULL" \
+              "/repos/$REPO_FULL/actions/runs/$BUILD_RUN_ID/artifacts" \
+              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" 2>/dev/null | head -n 1 || true)
           fi
 
           if [ -z "${ARTIFACT_ID:-}" ]; then
             echo "ERROR: Artifact '$ARTIFACT_NAME' not found on run $BUILD_RUN_ID."
             echo "Available artifacts on that run:"
-            gh api --repo "$OWNER/$REPO" "/repos/$OWNER/$REPO/actions/runs/$BUILD_RUN_ID/artifacts" --jq '.artifacts[].name'
+            gh api -R "$REPO_FULL" "/repos/$REPO_FULL/actions/runs/$BUILD_RUN_ID/artifacts" -q '.artifacts[].name'
             exit 1
           fi
 
@@ -125,8 +126,8 @@ jobs:
 
           gh api \
             -H "Accept: application/vnd.github+json" \
-            --repo "$OWNER/$REPO" \
-            "/repos/$OWNER/$REPO/actions/artifacts/$ARTIFACT_ID/zip" \
+            -R "$REPO_FULL" \
+            "/repos/$REPO_FULL/actions/artifacts/$ARTIFACT_ID/zip" \
             > "$ZIP_PATH"
 
           unzip -q "$ZIP_PATH" -d ipa
