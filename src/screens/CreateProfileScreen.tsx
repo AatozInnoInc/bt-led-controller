@@ -13,6 +13,7 @@ import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../contexts/ToastContext';
 import { BluetoothDevice, DeviceProfile, LEDConfiguration } from '../types/bluetooth';
 
 interface CreateProfileScreenProps {
@@ -26,6 +27,7 @@ interface CreateProfileScreenProps {
 
 const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, route }) => {
   const { colors, isDark } = useTheme();
+  const { showToast } = useToast();
   const { device } = route.params;
   
   const [profileName, setProfileName] = useState('');
@@ -62,13 +64,13 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
     if (ledConfigs.length > 1) {
       setLedConfigs(ledConfigs.filter(config => config.id !== id));
     } else {
-      Alert.alert('Cannot Remove', 'At least one LED configuration is required.');
+      showToast('At least one LED configuration is required.', 'error');
     }
   };
 
   const saveProfile = () => {
     if (!profileName.trim()) {
-      Alert.alert('Profile Name Required', 'Please enter a name for your configuration profile.');
+      showToast('Please enter a name for your configuration profile.', 'error');
       return;
     }
 
@@ -86,16 +88,12 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({ navigation, r
     // Here you would typically save to storage/database
     console.log('Saving profile:', newProfile);
     
-    Alert.alert(
-      'Profile Created',
-      'Your configuration profile has been created successfully!',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate('Home'),
-        },
-      ]
-    );
+    showToast('Your configuration profile has been created successfully!', 'success');
+    
+    // Navigate to Home after a short delay to allow toast to be visible
+    setTimeout(() => {
+      navigation.navigate('Home');
+    }, 1500);
   };
 
   const renderLEDConfig = (config: LEDConfiguration) => (

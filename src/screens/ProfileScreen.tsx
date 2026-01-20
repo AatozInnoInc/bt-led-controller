@@ -20,12 +20,14 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import GradientButton from '../components/GradientButton';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
 import { deviceStorage } from '../utils/deviceStorage';
 
 const ProfileScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
   const { colors, isDark, setThemeMode } = useTheme();
   const { user, updateName, clearUser, needsProfileCompletion } = useUser();
+  const { showToast } = useToast();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(true);
   const [autoReconnectEnabled, setAutoReconnectEnabled] = React.useState(true);
@@ -85,7 +87,7 @@ const ProfileScreen: React.FC = () => {
       console.log('Auto-reconnect setting updated:', value);
     } catch (error) {
       console.error('Failed to save auto-reconnect setting:', error);
-      Alert.alert('Error', 'Failed to save auto-reconnect setting');
+      showToast('Failed to save auto-reconnect setting', 'error');
     }
   };
 
@@ -142,13 +144,13 @@ const ProfileScreen: React.FC = () => {
       } catch (error) {
         // Fallback to web
         Linking.openURL('https://appleid.apple.com/').catch(() => {
-          Alert.alert('Unable to open', 'Please manage your Apple ID from device settings or appleid.apple.com.');
+          showToast('Please manage your Apple ID from device settings or appleid.apple.com.', 'error');
         });
       }
     } else {
       // On other platforms, open web
       Linking.openURL('https://appleid.apple.com/').catch(() => {
-        Alert.alert('Unable to open', 'Please manage your Apple ID from device settings or appleid.apple.com.');
+        showToast('Please manage your Apple ID from device settings or appleid.apple.com.', 'error');
       });
     }
   };
