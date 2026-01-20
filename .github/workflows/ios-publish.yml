@@ -109,14 +109,14 @@ jobs:
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_API_KEY_CONTENT: ${{ secrets.APP_STORE_API_KEY_CONTENT }} # base64 of .p8
           IPA_PATH: ${{ env.IPA_PATH }}
         run: |
           set -euo pipefail
 
           if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || \
             [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || \
-            [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
+            [ -z "${APP_STORE_API_KEY_CONTENT:-}" ]; then
             echo "ERROR: Missing App Store Connect API credentials."
             exit 1
           fi
@@ -126,18 +126,20 @@ jobs:
             exit 1
           fi
 
-          # altool expects: AuthKey_<KEY_ID>.p8 in specific directories
           KEY_DIR="$HOME/.appstoreconnect/private_keys"
           mkdir -p "$KEY_DIR"
           AUTH_KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
 
-          # Write the .p8 file exactly (preserve newlines)
-          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$AUTH_KEY_PATH"
+          # Decode base64 -> PEM .p8 file
+          printf '%s' "$APP_STORE_API_KEY_CONTENT" | tr -d '\n\r' | base64 --decode > "$AUTH_KEY_PATH"
           chmod 600 "$AUTH_KEY_PATH"
 
-          # sanity check
-          if [ ! -s "$AUTH_KEY_PATH" ]; then
-            echo "ERROR: AuthKey file was not written correctly: $AUTH_KEY_PATH"
+          # Validate PEM structure (no secret leakage)
+          FIRST_LINE="$(head -n 1 "$AUTH_KEY_PATH" || true)"
+          LAST_LINE="$(tail -n 1 "$AUTH_KEY_PATH" || true)"
+          if [ "$FIRST_LINE" != "-----BEGIN PRIVATE KEY-----" ] || [ "$LAST_LINE" != "-----END PRIVATE KEY-----" ]; then
+            echo "ERROR: Decoded AuthKey file is not a valid PEM private key."
+            echo "Fix secret APP_STORE_API_KEY_CONTENT: it must be base64 of the *raw .p8 file*."
             exit 1
           fi
 
@@ -147,7 +149,6 @@ jobs:
             --file "$IPA_PATH" \
             --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
-
 
       - name: Upload IPA artifact (backup)
         uses: actions/upload-artifact@v4
