@@ -4,13 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: "Optional: iOS Build workflow run ID to pull the IPA from (e.g. 21159937388). Leave blank to use latest successful."
+        description: "Optional: iOS Build workflow run ID to pull the IPA from (e.g. 21159937388). Leave blank to auto-pick latest successful run that contains the artifact."
         required: false
         type: string
       artifact_name:
         description: "Artifact name to download from that run"
         required: false
         default: "ios-production-build"
+        type: string
+      search_limit:
+        description: "How many recent successful iOS Build runs to scan when auto-picking"
+        required: false
+        default: "30"
         type: string
 
 jobs:
@@ -22,10 +27,14 @@ jobs:
       contents: read
 
     steps:
-      - name: Resolve build run ID (latest successful if not provided)
+      - name: Resolve build run ID (provided or auto-pick run that contains artifact)
         env:
           GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
           INPUT_RUN_ID: ${{ github.event.inputs.build_run_id }}
+          ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
+          SEARCH_LIMIT: ${{ github.event.inputs.search_limit }}
         run: |
           set -euo pipefail
 
@@ -35,22 +44,44 @@ jobs:
             exit 0
           fi
 
-          # Find latest successful run of workflow "iOS Build"
-          # (this matches the `name:` at the top of ios-build.yml)
-          RUN_ID=$(gh run list \
-            --workflow "iOS Build" \
-            --status success \
-            --limit 1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
-
-          if [ -z "${RUN_ID:-}" ] || [ "$RUN_ID" = "null" ]; then
-            echo "ERROR: Could not find a successful run for workflow 'iOS Build'."
+          LIMIT="${SEARCH_LIMIT:-30}"
+          if ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: search_limit must be an integer (got: $LIMIT)"
             exit 1
           fi
 
-          echo "Latest successful iOS Build run id: $RUN_ID"
-          echo "BUILD_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "Auto-picking latest successful 'iOS Build' run that contains artifact: $ARTIFACT_NAME"
+          echo "Scanning last $LIMIT successful runs..."
+
+          RUN_IDS=$(gh run list \
+            --workflow "iOS Build" \
+            --status success \
+            --limit "$LIMIT" \
+            --json databaseId \
+            --jq '.[].databaseId')
+
+          if [ -z "${RUN_IDS:-}" ]; then
+            echo "ERROR: No successful runs found for workflow 'iOS Build'."
+            exit 1
+          fi
+
+          for RID in $RUN_IDS; do
+            ART_ID=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$OWNER/$REPO/actions/runs/$RID/artifacts" \
+              --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
+
+            if [ -n "${ART_ID:-}" ]; then
+              echo "Found artifact '$ARTIFACT_NAME' in run: $RID (artifact id: $ART_ID)"
+              echo "BUILD_RUN_ID=$RID" >> "$GITHUB_ENV"
+              echo "ARTIFACT_ID=$ART_ID" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+
+          echo "ERROR: Could not find artifact '$ARTIFACT_NAME' in the last $LIMIT successful runs of 'iOS Build'."
+          echo "Tip: Specify build_run_id manually or increase search_limit."
+          exit 1
 
       - name: Download IPA artifact from build run
         env:
@@ -59,45 +90,45 @@ jobs:
           REPO: ${{ github.event.repository.name }}
           BUILD_RUN_ID: ${{ env.BUILD_RUN_ID }}
           ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
+          ARTIFACT_ID: ${{ env.ARTIFACT_ID }}
         run: |
           set -euo pipefail
 
-          echo "Fetching artifacts for run: $BUILD_RUN_ID"
-          echo "Looking for artifact name: $ARTIFACT_NAME"
+          echo "Using build run: $BUILD_RUN_ID"
+          echo "Artifact name: $ARTIFACT_NAME"
 
-          ARTIFACT_ID=$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/$OWNER/$REPO/actions/runs/$BUILD_RUN_ID/artifacts" \
-            --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1)
+          # If ARTIFACT_ID wasn't set (e.g., build_run_id was provided), look it up now.
+          if [ -z "${ARTIFACT_ID:-}" ]; then
+            ARTIFACT_ID=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$OWNER/$REPO/actions/runs/$BUILD_RUN_ID/artifacts" \
+              --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
+          fi
 
           if [ -z "${ARTIFACT_ID:-}" ]; then
             echo "ERROR: Artifact '$ARTIFACT_NAME' not found on run $BUILD_RUN_ID."
             echo "Available artifacts on that run:"
-            gh api "/repos/$OWNER/$REPO/actions/runs/$BUILD_RUN_ID/artifacts" \
-              --jq '.artifacts[].name'
+            gh api "/repos/$OWNER/$REPO/actions/runs/$BUILD_RUN_ID/artifacts" --jq '.artifacts[].name'
             exit 1
           fi
 
-          echo "Found artifact id: $ARTIFACT_ID"
+          echo "Downloading artifact id: $ARTIFACT_ID"
 
           mkdir -p ipa
           ZIP_PATH="$RUNNER_TEMP/artifact.zip"
 
-          echo "Downloading artifact zip..."
           gh api \
             -H "Accept: application/vnd.github+json" \
             "/repos/$OWNER/$REPO/actions/artifacts/$ARTIFACT_ID/zip" \
             > "$ZIP_PATH"
 
-          echo "Unzipping..."
           unzip -q "$ZIP_PATH" -d ipa
-
-          echo "Contents:"
-          ls -la ipa
 
           IPA_PATH="$(find ipa -name '*.ipa' | head -n 1 || true)"
           if [ -z "$IPA_PATH" ]; then
             echo "ERROR: No .ipa found inside downloaded artifact."
+            echo "Artifact contents:"
+            find ipa -maxdepth 3 -type f -print
             exit 1
           fi
 
@@ -115,8 +146,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || \
-            [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || \
-            [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
+             [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || \
+             [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
             echo "ERROR: Missing App Store Connect API credentials."
             exit 1
           fi
