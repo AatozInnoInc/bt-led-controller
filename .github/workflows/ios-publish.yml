@@ -4,18 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: "Optional: iOS Build workflow run ID to pull the IPA from (e.g. 21159937388). Leave blank to auto-pick latest successful run that contains the artifact."
+        description: "Optional: iOS Build workflow run ID (e.g. 21159937388). Leave blank to auto-pick."
         required: false
         type: string
       artifact_name:
-        description: "Artifact name to download from that run"
+        description: "Artifact name to download"
         required: false
         default: "ios-production-build"
         type: string
       search_limit:
-        description: "How many recent successful ios-build workflow runs to scan when auto-picking"
+        description: "How many recent successful build runs to scan"
         required: false
-        default: "60"
+        default: "50"
         type: string
 
 jobs:
@@ -27,17 +27,13 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Resolve build run ID (provided or auto-pick from ios-build.yml runs)
+      - name: Resolve build run ID
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_FULL: ${{ github.repository }} # owner/repo
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           INPUT_RUN_ID: ${{ github.event.inputs.build_run_id }}
           ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
           SEARCH_LIMIT: ${{ github.event.inputs.search_limit }}
-          WORKFLOW_PATH: ".github/workflows/ios-build.yml"
         run: |
           set -euo pipefail
 
@@ -47,147 +43,92 @@ jobs:
             exit 0
           fi
 
-          LIMIT="${SEARCH_LIMIT:-60}"
-          if ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
-            echo "ERROR: search_limit must be an integer (got: $LIMIT)"
+          echo "Auto-picking latest successful ios-build.yml run containing artifact: $ARTIFACT_NAME"
+
+          # 1) Resolve workflow ID by path
+          WF_ID=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/workflows" \
+            | jq -r '.workflows[] | select(.path==".github/workflows/ios-build.yml") | .id')
+
+          if [ -z "$WF_ID" ]; then
+            echo "ERROR: Could not find workflow .github/workflows/ios-build.yml"
             exit 1
           fi
 
-          echo "Repo: $REPO_FULL"
-          echo "Workflow file: $WORKFLOW_PATH"
-          echo "Auto-picking latest successful run that contains artifact: $ARTIFACT_NAME"
-          echo "Scanning last $LIMIT successful workflow runs..."
+          echo "Resolved workflow ID: $WF_ID"
 
-          # Resolve workflow id by path (most reliable)
-          WF_ID=$(gh api -R "$REPO_FULL" "/repos/$REPO_FULL/actions/workflows" \
-            -q ".workflows[] | select(.path==\"$WORKFLOW_PATH\") | .id" | head -n 1 || true)
+          # 2) Fetch recent successful runs
+          RUN_IDS=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/workflows/$WF_ID/runs?status=success&per_page=$SEARCH_LIMIT" \
+            | jq -r '.workflow_runs[].id')
 
-          if [ -z "${WF_ID:-}" ]; then
-            echo "ERROR: Could not resolve workflow id for path: $WORKFLOW_PATH"
-            echo "Available workflows (name -> path):"
-            gh api -R "$REPO_FULL" "/repos/$REPO_FULL/actions/workflows" \
-              -q '.workflows[] | "\(.name) -> \(.path)"'
-            exit 1
-          fi
-
-          echo "Resolved workflow id: $WF_ID"
-
-          # Pull last N successful runs for this workflow file
-          RUN_IDS=$(gh api -R "$REPO_FULL" \
-            "/repos/$REPO_FULL/actions/workflows/$WF_ID/runs?status=success&per_page=$LIMIT" \
-            -q '.workflow_runs[].id' || true)
-
-          if [ -z "${RUN_IDS:-}" ]; then
-            echo "ERROR: No successful runs found for workflow path $WORKFLOW_PATH"
-            exit 1
-          fi
-
-          # Scan those runs for the artifact
           for RID in $RUN_IDS; do
-            ART_ID=$(gh api -R "$REPO_FULL" \
-              "/repos/$REPO_FULL/actions/runs/$RID/artifacts" \
-              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
+            ART_ID=$(curl -s \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/actions/runs/$RID/artifacts" \
+              | jq -r ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1)
 
-            if [ -n "${ART_ID:-}" ]; then
-              echo "Found artifact '$ARTIFACT_NAME' in run: $RID (artifact id: $ART_ID)"
+            if [ -n "$ART_ID" ]; then
+              echo "Found artifact in run $RID"
               echo "BUILD_RUN_ID=$RID" >> "$GITHUB_ENV"
               echo "ARTIFACT_ID=$ART_ID" >> "$GITHUB_ENV"
               exit 0
             fi
           done
 
-          echo "ERROR: Could not find artifact '$ARTIFACT_NAME' in the last $LIMIT successful runs of $WORKFLOW_PATH."
-          echo "Tip: Increase search_limit or specify build_run_id manually."
+          echo "ERROR: Could not find artifact '$ARTIFACT_NAME' in recent successful runs."
           exit 1
 
-      - name: Download IPA artifact from build run
+      - name: Download IPA artifact
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO_FULL: ${{ github.repository }}
-          BUILD_RUN_ID: ${{ env.BUILD_RUN_ID }}
-          ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           ARTIFACT_ID: ${{ env.ARTIFACT_ID }}
         run: |
           set -euo pipefail
 
-          echo "Repo: $REPO_FULL"
-          echo "Using build run: $BUILD_RUN_ID"
-          echo "Artifact name: $ARTIFACT_NAME"
-
-          # If ARTIFACT_ID wasn't set (e.g., build_run_id was provided), look it up now.
-          if [ -z "${ARTIFACT_ID:-}" ]; then
-            ARTIFACT_ID=$(gh api -R "$REPO_FULL" \
-              "/repos/$REPO_FULL/actions/runs/$BUILD_RUN_ID/artifacts" \
-              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
-          fi
-
-          if [ -z "${ARTIFACT_ID:-}" ]; then
-            echo "ERROR: Artifact '$ARTIFACT_NAME' not found on run $BUILD_RUN_ID."
-            echo "Available artifacts on that run:"
-            gh api -R "$REPO_FULL" "/repos/$REPO_FULL/actions/runs/$BUILD_RUN_ID/artifacts" -q '.artifacts[].name'
-            exit 1
-          fi
-
-          echo "Downloading artifact id: $ARTIFACT_ID"
-
           mkdir -p ipa
-          ZIP_PATH="$RUNNER_TEMP/artifact.zip"
+          ZIP="$RUNNER_TEMP/artifact.zip"
 
-          gh api -R "$REPO_FULL" \
-            "/repos/$REPO_FULL/actions/artifacts/$ARTIFACT_ID/zip" \
-            > "$ZIP_PATH"
+          curl -L \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o "$ZIP"
 
-          unzip -q "$ZIP_PATH" -d ipa
+          unzip -q "$ZIP" -d ipa
 
-          IPA_PATH="$(find ipa -name '*.ipa' | head -n 1 || true)"
+          IPA_PATH=$(find ipa -name "*.ipa" | head -n 1)
           if [ -z "$IPA_PATH" ]; then
-            echo "ERROR: No .ipa found inside downloaded artifact."
-            echo "Artifact contents:"
-            find ipa -maxdepth 3 -type f -print
+            echo "ERROR: No IPA found in artifact"
             exit 1
           fi
 
           echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
           echo "Using IPA: $IPA_PATH"
-          echo "Size: $(du -h "$IPA_PATH" | cut -f1)"
 
-      - name: Upload to TestFlight (App Store Connect API Key)
+      - name: Upload to TestFlight
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }} # base64 of .p8
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           IPA_PATH: ${{ env.IPA_PATH }}
         run: |
           set -euo pipefail
 
-          if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || \
-             [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || \
-             [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
-            echo "ERROR: Missing App Store Connect API credentials."
-            exit 1
-          fi
-
-          if [ -z "${IPA_PATH:-}" ] || [ ! -f "$IPA_PATH" ]; then
-            echo "ERROR: IPA_PATH missing or file not found: ${IPA_PATH:-}"
-            exit 1
-          fi
-
           KEY_DIR="$HOME/.appstoreconnect/private_keys"
           mkdir -p "$KEY_DIR"
-          AUTH_KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
 
-          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" | tr -d '\n\r' | base64 --decode > "$AUTH_KEY_PATH"
-          chmod 600 "$AUTH_KEY_PATH"
+          KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" | tr -d '\n\r' | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
 
-          FIRST_LINE="$(head -n 1 "$AUTH_KEY_PATH" || true)"
-          LAST_LINE="$(tail -n 1 "$AUTH_KEY_PATH" || true)"
-          if [ "$FIRST_LINE" != "-----BEGIN PRIVATE KEY-----" ] || [ "$LAST_LINE" != "-----END PRIVATE KEY-----" ]; then
-            echo "ERROR: Decoded AuthKey file is not a valid PEM private key."
-            echo "Fix secret APP_STORE_CONNECT_API_KEY_CONTENT: it must be base64 of the *raw .p8 file*."
-            exit 1
-          fi
-
-          echo "Uploading IPA to TestFlight: $IPA_PATH"
+          echo "Uploading IPA to TestFlight..."
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA_PATH" \
