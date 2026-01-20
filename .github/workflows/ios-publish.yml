@@ -1,6 +1,12 @@
 name: iOS Publish to TestFlight
 
 on:
+  # Auto-trigger when the iOS Build workflow completes
+  workflow_run:
+    workflows: ["iOS Build"]
+    types: [completed]
+
+  # Keep manual trigger for backfills / retries
   workflow_dispatch:
     inputs:
       build_run_id:
@@ -26,40 +32,95 @@ jobs:
       actions: read
       contents: read
 
+    # Only auto-run when the build workflow finished successfully.
+    # Manual dispatch bypasses this gate.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
     steps:
-      - name: Resolve build run ID
+      - name: Resolve build run ID and ensure this is a PRODUCTION build
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+
+          # workflow_run context
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+
+          # workflow_dispatch inputs (optional)
           INPUT_RUN_ID: ${{ github.event.inputs.build_run_id }}
-          ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
-          SEARCH_LIMIT: ${{ github.event.inputs.search_limit }}
+          INPUT_ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
+          INPUT_SEARCH_LIMIT: ${{ github.event.inputs.search_limit }}
         run: |
           set -euo pipefail
 
-          if [ -n "${INPUT_RUN_ID:-}" ]; then
-            echo "Using provided build run id: $INPUT_RUN_ID"
-            echo "BUILD_RUN_ID=$INPUT_RUN_ID" >> "$GITHUB_ENV"
+          # Production builds in ios-build.yml upload an artifact named:
+          #   ios-production-build
+          # Development builds upload:
+          #   ios-development-build
+          #
+          # Since "production" is determined by an env variable in the build workflow,
+          # the most reliable signal here is the artifact name.
+          REQUIRED_ARTIFACT_NAME="ios-production-build"
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            # This publish was triggered by a completed iOS Build run.
+            if [ -z "${EVENT_RUN_ID:-}" ]; then
+              echo "ERROR: Missing workflow_run.id"
+              exit 1
+            fi
+
+            echo "Triggered by iOS Build run id: $EVENT_RUN_ID"
+            echo "BUILD_RUN_ID=$EVENT_RUN_ID" >> "$GITHUB_ENV"
+            echo "ARTIFACT_NAME=$REQUIRED_ARTIFACT_NAME" >> "$GITHUB_ENV"
+
+            # Check whether this run produced the production artifact.
+            ART_ID=$(curl -s \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/actions/runs/$EVENT_RUN_ID/artifacts" \
+              | jq -r ".artifacts[] | select(.name==\"$REQUIRED_ARTIFACT_NAME\") | .id" | head -n 1 || true)
+
+            if [ -z "${ART_ID:-}" ] || [ "$ART_ID" = "null" ]; then
+              echo "Not a production build (artifact '$REQUIRED_ARTIFACT_NAME' not found). Skipping publish."
+              # Exit 0 so the workflow run is marked successful but does nothing.
+              exit 0
+            fi
+
+            echo "ARTIFACT_ID=$ART_ID" >> "$GITHUB_ENV"
+            echo "Confirmed production artifact. Proceeding."
             exit 0
           fi
 
-          echo "Auto-picking latest successful ios-build.yml run containing artifact: $ARTIFACT_NAME"
+          # Manual workflow_dispatch path (kept for backfills/retries)
+          ARTIFACT_NAME="${INPUT_ARTIFACT_NAME:-$REQUIRED_ARTIFACT_NAME}"
+          SEARCH_LIMIT="${INPUT_SEARCH_LIMIT:-50}"
 
-          # 1) Resolve workflow ID by path
+          if [ -n "${INPUT_RUN_ID:-}" ]; then
+            echo "Manual run: using provided build run id: $INPUT_RUN_ID"
+            echo "BUILD_RUN_ID=$INPUT_RUN_ID" >> "$GITHUB_ENV"
+            echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          if ! [[ "$SEARCH_LIMIT" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: search_limit must be an integer (got: $SEARCH_LIMIT)"
+            exit 1
+          fi
+
+          echo "Manual run: auto-picking latest successful ios-build.yml run containing artifact: $ARTIFACT_NAME"
+
           WF_ID=$(curl -s \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/actions/workflows" \
-            | jq -r '.workflows[] | select(.path==".github/workflows/ios-build.yml") | .id')
+            | jq -r '.workflows[] | select(.path==".github/workflows/ios-build.yml") | .id' | head -n 1 || true)
 
-          if [ -z "$WF_ID" ]; then
+          if [ -z "${WF_ID:-}" ] || [ "$WF_ID" = "null" ]; then
             echo "ERROR: Could not find workflow .github/workflows/ios-build.yml"
             exit 1
           fi
 
-          echo "Resolved workflow ID: $WF_ID"
-
-          # 2) Fetch recent successful runs
           RUN_IDS=$(curl -s \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -71,12 +132,13 @@ jobs:
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$REPO/actions/runs/$RID/artifacts" \
-              | jq -r ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1)
+              | jq -r ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
 
-            if [ -n "$ART_ID" ]; then
-              echo "Found artifact in run $RID"
+            if [ -n "${ART_ID:-}" ] && [ "$ART_ID" != "null" ]; then
+              echo "Found artifact '$ARTIFACT_NAME' in run $RID"
               echo "BUILD_RUN_ID=$RID" >> "$GITHUB_ENV"
               echo "ARTIFACT_ID=$ART_ID" >> "$GITHUB_ENV"
+              echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
               exit 0
             fi
           done
@@ -85,6 +147,8 @@ jobs:
           exit 1
 
       - name: Download IPA artifact
+        # If the prior step skipped (production artifact missing), it exited 0 and this step would still run.
+        if: env.ARTIFACT_ID != ''
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -103,8 +167,8 @@ jobs:
 
           unzip -q "$ZIP" -d ipa
 
-          IPA_PATH=$(find ipa -name "*.ipa" | head -n 1)
-          if [ -z "$IPA_PATH" ]; then
+          IPA_PATH=$(find ipa -name "*.ipa" | head -n 1 || true)
+          if [ -z "${IPA_PATH:-}" ]; then
             echo "ERROR: No IPA found in artifact"
             exit 1
           fi
@@ -113,6 +177,7 @@ jobs:
           echo "Using IPA: $IPA_PATH"
 
       - name: Upload to TestFlight
+        if: env.IPA_PATH != ''
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
@@ -136,6 +201,7 @@ jobs:
             --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
 
       - name: Upload IPA artifact (backup)
+        if: env.IPA_PATH != ''
         uses: actions/upload-artifact@v4
         with:
           name: ios-testflight-upload-${{ github.run_id }}
