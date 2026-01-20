@@ -115,19 +115,31 @@ jobs:
           set -euo pipefail
 
           if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || \
-             [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || \
-             [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
+            [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || \
+            [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
             echo "ERROR: Missing App Store Connect API credentials."
             exit 1
           fi
 
           if [ -z "${IPA_PATH:-}" ] || [ ! -f "$IPA_PATH" ]; then
-            echo "ERROR: IPA_PATH is missing or file not found: ${IPA_PATH:-}"
+            echo "ERROR: IPA_PATH missing or file not found: ${IPA_PATH:-}"
             exit 1
           fi
 
-          AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          # altool expects: AuthKey_<KEY_ID>.p8 in specific directories
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          AUTH_KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+
+          # Write the .p8 file exactly (preserve newlines)
           printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$AUTH_KEY_PATH"
+          chmod 600 "$AUTH_KEY_PATH"
+
+          # sanity check
+          if [ ! -s "$AUTH_KEY_PATH" ]; then
+            echo "ERROR: AuthKey file was not written correctly: $AUTH_KEY_PATH"
+            exit 1
+          fi
 
           echo "Uploading IPA to TestFlight: $IPA_PATH"
           xcrun altool --upload-app \
@@ -135,6 +147,7 @@ jobs:
             --file "$IPA_PATH" \
             --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
 
       - name: Upload IPA artifact (backup)
         uses: actions/upload-artifact@v4
