@@ -148,6 +148,16 @@ jobs:
           echo "EXPORT_METHOD=$EXPORT_METHOD" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
+      - name: Set iOS build number (agvtool)
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          BUILD_NUMBER="${{ github.run_number }}"
+
+          echo "Setting AGV build number to $BUILD_NUMBER"
+          xcrun agvtool new-version -all "$BUILD_NUMBER"
+          xcrun agvtool what-version -terse
+
       - name: Build & Archive (manual signing)
         working-directory: ios
         env:
