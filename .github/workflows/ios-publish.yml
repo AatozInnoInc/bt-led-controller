@@ -112,8 +112,10 @@ jobs:
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
           
           PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
+          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "Provisioning profile UUID: $PP_UUID"
-          echo "PP_UUID=$PP_UUID" >> $GITHUB_OUTPUT
+          echo "Provisioning profile Name: $PP_NAME"
+          echo "PP_NAME=$PP_NAME" >> $GITHUB_OUTPUT
           
           mv ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision \
              ~/Library/MobileDevice/Provisioning\ Profiles/$PP_UUID.mobileprovision
@@ -126,7 +128,7 @@ jobs:
       # TestFlight will reject builds signed with any other profile type
       - name: Build for TestFlight
         env:
-          PP_UUID: ${{ steps.setup-code-signing.outputs.PP_UUID }}
+          PP_NAME: ${{ steps.setup-code-signing.outputs.PP_NAME }}
         working-directory: ios
         run: |
           WORKSPACE="MyLedGuitarApp.xcworkspace"
@@ -142,17 +144,44 @@ jobs:
             -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
             -allowProvisioningUpdates \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="iOS Distribution" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="KLZJM4HJLT" \
-            PROVISIONING_PROFILE="$PP_UUID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PP_NAME" \
             archive
           
           # Export the archive for App Store distribution
           # This creates an IPA that's properly signed for TestFlight/App Store
+          EXPORT_PLIST="$RUNNER_TEMP/ExportOptions.plist"
+
+          cat > "$EXPORT_PLIST" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>KLZJM4HJLT</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.aatozinnovations.myledguitar</key>
+              <string>$PP_NAME</string>
+            </dict>
+            <key>compileBitcode</key>
+            <false/>
+            <key>uploadBitcode</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
+            -exportOptionsPlist "$EXPORT_PLIST" \
             -exportPath $RUNNER_TEMP/build
           
           echo "Build complete, ready for TestFlight upload"
