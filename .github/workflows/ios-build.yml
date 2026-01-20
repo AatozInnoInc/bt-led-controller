@@ -65,8 +65,7 @@ jobs:
           BUILD_ENVIRONMENT: ${{ steps.set-env.outputs.environment }}
 
           # Certs
-          BUILD_CERTIFICATE_DEV_BASE64: ${{ secrets.BUILD_CERTIFICATE_DEV_BASE64 }}
-          BUILD_CERTIFICATE_PROD_BASE64: ${{ secrets.BUILD_CERTIFICATE_DEV_BASE64 }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
 
           # Keychain
@@ -84,12 +83,12 @@ jobs:
 
           if [ "$BUILD_ENVIRONMENT" = "production" ]; then
             echo "Using production certificate + App Store provisioning profile"
-            CERT_B64="${BUILD_CERTIFICATE_PROD_BASE64:-}"
+            CERT_B64="${BUILD_CERTIFICATE_BASE64:-}"
             PROF_B64="${PROVISIONING_PROFILE_APPSTORE_BASE64:-}"
             EXPORT_METHOD="app-store"
           else
             echo "Using development (Ad Hoc) certificate + Ad Hoc provisioning profile"
-            CERT_B64="${BUILD_CERTIFICATE_DEV_BASE64:-}"
+            CERT_B64="${BUILD_CERTIFICATE_BASE64:-}"
             PROF_B64="${PROVISIONING_PROFILE_ADHOC_BASE64:-}"
             EXPORT_METHOD="ad-hoc"
           fi
