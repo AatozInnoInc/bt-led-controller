@@ -1,156 +1,149 @@
 name: iOS Publish to TestFlight
 
 on:
-  # Only allow manual triggering - you want explicit control over what gets published
-  # This workflow builds a fresh App Store IPA and uploads it to TestFlight
   workflow_dispatch:
 
 jobs:
   publish-testflight:
     runs-on: macos-latest
-    
+
+    env:
+      TEAM_ID: KLZJM4HJLT
+      BUNDLE_ID: com.aatozinnovations.myledguitar
+      WORKSPACE: MyLedGuitarApp.xcworkspace
+      SCHEME: MyLedGuitarApp
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-      
+          node-version: "20"
+          cache: "npm"
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'
+          ruby-version: "3.2"
           bundler-cache: true
-      
+
       - name: Install Pods
         working-directory: ios
         run: pod install
-      
-      # For TestFlight publishing, we MUST use the App Store provisioning profile
-      # TestFlight will reject any build that isn't signed with an App Store profile
-      # Ad Hoc profiles cannot be used for TestFlight distribution
-      - name: Setup code signing for App Store
-        id: setup-code-signing
+
+      - name: Setup code signing (App Store - manual)
         env:
-          CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          # Certs (must be a .p12 with private key)
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+
+          # Keychain
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+          # App Store provisioning profile
           PROVISIONING_PROFILE_APPSTORE_BASE64: ${{ secrets.PROVISIONING_PROFILE_APPSTORE_BASE64 }}
         run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          CERT_BASE64_FILE=$RUNNER_TEMP/cert.b64
-          PP_BASE64_FILE=$RUNNER_TEMP/pp.b64
+          set -euo pipefail
 
-          # Validate secrets
-          if [ -z "$CERTIFICATE_BASE64" ]; then
-            echo "ERROR: BUILD_CERTIFICATE_BASE64 secret is not set"
-            exit 1
-          fi
-          
-          if [ -z "$PROVISIONING_PROFILE_APPSTORE_BASE64" ]; then
-            echo "ERROR: PROVISIONING_PROFILE_APPSTORE_BASE64 secret is not set"
-            exit 1
-          fi
+          CERTIFICATE_PATH="$RUNNER_TEMP/signing_cert.p12"
+          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
 
-          echo "Certificate base64 length: ${#CERTIFICATE_BASE64}"
-          echo "Provisioning profile base64 length: ${#PROVISIONING_PROFILE_APPSTORE_BASE64}"
+          CERT_B64="${BUILD_CERTIFICATE_BASE64:-}"
+          PROF_B64="${PROVISIONING_PROFILE_APPSTORE_BASE64:-}"
+          EXPORT_METHOD="app-store"
 
-          # Write and decode certificate
-          echo "$CERTIFICATE_BASE64" > $CERT_BASE64_FILE
-          echo "$PROVISIONING_PROFILE_APPSTORE_BASE64" > $PP_BASE64_FILE
+          if [ -z "$CERT_B64" ]; then echo "ERROR: BUILD_CERTIFICATE_BASE64 secret is empty"; exit 1; fi
+          if [ -z "$PROF_B64" ]; then echo "ERROR: PROVISIONING_PROFILE_APPSTORE_BASE64 secret is empty"; exit 1; fi
 
-          base64 --decode -i $CERT_BASE64_FILE -o $CERTIFICATE_PATH
-          if [ $? -ne 0 ]; then
-            echo "ERROR: Failed to decode certificate"
-            exit 1
-          fi
-          
-          base64 --decode -i $PP_BASE64_FILE -o $PP_PATH
-          if [ $? -ne 0 ]; then
-            echo "ERROR: Failed to decode provisioning profile"
+          echo "Certificate base64 length: ${#CERT_B64}"
+          echo "Provisioning profile base64 length: ${#PROF_B64}"
+
+          # Decode (strip newlines defensively)
+          printf '%s' "$CERT_B64" | tr -d '\n\r' | base64 --decode -o "$CERTIFICATE_PATH"
+          printf '%s' "$PROF_B64" | tr -d '\n\r' | base64 --decode -o "$PROFILE_PATH"
+
+          echo "Decoded certificate bytes: $(wc -c < "$CERTIFICATE_PATH")"
+          echo "Decoded profile bytes: $(wc -c < "$PROFILE_PATH")"
+
+          # Hard fail if this is not a real .p12 (PKCS#12) or password mismatch
+          if ! openssl pkcs12 -in "$CERTIFICATE_PATH" -passin pass:"$CERTIFICATE_PASSWORD" -noout >/dev/null 2>&1; then
+            echo "ERROR: Decoded certificate is not a valid .p12 (PKCS#12) or password is wrong."
+            echo "       Ensure you exported a .p12 with the private key (not a .cer)."
             exit 1
           fi
 
-          if [ ! -s "$CERTIFICATE_PATH" ] || [ ! -s "$PP_PATH" ]; then
-            echo "ERROR: Decoded files are empty"
-            exit 1
-          fi
+          # Create + configure isolated keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          echo "Successfully decoded certificate ($(wc -c < $CERTIFICATE_PATH) bytes)"
-          echo "Successfully decoded provisioning profile ($(wc -c < $PP_PATH) bytes)"
+          # Add to keychain search list and set as default for this job
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/"//g')
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
 
-          # Setup keychain and import certificate
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          security import $CERTIFICATE_PATH \
-            -P "$CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k $KEYCHAIN_PATH
-          
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" \
-            $KEYCHAIN_PATH
-          
-          echo "Available code signing identities:"
-          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          # Import cert+private key into the keychain
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -f pkcs12 -k "$KEYCHAIN_PATH"
 
-          # Install provisioning profile with proper UUID-based naming
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
-          
-          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
-          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< $(security cms -D -i $PP_PATH))
+          # Allow codesign to access the private key non-interactively
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Codesigning identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          # Install provisioning profile (UUID-named)
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
+          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
           echo "Provisioning profile UUID: $PP_UUID"
           echo "Provisioning profile Name: $PP_NAME"
-          echo "PP_NAME=$PP_NAME" >> $GITHUB_OUTPUT
-          
-          mv ~/Library/MobileDevice/Provisioning\ Profiles/build_pp.mobileprovision \
-             ~/Library/MobileDevice/Provisioning\ Profiles/$PP_UUID.mobileprovision
 
-          rm -f $CERT_BASE64_FILE $PP_BASE64_FILE
-          echo "Code signing configured for App Store distribution"
-      
-      # Build for TestFlight submission
-      # This MUST be a Release build with the App Store provisioning profile
-      # TestFlight will reject builds signed with any other profile type
-      - name: Build for TestFlight
-        env:
-          PP_NAME: ${{ steps.setup-code-signing.outputs.PP_NAME }}
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PP_UUID.mobileprovision"
+
+          # Export for later steps
+          echo "PP_UUID=$PP_UUID" >> "$GITHUB_ENV"
+          echo "PP_NAME=$PP_NAME" >> "$GITHUB_ENV"
+          echo "EXPORT_METHOD=$EXPORT_METHOD" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Build & Archive (App Store - manual signing)
         working-directory: ios
+        env:
+          PP_NAME: ${{ env.PP_NAME }}
         run: |
-          WORKSPACE="MyLedGuitarApp.xcworkspace"
-          SCHEME="MyLedGuitarApp"
-          
-          echo "Building Release configuration for TestFlight with App Store provisioning profile"
-          
-          # Build and archive the app with explicit code signing parameters
-          xcodebuild -workspace $WORKSPACE \
-            -scheme $SCHEME \
+          set -euo pipefail
+
+          ARCHIVE_PATH="$RUNNER_TEMP/MyLedGuitarApp.xcarchive"
+
+          xcodebuild -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
-            -allowProvisioningUpdates \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM="KLZJM4HJLT" \
             PROVISIONING_PROFILE_SPECIFIER="$PP_NAME" \
             archive
-          
-          # Export the archive for App Store distribution
-          # This creates an IPA that's properly signed for TestFlight/App Store
+
+          echo "Archive complete: $ARCHIVE_PATH"
+
+      - name: Export IPA (App Store)
+        working-directory: ios
+        env:
+          PP_NAME: ${{ env.PP_NAME }}
+        run: |
+          set -euo pipefail
+
+          ARCHIVE_PATH="$RUNNER_TEMP/MyLedGuitarApp.xcarchive"
+          EXPORT_PATH="$RUNNER_TEMP/build"
           EXPORT_PLIST="$RUNNER_TEMP/ExportOptions.plist"
 
           cat > "$EXPORT_PLIST" <<EOF
@@ -163,11 +156,11 @@ jobs:
             <key>signingStyle</key>
             <string>manual</string>
             <key>teamID</key>
-            <string>KLZJM4HJLT</string>
+            <string>${TEAM_ID}</string>
             <key>provisioningProfiles</key>
             <dict>
-              <key>com.aatozinnovations.myledguitar</key>
-              <string>$PP_NAME</string>
+              <key>${BUNDLE_ID}</key>
+              <string>${PP_NAME}</string>
             </dict>
             <key>compileBitcode</key>
             <false/>
@@ -180,81 +173,57 @@ jobs:
           EOF
 
           xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/MyLedGuitarApp.xcarchive \
+            -archivePath "$ARCHIVE_PATH" \
             -exportOptionsPlist "$EXPORT_PLIST" \
-            -exportPath $RUNNER_TEMP/build
-          
-          echo "Build complete, ready for TestFlight upload"
-      
-      # Upload the IPA to App Store Connect, which makes it available in TestFlight
-      # This uses the App Store Connect API for authentication
-      # After upload, the build will be processed by Apple (usually takes 10-30 minutes)
-      # Once processing completes, the build becomes available to your TestFlight testers
-      - name: Upload to TestFlight
+            -exportPath "$EXPORT_PATH"
+
+          echo "Export complete. Contents:"
+          ls -la "$EXPORT_PATH"
+
+      - name: Upload to TestFlight (App Store Connect API Key)
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
         run: |
-          # Validate API credentials
-          if [ -z "$APP_STORE_CONNECT_API_KEY_ID" ] || [ -z "$APP_STORE_CONNECT_API_ISSUER_ID" ] || [ -z "$APP_STORE_CONNECT_API_KEY_CONTENT" ]; then
-            echo "ERROR: App Store Connect API credentials are not fully configured"
-            echo "Please ensure APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID, and APP_STORE_CONNECT_API_KEY_CONTENT are set in GitHub secrets"
+          set -euo pipefail
+
+          if [ -z "${APP_STORE_CONNECT_API_KEY_ID:-}" ] || [ -z "${APP_STORE_CONNECT_API_ISSUER_ID:-}" ] || [ -z "${APP_STORE_CONNECT_API_KEY_CONTENT:-}" ]; then
+            echo "ERROR: App Store Connect API credentials are not fully configured."
+            echo "Missing one of: APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID, APP_STORE_CONNECT_API_KEY_CONTENT"
             exit 1
           fi
-          
-          # Save the API key to a temporary file
-          # The .p8 file is your private key for authenticating with App Store Connect
-          echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > $RUNNER_TEMP/AuthKey.p8
-          
-          # Find the IPA file that was just built
-          IPA_PATH=$(find $RUNNER_TEMP/build -name "*.ipa" | head -n 1)
-          
+
+          AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$AUTH_KEY_PATH"
+
+          IPA_PATH="$(find "$RUNNER_TEMP/build" -maxdepth 2 -name "*.ipa" | head -n 1 || true)"
           if [ -z "$IPA_PATH" ]; then
-            echo "ERROR: No IPA file found in build directory"
+            echo "ERROR: No IPA found under $RUNNER_TEMP/build"
+            ls -la "$RUNNER_TEMP/build" || true
             exit 1
           fi
-          
-          echo "Uploading IPA to TestFlight: $IPA_PATH"
-          echo "Build size: $(du -h "$IPA_PATH" | cut -f1)"
-          
-          # Upload to App Store Connect using xcrun altool
-          # Note: altool is deprecated but still works. Apple recommends using xcrun notarytool
-          # or the Transporter app, but altool is simpler for CI/CD pipelines
+
+          echo "Uploading IPA: $IPA_PATH"
+          echo "Size: $(du -h "$IPA_PATH" | cut -f1)"
+
+          # Use altool (deprecated, but commonly present). If this ever breaks,
+          # switch to iTMSTransporter or fastlane deliver.
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA_PATH" \
-            --apiKey $APP_STORE_CONNECT_API_KEY_ID \
-            --apiIssuer $APP_STORE_CONNECT_API_ISSUER_ID
-          
-          if [ $? -eq 0 ]; then
-            echo "✓ Successfully uploaded to TestFlight!"
-            echo ""
-            echo "Next steps:"
-            echo "1. Wait for Apple to process the build (usually 10-30 minutes)"
-            echo "2. Check App Store Connect to see when processing completes"
-            echo "3. Add compliance information if required"
-            echo "4. Enable the build for your test groups"
-            echo "5. Your testers will receive a notification when the build is ready"
-          else
-            echo "ERROR: Upload to TestFlight failed"
-            echo "Check the error message above for details"
-            exit 1
-          fi
-      
-      # Save the IPA as an artifact for backup/manual distribution
-      # This is useful if you need to download the exact build that was uploaded to TestFlight
-      - name: Upload IPA artifact
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+      - name: Upload IPA artifact (backup)
         uses: actions/upload-artifact@v4
         with:
-          name: ios-testflight-release-$(date +%Y%m%d-%H%M%S)
+          name: ios-testflight-release-${{ github.run_id }}
           path: ${{ runner.temp }}/build/*.ipa
           retention-days: 90
-      
-      # Clean up sensitive files
-      # Always runs even if previous steps failed to ensure secrets don't persist
+
       - name: Clean up keychain and API key
         if: always()
         run: |
-          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
-          rm -f $RUNNER_TEMP/AuthKey.p8
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 || true
