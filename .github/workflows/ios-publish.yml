@@ -13,9 +13,9 @@ on:
         default: "ios-production-build"
         type: string
       search_limit:
-        description: "How many recent successful iOS Build runs to scan when auto-picking"
+        description: "How many recent successful ios-build workflow runs to scan when auto-picking"
         required: false
-        default: "30"
+        default: "60"
         type: string
 
 jobs:
@@ -27,17 +27,17 @@ jobs:
       contents: read
 
     steps:
-      # Not strictly required when you pass -R / fully-qualified endpoints, but harmless and useful
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Resolve build run ID (provided or auto-pick run that contains artifact)
+      - name: Resolve build run ID (provided or auto-pick from ios-build.yml runs)
         env:
           GH_TOKEN: ${{ github.token }}
           REPO_FULL: ${{ github.repository }} # owner/repo
           INPUT_RUN_ID: ${{ github.event.inputs.build_run_id }}
           ARTIFACT_NAME: ${{ github.event.inputs.artifact_name }}
           SEARCH_LIMIT: ${{ github.event.inputs.search_limit }}
+          WORKFLOW_PATH: ".github/workflows/ios-build.yml"
         run: |
           set -euo pipefail
 
@@ -47,35 +47,46 @@ jobs:
             exit 0
           fi
 
-          LIMIT="${SEARCH_LIMIT:-30}"
+          LIMIT="${SEARCH_LIMIT:-60}"
           if ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
             echo "ERROR: search_limit must be an integer (got: $LIMIT)"
             exit 1
           fi
 
-          echo "Auto-picking latest successful 'iOS Build' run that contains artifact: $ARTIFACT_NAME"
-          echo "Scanning last $LIMIT successful runs..."
           echo "Repo: $REPO_FULL"
+          echo "Workflow file: $WORKFLOW_PATH"
+          echo "Auto-picking latest successful run that contains artifact: $ARTIFACT_NAME"
+          echo "Scanning last $LIMIT successful workflow runs..."
 
-          RUN_IDS=$(gh run list \
-            --workflow "iOS Build" \
-            --status success \
-            --limit "$LIMIT" \
-            -R "$REPO_FULL" \
-            --json databaseId \
-            --jq '.[].databaseId')
+          # Resolve workflow id by path (most reliable)
+          WF_ID=$(gh api -R "$REPO_FULL" "/repos/$REPO_FULL/actions/workflows" \
+            -q ".workflows[] | select(.path==\"$WORKFLOW_PATH\") | .id" | head -n 1 || true)
 
-          if [ -z "${RUN_IDS:-}" ]; then
-            echo "ERROR: No successful runs found for workflow 'iOS Build'."
+          if [ -z "${WF_ID:-}" ]; then
+            echo "ERROR: Could not resolve workflow id for path: $WORKFLOW_PATH"
+            echo "Available workflows (name -> path):"
+            gh api -R "$REPO_FULL" "/repos/$REPO_FULL/actions/workflows" \
+              -q '.workflows[] | "\(.name) -> \(.path)"'
             exit 1
           fi
 
+          echo "Resolved workflow id: $WF_ID"
+
+          # Pull last N successful runs for this workflow file
+          RUN_IDS=$(gh api -R "$REPO_FULL" \
+            "/repos/$REPO_FULL/actions/workflows/$WF_ID/runs?status=success&per_page=$LIMIT" \
+            -q '.workflow_runs[].id' || true)
+
+          if [ -z "${RUN_IDS:-}" ]; then
+            echo "ERROR: No successful runs found for workflow path $WORKFLOW_PATH"
+            exit 1
+          fi
+
+          # Scan those runs for the artifact
           for RID in $RUN_IDS; do
-            ART_ID=$(gh api \
-              -H "Accept: application/vnd.github+json" \
-              -R "$REPO_FULL" \
+            ART_ID=$(gh api -R "$REPO_FULL" \
               "/repos/$REPO_FULL/actions/runs/$RID/artifacts" \
-              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" 2>/dev/null | head -n 1 || true)
+              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
 
             if [ -n "${ART_ID:-}" ]; then
               echo "Found artifact '$ARTIFACT_NAME' in run: $RID (artifact id: $ART_ID)"
@@ -85,8 +96,8 @@ jobs:
             fi
           done
 
-          echo "ERROR: Could not find artifact '$ARTIFACT_NAME' in the last $LIMIT successful runs of 'iOS Build'."
-          echo "Tip: Specify build_run_id manually or increase search_limit."
+          echo "ERROR: Could not find artifact '$ARTIFACT_NAME' in the last $LIMIT successful runs of $WORKFLOW_PATH."
+          echo "Tip: Increase search_limit or specify build_run_id manually."
           exit 1
 
       - name: Download IPA artifact from build run
@@ -105,11 +116,9 @@ jobs:
 
           # If ARTIFACT_ID wasn't set (e.g., build_run_id was provided), look it up now.
           if [ -z "${ARTIFACT_ID:-}" ]; then
-            ARTIFACT_ID=$(gh api \
-              -H "Accept: application/vnd.github+json" \
-              -R "$REPO_FULL" \
+            ARTIFACT_ID=$(gh api -R "$REPO_FULL" \
               "/repos/$REPO_FULL/actions/runs/$BUILD_RUN_ID/artifacts" \
-              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" 2>/dev/null | head -n 1 || true)
+              -q ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id" | head -n 1 || true)
           fi
 
           if [ -z "${ARTIFACT_ID:-}" ]; then
@@ -124,9 +133,7 @@ jobs:
           mkdir -p ipa
           ZIP_PATH="$RUNNER_TEMP/artifact.zip"
 
-          gh api \
-            -H "Accept: application/vnd.github+json" \
-            -R "$REPO_FULL" \
+          gh api -R "$REPO_FULL" \
             "/repos/$REPO_FULL/actions/artifacts/$ARTIFACT_ID/zip" \
             > "$ZIP_PATH"
 
