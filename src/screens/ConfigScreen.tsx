@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from '../utils/linearGradientWrapper';
 import { BlurView } from 'expo-blur';
@@ -29,11 +29,12 @@ import { EffectType } from '../types/config';
 import { BLEError, ErrorCode } from '../types/errors';
 import { ErrorEnvelope, ErrorHandler, formatErrorForUser } from '../domain/common/errorEnvelope';
 import { createAlertFromError, createSuccessAlert, createErrorAlert, AlertMessages } from '../domain/common/alertEnvelope';
+import { useToast } from '../contexts/ToastContext';
 import { validateParameter, validateColor, validateColorAndPower, calculateTotalCurrent } from '../utils/parameterValidation';
 import { BluetoothDevice } from '../types/bluetooth';
 import { DeviceSettings, RGBColor } from '../utils/bleConstants';
 import { ConfigModeStatus } from '../domain/bluetooth/configurationModule';
-import { hexToRgb } from '../utils/colors';
+import { hexToRgb, rgbToHex } from '../utils/colors';
 
 // Development mode: Set to true to test UI without a real device connection
 const forceDevMode = Constants.expoConfig?.extra?.forceDevMode === true;
@@ -156,6 +157,8 @@ const ConfigScreen: React.FC = () => {
   const { colors: themeColors, isDark } = useTheme();
   const { connectedDevice: realConnectedDevice } = useBluetooth();
   const { trackConfigChange } = useAnalytics();
+  const { showToast } = useToast();
+  const navigation = useNavigation();
 
   // Use mock device in dev mode if no real device is connected
   const connectedDevice = DEV_MODE && !realConnectedDevice ? MOCK_DEVICE : realConnectedDevice;
@@ -177,6 +180,12 @@ const ConfigScreen: React.FC = () => {
   const [speed, setSpeed] = useState(30);
   const [selectedColor, setSelectedColor] = useState<RGBColor>([0, 122, 255]); // RGB format: iOS blue
   const [effectType, setEffectType] = useState<EffectType>(EffectType.SOLID);
+
+  // Helper function to set error state (DRY)
+  const setErrorState = useCallback((envelope: ErrorEnvelope) => {
+    setErrorEnvelope(envelope);
+    setError(formatErrorForUser(envelope));
+  }, []);
 
   // Predefined colors in HEX format (for UI display)
   const colors: string[] = [
@@ -367,22 +376,17 @@ const ConfigScreen: React.FC = () => {
             setConfigModeState({ state: 'active' });
             setIsInConfigMode(true);
           } else if (result.error) {
-            setErrorEnvelope(result.error);
-            setError(formatErrorForUser(result.error));
+            setErrorState(result.error);
           }
         } catch (err: any) {
           if (err instanceof BLEError) {
-            const envelope = ErrorHandler.fromError(err);
-            setErrorEnvelope(envelope);
-            setError(formatErrorForUser(envelope));
+            setErrorState(ErrorHandler.fromError(err));
           } else {
-            const envelope: ErrorEnvelope = {
+            setErrorState({
               code: ErrorCode.UNKNOWN_ERROR,
               message: err?.message || 'Failed to initialize config mode',
               timestamp: Date.now(),
-            };
-            setErrorEnvelope(envelope);
-            setError(formatErrorForUser(envelope));
+            });
           }
         } finally {
           setIsLoading(false);
@@ -411,8 +415,7 @@ const ConfigScreen: React.FC = () => {
 
     // Subscribe to errors
     const unsubscribeErrors = configDomainController.subscribeToErrors((errorEnvelope) => {
-      setErrorEnvelope(errorEnvelope);
-      setError(formatErrorForUser(errorEnvelope));
+      setErrorState(errorEnvelope);
     });
 
     // Get initial config mode state
@@ -500,13 +503,19 @@ const ConfigScreen: React.FC = () => {
     setIsInConfigMode(false);
     setError('Device disconnected. Please reconnect to continue.');
     
-    // Show alert
+    // Show alert and navigate to home on OK
     Alert.alert(
       'Device Disconnected',
       'The device has been disconnected. Please reconnect to continue configuring.',
-      [{ text: 'OK' }]
+      [{ 
+        text: 'OK',
+        onPress: () => {
+          configDomainController.exitConfigMode().catch(() => {});
+          navigation.navigate('Home' as never);
+        }
+      }]
     );
-  }, []);
+  }, [navigation]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -522,9 +531,38 @@ const ConfigScreen: React.FC = () => {
   }, []);
 
   // Ensure we exit config mode whenever navigating away from this screen
+  // Also check connection status when screen is focused to handle stale state
   useFocusEffect(
     useCallback(() => {
-      // Screen is focused; no action needed on enter
+      // Screen is focused - check connection status
+      const checkConnection = async () => {
+        if (!DEV_MODE && connectedDevice && connectedDevice.id !== MOCK_DEVICE.id) {
+          try {
+            const { bluetoothService } = require('../utils/bluetoothService');
+            const isConnected = await bluetoothService.isDeviceConnected(connectedDevice.id);
+            if (!isConnected) {
+              // Device disconnected - reset state
+              configDomainController.reset();
+              setConfig(null);
+              setIsInConfigMode(false);
+              setConfigModeState({ state: 'inactive' });
+              setError(null);
+              setErrorEnvelope(null);
+            }
+          } catch (err) {
+            console.error('Failed to check connection status:', err);
+          }
+        } else if (!connectedDevice && !DEV_MODE) {
+          // No device connected - ensure state is reset
+          configDomainController.reset();
+          setConfig(null);
+          setIsInConfigMode(false);
+          setConfigModeState({ state: 'inactive' });
+        }
+      };
+      
+      checkConnection();
+      
       return () => {
         // Screen is losing focus (navigating away, tab change, etc.)
         console.log('Exiting config mode on blur');
@@ -694,6 +732,7 @@ const ConfigScreen: React.FC = () => {
                 setError(null);
                 setErrorEnvelope(null);
               } catch (retryErr) {
+                // TODO FOR AGENT: Error envelope pattern
                 console.error('Auto-recovery failed:', retryErr);
               }
             }, 500);
@@ -703,6 +742,7 @@ const ConfigScreen: React.FC = () => {
           setErrorSeverity('error');
           setErrorEnvelope(null);
         }
+        // TODO FOR AGENT: Error envelope pattern
         console.error('Parameter update error:', err);
       } finally {
         // Clean up timer reference
@@ -784,7 +824,17 @@ const ConfigScreen: React.FC = () => {
   const handleSave = async () => {
     if (!connectedDevice || !config) {
       const alert = createErrorAlert(AlertMessages.NO_DEVICE_CONNECTED);
-      Alert.alert(alert.title, alert.message);
+      Alert.alert(
+        alert.title, 
+        alert.message,
+        [{
+          text: 'OK',
+          onPress: () => {
+            configDomainController.exitConfigMode().catch(() => {});
+            navigation.navigate('Home' as never);
+          }
+        }]
+      );
       return;
     }
 
@@ -796,8 +846,7 @@ const ConfigScreen: React.FC = () => {
       // In dev mode with mock device, simulate save
       if (DEV_MODE && connectedDevice.id === MOCK_DEVICE.id) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        const alert = createSuccessAlert(AlertMessages.CONFIG_SAVED);
-        Alert.alert(alert.title, alert.message + ' (Mock Mode)');
+        showToast(AlertMessages.CONFIG_SAVED + ' (Mock Mode)', 'success');
         setIsSaving(false);
         return;
       }
@@ -805,15 +854,12 @@ const ConfigScreen: React.FC = () => {
       const result = await configDomainController.commitConfig();
 
       if (result.success) {
-        const alert = createSuccessAlert(AlertMessages.CONFIG_SAVED);
-        Alert.alert(alert.title, alert.message);
+        showToast(AlertMessages.CONFIG_SAVED, 'success');
         await configDomainController.exitConfigMode();
         setIsInConfigMode(false);
       } else if (result.error) {
-        setErrorEnvelope(result.error);
-        setError(formatErrorForUser(result.error));
-        const alert = createAlertFromError(result.error);
-        Alert.alert(alert.title, alert.message);
+        setErrorState(result.error);
+        showToast(formatErrorForUser(result.error), 'error');
       }
     } catch (err: any) {
       const errorEnvelope: ErrorEnvelope = {
@@ -821,10 +867,8 @@ const ConfigScreen: React.FC = () => {
         message: err?.message || AlertMessages.CONFIG_FAILED,
         timestamp: Date.now(),
       };
-      setErrorEnvelope(errorEnvelope);
-      setError(formatErrorForUser(errorEnvelope));
-      const alert = createAlertFromError(errorEnvelope);
-      Alert.alert(alert.title, alert.message);
+      setErrorState(errorEnvelope);
+      showToast(formatErrorForUser(errorEnvelope), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -899,13 +943,40 @@ const ConfigScreen: React.FC = () => {
   };
 
   const ColorPicker: React.FC = () => {
+    const [showCustomPicker, setShowCustomPicker] = useState(false);
+    const [tempColor, setTempColor] = useState<RGBColor>(selectedColor);
+    
     // Convert predefined HEX colors to RGB for comparison
     const colorRgbValues = colors.map(hex => hexToRgb(hex));
+    const currentHex = rgbToHex(selectedColor);
+    
+    const handleColorSliderChange = (component: 'r' | 'g' | 'b', value: number) => {
+      const newColor: RGBColor = [...tempColor];
+      if (component === 'r') newColor[0] = Math.round(value);
+      else if (component === 'g') newColor[1] = Math.round(value);
+      else newColor[2] = Math.round(value);
+      setTempColor(newColor);
+    };
+    
+    const handleCustomColorConfirm = () => {
+      handleColorSelect(rgbToHex(tempColor));
+      setShowCustomPicker(false);
+    };
     
     return (
-    <View style={styles.colorPickerContainer}>
+      <View style={styles.colorPickerContainer}>
         <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Color</Text>
-      <View style={styles.colorGrid}>
+        
+        {/* Current color display */}
+        <View style={styles.currentColorContainer}>
+          <View style={[styles.currentColorDisplay, { backgroundColor: currentHex }]} />
+          <Text style={[styles.currentColorText, { color: themeColors.textSecondary }]}>
+            {currentHex.toUpperCase()}
+          </Text>
+        </View>
+        
+        {/* Predefined colors grid */}
+        <View style={styles.colorGrid}>
           {colors.map((hexColor: string, index: number) => {
             // Compare RGB values directly (with small tolerance for rounding)
             const colorRgb = colorRgbValues[index];
@@ -915,22 +986,124 @@ const ConfigScreen: React.FC = () => {
               Math.abs(selectedColor[2] - colorRgb[2]) < 2;
 
             return (
-          <TouchableOpacity
-            key={index}
-            style={[
-              styles.colorOption,
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.colorOption,
                   { backgroundColor: hexColor },
                   isSelected && { borderColor: themeColors.text, borderWidth: 2 },
-            ]}
+                ]}
                 onPress={() => handleColorSelect(hexColor)}
-          >
+              >
                 {isSelected && (
                   <Ionicons name="checkmark" size={20} color={isDark ? "white" : themeColors.text} />
-            )}
-          </TouchableOpacity>
+                )}
+              </TouchableOpacity>
             );
           })}
+          
+          {/* Custom color picker button */}
+          <TouchableOpacity
+            style={[
+              styles.colorOption,
+              styles.customColorButton,
+              { borderColor: themeColors.border, borderWidth: 2 },
+              showCustomPicker && { borderColor: themeColors.primary, backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' },
+            ]}
+            onPress={() => {
+              setTempColor(selectedColor);
+              setShowCustomPicker(!showCustomPicker);
+            }}
+          >
+            <Ionicons name="color-palette" size={20} color={themeColors.text} />
+          </TouchableOpacity>
         </View>
+        
+        {/* Custom color picker with RGB sliders */}
+        {showCustomPicker && (
+          <View style={[styles.customPickerContainer, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+            <View style={styles.customColorPreview}>
+              <View style={[styles.customColorDisplay, { backgroundColor: rgbToHex(tempColor) }]} />
+              <Text style={[styles.customColorHex, { color: themeColors.text }]}>
+                {rgbToHex(tempColor).toUpperCase()}
+              </Text>
+            </View>
+            
+            <View style={styles.colorSliderContainer}>
+              <View style={styles.colorSliderRow}>
+                <View style={[styles.colorSliderIndicator, { backgroundColor: '#FF0000' }]} />
+                <Text style={[styles.colorSliderLabel, { color: themeColors.text }]}>R</Text>
+                <Slider
+                  style={styles.colorSlider}
+                  minimumValue={0}
+                  maximumValue={255}
+                  value={tempColor[0]}
+                  onValueChange={(value) => handleColorSliderChange('r', value)}
+                  minimumTrackTintColor="#FF0000"
+                  maximumTrackTintColor={isDark ? 'rgba(255,0,0,0.3)' : 'rgba(255,0,0,0.2)'}
+                  thumbTintColor="#FF0000"
+                  step={1}
+                />
+                <Text style={[styles.colorSliderValue, { color: themeColors.text }]}>
+                  {Math.round(tempColor[0])}
+                </Text>
+              </View>
+              
+              <View style={styles.colorSliderRow}>
+                <View style={[styles.colorSliderIndicator, { backgroundColor: '#00FF00' }]} />
+                <Text style={[styles.colorSliderLabel, { color: themeColors.text }]}>G</Text>
+                <Slider
+                  style={styles.colorSlider}
+                  minimumValue={0}
+                  maximumValue={255}
+                  value={tempColor[1]}
+                  onValueChange={(value) => handleColorSliderChange('g', value)}
+                  minimumTrackTintColor="#00FF00"
+                  maximumTrackTintColor={isDark ? 'rgba(0,255,0,0.3)' : 'rgba(0,255,0,0.2)'}
+                  thumbTintColor="#00FF00"
+                  step={1}
+                />
+                <Text style={[styles.colorSliderValue, { color: themeColors.text }]}>
+                  {Math.round(tempColor[1])}
+                </Text>
+              </View>
+              
+              <View style={styles.colorSliderRow}>
+                <View style={[styles.colorSliderIndicator, { backgroundColor: '#0000FF' }]} />
+                <Text style={[styles.colorSliderLabel, { color: themeColors.text }]}>B</Text>
+                <Slider
+                  style={styles.colorSlider}
+                  minimumValue={0}
+                  maximumValue={255}
+                  value={tempColor[2]}
+                  onValueChange={(value) => handleColorSliderChange('b', value)}
+                  minimumTrackTintColor="#0000FF"
+                  maximumTrackTintColor={isDark ? 'rgba(0,0,255,0.3)' : 'rgba(0,0,255,0.2)'}
+                  thumbTintColor="#0000FF"
+                  step={1}
+                />
+                <Text style={[styles.colorSliderValue, { color: themeColors.text }]}>
+                  {Math.round(tempColor[2])}
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.customPickerActions}>
+              <TouchableOpacity
+                style={[styles.customPickerButton, styles.customPickerCancel, { borderColor: themeColors.border }]}
+                onPress={() => setShowCustomPicker(false)}
+              >
+                <Text style={[styles.customPickerButtonText, { color: themeColors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.customPickerButton, styles.customPickerConfirm, { backgroundColor: themeColors.primary }]}
+                onPress={handleCustomColorConfirm}
+              >
+                <Text style={[styles.customPickerButtonText, { color: '#FFFFFF' }]}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
     );
   };
@@ -1070,59 +1243,67 @@ const ConfigScreen: React.FC = () => {
           {/* Connection Status */}
           {!connectedDevice && !DEV_MODE && (
             <View style={[styles.section, { marginTop: Platform.OS === 'ios' ? 60 : 16, paddingTop: 0 }]}>
-              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: themeColors.warning }]}>
-                <Ionicons name="warning" size={24} color={themeColors.warning} />
-                <Text style={[styles.errorText, { color: themeColors.text }]}>No device connected. Please connect a device first.</Text>
-              </BlurView>
+              <View style={[styles.errorCardBorder, { borderColor: themeColors.warning }]}>
+                <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card }]}>
+                  <Ionicons name="warning" size={24} color={themeColors.warning} />
+                  <Text style={[styles.errorText, { color: themeColors.text }]}>No device connected. Please connect a device first.</Text>
+                </BlurView>
+              </View>
             </View>
           )}
 
           {/* Error Display */}
           {error && errorEnvelope && (
             <View style={[styles.section, { marginTop: 8, paddingTop: 0 }]}>
-              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>
-                <Ionicons 
-                  name={errorSeverity === 'warning' ? 'warning' : errorSeverity === 'info' ? 'information-circle' : 'alert-circle'} 
-                  size={24} 
-                  color={errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error} 
-                />
-                <Text style={[styles.errorText, { color: themeColors.text }]}>{error}</Text>
-                <TouchableOpacity onPress={() => { setError(null); setErrorEnvelope(null); }} style={styles.dismissButton}>
-                  <Text style={[styles.dismissButtonText, { color: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>Dismiss</Text>
-                </TouchableOpacity>
-              </BlurView>
+              <View style={[styles.errorCardBorder, { borderColor: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>
+                <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card }]}>
+                  <Ionicons 
+                    name={errorSeverity === 'warning' ? 'warning' : errorSeverity === 'info' ? 'information-circle' : 'alert-circle'} 
+                    size={24} 
+                    color={errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error} 
+                  />
+                  <Text style={[styles.errorText, { color: themeColors.text }]}>{error}</Text>
+                  <TouchableOpacity onPress={() => { setError(null); setErrorEnvelope(null); }} style={styles.dismissButton}>
+                    <Text style={[styles.dismissButtonText, { color: errorSeverity === 'warning' ? themeColors.warning : errorSeverity === 'info' ? themeColors.primary : themeColors.error }]}>Dismiss</Text>
+                  </TouchableOpacity>
+                </BlurView>
+              </View>
             </View>
           )}
 
           {/* Config Mode Status */}
           {connectedDevice && configModeState.state !== 'inactive' && (
             <View style={[styles.section, { marginTop: 8, paddingTop: 0 }]}>
-              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.statusCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
-                <View style={styles.statusRow}>
-                  <Ionicons 
-                    name={configModeState.state === 'active' ? 'checkmark-circle' : 'time-outline'} 
-                    size={20} 
-                    color={configModeState.state === 'active' ? themeColors.success : themeColors.warning} 
-                  />
-                  <Text style={[styles.statusText, { color: themeColors.text }]}>
-                    Config Mode: {configModeState.state === 'active' ? 'Active' : configModeState.state}
-                  </Text>
-                </View>
-                {configDomainController.hasUnsavedChanges() && (
-                  <Text style={[styles.unsavedText, { color: themeColors.textSecondary }]}>You have unsaved changes</Text>
-                )}
-              </BlurView>
+              <View style={[styles.statusCardBorder, { borderColor: themeColors.border }]}>
+                <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.statusCard, { backgroundColor: themeColors.card }]}>
+                  <View style={styles.statusRow}>
+                    <Ionicons 
+                      name={configModeState.state === 'active' ? 'checkmark-circle' : 'time-outline'} 
+                      size={20} 
+                      color={configModeState.state === 'active' ? themeColors.success : themeColors.warning} 
+                    />
+                    <Text style={[styles.statusText, { color: themeColors.text }]}>
+                      Config Mode: {configModeState.state === 'active' ? 'Active' : configModeState.state}
+                    </Text>
+                  </View>
+                  {configDomainController.hasUnsavedChanges() && (
+                    <Text style={[styles.unsavedText, { color: themeColors.textSecondary }]}>You have unsaved changes</Text>
+                  )}
+                </BlurView>
+              </View>
             </View>
           )}
 
           {validationError && (
             <View style={[styles.section, { marginTop: 8, paddingTop: 0 }]}>
-              <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card, borderColor: themeColors.warning }]}>
-                <Ionicons name="warning" size={24} color={themeColors.warning} />
-                <Text style={[styles.errorText, { color: themeColors.text }]}>
-                  {validationError}
-                </Text>
-              </BlurView>
+              <View style={[styles.errorCardBorder, { borderColor: themeColors.warning }]}>
+                <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={[styles.errorCard, { backgroundColor: themeColors.card }]}>
+                  <Ionicons name="warning" size={24} color={themeColors.warning} />
+                  <Text style={[styles.errorText, { color: themeColors.text }]}>
+                    {validationError}
+                  </Text>
+                </BlurView>
+              </View>
             </View>
           )}
 
@@ -1182,26 +1363,31 @@ const ConfigScreen: React.FC = () => {
                 style={styles.effectCardWrapper}
                 onPress={() => handleEffectSelect(effect.id)}
               >
-                <BlurView
-                  intensity={20}
-                  tint={isDark ? "dark" : "light"}
-                  style={[
-                    styles.effectCard,
-                    { backgroundColor: themeColors.card, borderColor: themeColors.border },
-                    effectType === effect.id && { borderColor: themeColors.primary, backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' },
-                  ]}
-                >
-                  <AnimatedEffectIcon effect={effect} />
-                  <Text
+                <View style={[
+                  styles.effectCardBorder,
+                  { borderColor: effectType === effect.id ? themeColors.primary : themeColors.border },
+                ]}>
+                  <BlurView
+                    intensity={20}
+                    tint={isDark ? "dark" : "light"}
                     style={[
-                      styles.effectName,
-                      { color: themeColors.text },
-                      effectType === effect.id && { color: themeColors.primary, fontWeight: '600' },
+                      styles.effectCard,
+                      { backgroundColor: themeColors.card },
+                      effectType === effect.id && { backgroundColor: isDark ? 'rgba(0,122,255,0.1)' : 'rgba(0,122,255,0.05)' },
                     ]}
                   >
-                    {effect.name}
-                  </Text>
-                </BlurView>
+                    <AnimatedEffectIcon effect={effect} />
+                    <Text
+                      style={[
+                        styles.effectName,
+                        { color: themeColors.text },
+                        effectType === effect.id && { color: themeColors.primary, fontWeight: '600' },
+                      ]}
+                    >
+                      {effect.name}
+                    </Text>
+                  </BlurView>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -1218,13 +1404,15 @@ const ConfigScreen: React.FC = () => {
             { name: 'Classical Mode', description: 'Gentle, solid glow' },
           ].map((preset, index) => (
             <TouchableOpacity key={index} activeOpacity={0.7} style={styles.presetCardWrapper}>
-              <BlurView intensity={20} tint={isDark ? "dark" : "light"} style={[styles.presetCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
-                <View style={styles.presetInfo}>
-                  <Text style={[styles.presetName, { color: themeColors.text }]}>{preset.name}</Text>
-                  <Text style={[styles.presetDescription, { color: themeColors.textSecondary }]}>{preset.description}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
-              </BlurView>
+              <View style={[styles.presetCardBorder, { borderColor: themeColors.border }]}>
+                <BlurView intensity={20} tint={isDark ? "dark" : "light"} style={[styles.presetCard, { backgroundColor: themeColors.card }]}>
+                  <View style={styles.presetInfo}>
+                    <Text style={[styles.presetName, { color: themeColors.text }]}>{preset.name}</Text>
+                    <Text style={[styles.presetDescription, { color: themeColors.textSecondary }]}>{preset.description}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
+                </BlurView>
+              </View>
             </TouchableOpacity>
           ))}
         </View>
@@ -1460,7 +1648,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     minWidth: 80,
+  },
+  effectCardBorder: {
+    borderRadius: 12,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   effectCardSelected: {
     // Colors applied inline
@@ -1518,7 +1710,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  presetCardBorder: {
+    borderRadius: 12,
     borderWidth: 1,
+    marginBottom: 8,
+    overflow: 'hidden',
   },
   presetInfo: {
     flex: 1,
@@ -1536,8 +1733,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
     gap: 12,
+  },
+  errorCardBorder: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   loadingCard: {
     padding: 20,
@@ -1549,7 +1750,11 @@ const styles = StyleSheet.create({
   statusCard: {
     padding: 16,
     borderRadius: 16,
+  },
+  statusCardBorder: {
+    borderRadius: 16,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   statusRow: {
     flexDirection: 'row',
@@ -1574,6 +1779,104 @@ const styles = StyleSheet.create({
   },
   dismissButtonText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  currentColorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  currentColorDisplay: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  currentColorText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  customColorButton: {
+    backgroundColor: 'transparent',
+  },
+  customPickerContainer: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  customColorPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  customColorDisplay: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  customColorHex: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  colorSliderContainer: {
+    gap: 16,
+  },
+  colorSliderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  colorSliderIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  colorSliderLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    width: 20,
+    textAlign: 'center',
+  },
+  colorSlider: {
+    flex: 1,
+    height: 40,
+  },
+  colorSliderValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    width: 40,
+    textAlign: 'right',
+  },
+  customPickerActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  customPickerButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customPickerCancel: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  customPickerConfirm: {
+    // backgroundColor applied inline
+  },
+  customPickerButtonText: {
+    fontSize: 16,
     fontWeight: '600',
   },
 });

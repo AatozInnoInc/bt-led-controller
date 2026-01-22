@@ -26,6 +26,7 @@ import SignInScreen from './src/screens/SignInScreen';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import { UserProvider, useUser } from './src/contexts/UserContext';
 import { BluetoothProvider } from './src/contexts/BluetoothContext';
+import { ToastProvider } from './src/contexts/ToastContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -170,7 +171,9 @@ export default function App() {
     <ThemeProvider>
       <UserProvider>
         <BluetoothProvider>
-          <AppContent />
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
         </BluetoothProvider>
       </UserProvider>
     </ThemeProvider>

@@ -269,6 +269,22 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, []);
 
+  // Helper to create a timeout promise for connection attempts
+  const createConnectionTimeout = useCallback((timeoutMs: number) => {
+    return new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Connection timeout: Device not found or not responding'));
+      }, timeoutMs);
+    });
+  }, []);
+
+  // Helper to clean up auto-reconnect state
+  const cleanupAutoReconnect = useCallback(() => {
+    setIsAutoReconnecting(false);
+    isAutoReconnectingRef.current = false;
+    setShowReconnectionPrompt(false);
+  }, []);
+
   const connect = useCallback(async (device: BluetoothDevice) => {
     try {
       setIsConnecting(true);
@@ -281,6 +297,9 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
         undefined,
         device.rssi
       );
+
+      const CONNECTION_TIMEOUT_MS = 3000;
+      const timeoutPromise = createConnectionTimeout(CONNECTION_TIMEOUT_MS);
 
       if (Platform.OS === 'web') {
         // For web Bluetooth, we need to request the device if not already selected
@@ -308,24 +327,26 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
             }
           }
         }
-        await bluetoothWebService.connectToDevice(device.id);
+        await Promise.race([
+          bluetoothWebService.connectToDevice(device.id),
+          timeoutPromise
+        ]);
       } else {
-        await bluetoothService.connectToDevice(device.id);
+        await Promise.race([
+          bluetoothService.connectToDevice(device.id),
+          timeoutPromise
+        ]);
       }
-
       const connectedDeviceWithStatus = { ...device, isConnected: true };
       setConnectedDevice(connectedDeviceWithStatus);
       setDevices(prev => prev.map(d => (d.id === device.id ? { ...d, isConnected: true } : d)));
 
       // Show success toast if this was an auto-reconnect
-      // Use ref to get current value since connect callback may have stale closure
       if (isAutoReconnectingRef.current) {
-        setIsAutoReconnecting(false);
-        setShowReconnectionPrompt(false);
-        // Update toast to show success
         setToastMessage(`Connected to ${device.name}`);
         setToastType('success');
         setToastVisible(true);
+        cleanupAutoReconnect();
       }
 
       // Update device storage connection status and refresh paired devices
@@ -387,6 +408,15 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch (err) {
       const errorMessage = `Failed to connect to device: ${(err as Error).message}`;
       setError(errorMessage);
+      
+      // If this was an auto-reconnect attempt, update toast to error so it auto-dismisses
+      if (isAutoReconnectingRef.current) {
+        setToastMessage(`Failed to connect to ${device.name}`);
+        setToastType('error');
+        setToastVisible(true);
+        cleanupAutoReconnect();
+      }
+      
       await trackConnection(
         AnalyticsEventType.CONNECTION_FAILED,
         device.id,
@@ -394,10 +424,14 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
         errorMessage,
         device.rssi
       );
+      
+      // Re-throw error so attemptAutoReconnect knows it failed
+      // (but toast is already handled above for auto-reconnect cases)
+      throw err;
     } finally {
       setIsConnecting(false);
     }
-  }, [trackConnection, user, processAnalyticsBatch]);
+  }, [trackConnection, user, processAnalyticsBatch, createConnectionTimeout, cleanupAutoReconnect]);
 
   const disconnect = useCallback(async () => {
     if (!connectedDevice) return;
@@ -584,6 +618,7 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
         
         if (lastConnected) {
           setIsAutoReconnecting(true);
+          isAutoReconnectingRef.current = true; // Set ref synchronously
           setShowReconnectionPrompt(true);
           
           const deviceToConnect: BluetoothDevice = {
@@ -599,16 +634,12 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
             setToastMessage('Auto-connecting');
             setToastType('loading');
             setToastVisible(true);
-            
             await connect(deviceToConnect);
+            // connect() handles toast update and cleanup on success
             return; // Success, exit early
           } catch (connectError) {
             console.error(`${context} (iOS): Direct connect failed, falling back to scan:`, connectError);
-            setToastMessage(`Failed to connect to ${lastConnected.name}`);
-            setToastType('error');
-            setToastVisible(true);
-            setIsAutoReconnecting(false);
-            setShowReconnectionPrompt(false);
+            // connect() already handled toast update and cleanup for auto-reconnect failures
           }
         }
       }
@@ -640,10 +671,9 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
       setToastMessage('Auto-reconnect failed');
       setToastType('error');
       setToastVisible(true);
-      setIsAutoReconnecting(false);
-      setShowReconnectionPrompt(false);
+      cleanupAutoReconnect();
     }
-  }, [user?.userId, connectedDevice, startScan, connect]);
+  }, [user?.userId, connectedDevice, startScan, connect, cleanupAutoReconnect]);
 
   // Auto-connect to paired devices on app launch/restore
   useEffect(() => {
@@ -727,6 +757,29 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
     verifyCurrentConnection,
   ]);
 
+  const handleToastHide = useCallback(() => {
+    console.log('[BluetoothContext] handleToastHide called - setting toastVisible to false');
+    setToastVisible(false);
+  }, []);
+
+  // Calculate duration based on toast type
+  const toastDuration = useMemo(() => {
+    // TODO: Use consts for duration and timeouts everywhere
+    const duration = toastType === 'loading' ? 0 : toastType === 'error' ? 2000 : 750;
+    console.log('[BluetoothContext] Calculating toast duration', { type: toastType, duration });
+    return duration;
+  }, [toastType]);
+
+  // Log toast state changes
+  useEffect(() => {
+    console.log('[BluetoothContext] Toast state changed', {
+      visible: toastVisible,
+      type: toastType,
+      message: toastMessage.substring(0, 50),
+      duration: toastDuration,
+    });
+  }, [toastVisible, toastType, toastMessage, toastDuration]);
+
   return (
     <BluetoothContext.Provider value={value}>
       {children}
@@ -734,8 +787,8 @@ export const BluetoothProvider: React.FC<{ children: ReactNode }> = ({ children 
         visible={toastVisible}
         message={toastMessage}
         type={toastType}
-        duration={toastType === 'loading' ? 0 : 750}
-        onHide={() => setToastVisible(false)}
+        duration={toastDuration}
+        onHide={handleToastHide}
       />
     </BluetoothContext.Provider>
   );
