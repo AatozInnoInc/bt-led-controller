@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --color-app: #0d0d0f;
+  --color-strip-canvas: #060608;
+  --color-divider: rgba(255, 255, 255, 0.07);
+  --color-panel-label: rgba(255, 255, 255, 0.28);
+  --color-primary: #3c3489;
+  --color-primary-border: #534ab7;
+  --color-primary-text: #cecbf6;
+  --border-radius-md: 8px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-app);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

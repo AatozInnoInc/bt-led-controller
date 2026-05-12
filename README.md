@@ -1,161 +1,130 @@
-# BT LED Guitar Dashboard
+# bt-led-controller
 
-A React Native app for controlling LED guitar systems via Bluetooth Low Energy (BLE) connection to Adafruit ItsyBitsy nRF52840 Express devices.
+Monorepo for the LED Guitar Controller system — firmware, mobile app, and a browser-based effect simulator.
 
-## Features
+| Workspace | What it is |
+|---|---|
+| `bt-led-controller/` | Arduino firmware for Adafruit ItsyBitsy nRF52840 Express |
+| Root (Expo/RN) | Mobile + desktop app for controlling real hardware over BLE |
+| `apps/simulator/` | Browser-based effect designer (Vite + React, deploys to Vercel) |
+| `packages/ble-protocol/` | `CMD_*` / `RESPONSE_*` / `ERROR_*` — single source of truth for both apps |
+| `packages/led-types/` | `LedConfig`, `LedPreset`, `PatternId`, `PatternFn` |
+| `packages/led-engine/` | 1:1 TypeScript port of the `.ino` math + pattern engine, plus `VirtualDevice` |
 
-- **Bluetooth Device Discovery**: Scan for and connect to nearby BLE devices
-- **Configuration Profiles**: Create and manage LED configuration profiles for your devices
-- **LED Control**: Configure brightness, color, patterns, and speed for multiple LEDs
-- **Cross-Platform**: Works on iOS, Android, and Web
-- **Modern UI**: iOS/meta-inspired design with dark theme
+The mobile app and the simulator speak the same binary BLE protocol. Effects designed in the simulator can be pasted directly into `bt-led-controller.ino` or exported as JSON that the RN app imports.
 
-## Getting Started
+---
 
-### Prerequisites
+## Getting started
 
-- Node.js (v16 or higher)
-- Expo CLI
-- iOS Simulator or Android Emulator (for mobile testing)
-
-### Installation
-
-1. Install dependencies:
 ```bash
-npm install
+npm install        # workspace install from repo root
 ```
 
-2. Start the development server:
+### Simulator (web)
+
 ```bash
-npm start
+cd apps/simulator
+npm run dev        # http://localhost:5173
+npm run build      # static dist/ ready for Vercel
+npx vercel --prod  # deploy
 ```
 
-3. Run on your preferred platform:
+Pick a pattern, tune color + speed, then:
+- Save the preset (localStorage) or share via URL hash
+- Export `.json` for the RN app to import
+- Open the code modal to copy an Arduino C++ snippet for `bt-led-controller.ino`
+
+The simulator runs entirely in the browser — no backend, no hardware required.
+
+### Mobile / desktop app (Expo RN)
+
 ```bash
-# iOS
-npm run ios
-
-# Android
-npm run android
-
-# Web
-npm run web
+npm start          # Metro dev server
+npm run ios        # iOS simulator
+npm run android    # Android emulator (requires a dev build)
+npm run web        # Web Bluetooth (Chrome / Edge only)
 ```
 
-## Usage
+The app scans for devices advertising the Nordic UART Service:
 
-### Adding a New Configuration
+- Service UUID — `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
+- Write — `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
+- Notify — `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
 
-1. Tap "Add New Configuration" on the home screen
-2. The app will scan for nearby Bluetooth devices using native Bluetooth APIs
-3. Select your ItsyBitsy nRF52840 Express device from the discovered devices
-4. The app will connect to the device and verify the connection
-5. Create a configuration profile with:
-   - Profile name
-   - LED configurations (brightness, color, pattern, speed)
-6. Save the profile for future use
+This includes the Adafruit ItsyBitsy nRF52840 Express running the firmware in `bt-led-controller/`. Bluetooth permissions live in `app.json` (iOS usage strings) and the Android manifest. The web runtime uses Web Bluetooth (Chrome and Edge).
 
-### Bluetooth Device Requirements
+#### Adding a new configuration
 
-The app is designed to work with devices that support the Nordic UART Service (NUS):
-- **Service UUID**: `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
-- **Write Characteristic**: `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
-- **Read Characteristic**: `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
+1. Tap **Add New Configuration** on the home screen
+2. Select your ItsyBitsy device from the scan results
+3. Pick LEDs and set brightness (0–100%), color, pattern (Solid / Pulse / Rainbow / Custom), speed (0–100%)
+4. Save the profile
 
-This includes Adafruit ItsyBitsy nRF52840 Express and similar Nordic-based devices.
+#### TestFlight
 
-### LED Configuration Options
-
-- **Brightness**: 0-100% control
-- **Colors**: Red, Green, Blue, Yellow, Magenta, Cyan
-- **Patterns**: Solid, Pulse, Rainbow, Custom
-- **Speed**: 0-100% for animated patterns
-
-## Bluetooth Permissions
-
-The app requires Bluetooth permissions to function:
-
-- **iOS**: Bluetooth usage descriptions are configured in app.json. The app uses `react-native-ble-plx` for native Bluetooth functionality.
-- **Android**: Bluetooth and location permissions are required for device scanning
-- **Web**: Uses Web Bluetooth API (supported in Chrome and Edge)
-
-## Platform Support
-
-- **iOS**: Full native Bluetooth Low Energy support with device discovery, connection, and message sending
-- **Android**: Full native Bluetooth Low Energy support (requires development build)
-- **Web**: Web Bluetooth API support for testing and development
-
-## TestFlight Deployment
-
-This app is configured for TestFlight deployment using EAS (Expo Application Services).
-
-### Quick Start
-
-1. **First-time setup:**
-   ```bash
-   npm run eas:login
-   npx eas-cli build:configure
-   ```
-
-2. **Build and submit to TestFlight:**
-   ```bash
-   npm run build:testflight
-   ```
-
-### Available Commands
-
-- `npm run build:testflight` - Build and submit to TestFlight (automated)
-- `npm run build:testflight:no-submit` - Build only, don't submit
-- `npm run build:internal` - Build for internal distribution (standalone, no dev client)
-- `npm run eas:build:ios` - Manual iOS production build
-- `npm run eas:build:ios:internal` - Manual iOS internal distribution build
-- `npm run eas:submit` - Submit existing build to TestFlight
-- `npm run eas:whoami` - Check EAS login status
-
-### Documentation
-
-For detailed instructions, see [TESTFLIGHT_DEPLOYMENT.md](./TESTFLIGHT_DEPLOYMENT.md)
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── components/          # Reusable UI components
-├── screens/            # Screen components
-│   ├── HomeScreen.tsx
-│   ├── DeviceDiscoveryScreen.tsx
-│   ├── CreateProfileScreen.tsx
-│   └── ...
-├── types/              # TypeScript type definitions
-│   └── bluetooth.ts
-└── utils/              # Utility functions and themes
-    └── theme.ts
+```bash
+npm run eas:login
+npm run build:testflight             # build + submit
+npm run build:testflight:no-submit   # build only
+npm run build:internal               # internal distribution
 ```
 
-### Key Components
+Full deployment instructions in [`TESTFLIGHT_DEPLOYMENT.md`](./TESTFLIGHT_DEPLOYMENT.md).
 
-- **DeviceDiscoveryScreen**: Handles Bluetooth device scanning and selection
-- **CreateProfileScreen**: Manages LED configuration profile creation
-- **Bluetooth Types**: TypeScript interfaces for device and profile management
+---
 
-## Future Enhancements
+## Repository structure
 
-- Real-time LED control via BLE communication
-- Profile management and editing
-- Cloud sync for configurations
-- Advanced LED patterns and effects
-- Device firmware updates
+```
+bt-led-controller/
+├── apps/simulator/         # browser simulator (Vite + React + TS)
+├── packages/
+│   ├── ble-protocol/       # CMD_* / RESPONSE_* / ERROR_*
+│   ├── led-types/          # shared preset + pattern types
+│   └── led-engine/         # math.ts, VirtualDevice, patterns/
+├── bt-led-controller/      # Arduino firmware (.ino + device_config.h)
+├── src/                    # Expo/RN mobile app
+└── charts/                 # architecture docs (Mermaid)
+```
+
+See [`Architecture.md`](./Architecture.md) for design decisions, [`Handoff.md`](./Handoff.md) for the simulator build plan, and [`charts/repository-structure.md`](./charts/repository-structure.md) for the full diagram.
+
+---
+
+## Simulator ↔ firmware parity
+
+| Firmware (`bt-led-controller.ino`) | Simulator (`apps/simulator/`) |
+|---|---|
+| nRF52 C++ pattern loop | 1:1 TypeScript port in `packages/led-engine` |
+| BLE UART over hardware | In-process mock transport (`BleCommandService`) |
+| Real LED strip | DOM strip with glow halos |
+| Flash storage | localStorage |
+| `CMD_*` / `RESPONSE_*` bytes | Same `CMD_*` / `RESPONSE_*` bytes |
+
+Effects that run in the simulator run on hardware — they share the same math helpers and protocol bytes. Parity is a hard correctness requirement; see [`charts/Contributing.md`](./charts/Contributing.md).
+
+---
+
+## Testing
+
+```bash
+npx vitest run     # simulator + engine (Vitest, 44 tests)
+npm test           # RN app (Jest)
+```
+
+Both must stay green at every commit.
+
+---
 
 ## Contributing
 
-1. Fork the repository
+1. Read [`charts/Contributing.md`](./charts/Contributing.md) — non-negotiable rules for the shared engine
 2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+3. Keep changes surgical; one concern per PR
+4. Run both test suites
+5. Open a PR
 
 ## License
 
-This project is licensed under the MIT License.
+MIT.
