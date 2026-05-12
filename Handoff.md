@@ -35,109 +35,16 @@ Configure Vitest in `vite.config.ts` with `environment: 'jsdom'`. Configure Tail
 
 Create `src/types/preset.ts`:
 
-```typescript
-export interface RGB { r: number; g: number; b: number }
-
-export interface LedConfig {
-  pattern: PatternId
-  color: RGB
-  speed: number        // 0–100
-  brightness: number   // 0–255
-  powerMode: number    // 0 (normal), 1 (low power), 2 (eco)
-}
-
-export interface LedPreset {
-  id: string
-  name: string
-  createdAt: string    // ISO 8601
-  version: 1
-  config: LedConfig
-}
-
-export interface ExportEnvelope {
-  schema: 'led-simulator-preset-v1'
-  preset: LedPreset
-  generatedCode?: string
-}
-```
-
 Create `src/types/pattern.ts`:
 
-```typescript
-export const PATTERN_IDS = [
-  'off', 'solid', 'rainbow', 'pulse', 'fade',
-  'chase', 'twinkle', 'wave', 'breath', 'strobe', 'fire',
-] as const
-
-export type PatternId = typeof PATTERN_IDS[number]
-
-// Maps PatternId to the integer used in the firmware
-export const PATTERN_INT: Record<PatternId, number> = {
-  off: 0, solid: 1, rainbow: 2, pulse: 3, fade: 4,
-  chase: 5, twinkle: 6, wave: 7, breath: 8, strobe: 9, fire: 10,
-}
-
-export type PatternFn = (
-  pixels: { r: number; g: number; b: number }[],
-  cfg: import('./preset').LedConfig,
-  now: number
-) => void
-```
 
 Create `src/types/ble.ts`:
 
-```typescript
-// Binary command constants — values must match device_config.h exactly
-export const CMD_STATUS             = 0x00
-export const CMD_CONFIG_UPDATE      = 0x02
-export const CMD_ENTER_CONFIG       = 0x10
-export const CMD_COMMIT_CONFIG      = 0x11
-export const CMD_EXIT_CONFIG        = 0x12
-export const CMD_CLAIM_DEVICE       = 0x13
-export const CMD_VERIFY_OWNERSHIP   = 0x14
-export const CMD_UNCLAIM_DEVICE     = 0x15
-export const CMD_REQUEST_ANALYTICS  = 0x20
-export const CMD_CONFIRM_ANALYTICS  = 0x21
-
-export const RESPONSE_ACK_CONFIG_MODE = 0x90
-export const RESPONSE_ACK_COMMIT      = 0x91
-export const RESPONSE_ACK_SUCCESS     = 0x92
-export const RESPONSE_ANALYTICS_BATCH = 0xA0
-
-export const ERROR_NONE               = 0x00
-export const ERROR_INVALID_COMMAND    = 0x01
-export const ERROR_INVALID_PARAMETER  = 0x02
-export const ERROR_OUT_OF_RANGE       = 0x03
-export const ERROR_NOT_IN_CONFIG_MODE = 0x04
-export const ERROR_NOT_OWNER          = 0x08
-export const ERROR_ALREADY_CLAIMED    = 0x09
-
-export const PARAM_BRIGHTNESS = 0x00
-export const PARAM_PATTERN    = 0x01
-export const PARAM_COLOR_RGB  = 0x02
-export const PARAM_POWER_MODE = 0x03
-export const PARAM_SPEED      = 0x04
-```
-
 ### 3. MathHelpers
 
-Create `src/engine/MathHelpers.ts`. Port these functions exactly from the `.ino`:
-- `sin8(x: number): number`
-- `hsv2rgb(h, s, v): RGB`
-- `rgb2hsv(r, g, b): { h, s, v }`
-- `beat8(bpm, phase, now): number`
-- `qadd8(a, b): number`
-- `qsub8(a, b): number`
-- `blendRgb(a, b, t): RGB`
-- `GAMMA8: readonly number[]` — copy the table from `bt-led-controller.ino` verbatim
+Create `src/engine/MathHelpers.ts`. Port these functions exactly from the `.ino`
 
-Write `src/engine/MathHelpers.test.ts`. Verify:
-- `sin8(0) === 0`, `sin8(64)` near 255, `sin8(128)` near 0 (matches C++ output)
-- `hsv2rgb(0, 255, 255)` returns pure red `{r:255, g:0, b:0}`
-- `hsv2rgb(85, 255, 255)` returns pure green
-- `hsv2rgb(170, 255, 255)` returns pure blue
-- `qadd8(200, 100) === 255`
-- `qsub8(10, 20) === 0`
+Write `src/engine/MathHelpers.test.ts`
 
 ### 4. VirtualDevice
 
@@ -145,114 +52,23 @@ Create `src/engine/VirtualDevice.ts`.
 
 State mirrors `bt-led-controller.ino` globals:
 
-```typescript
-interface DeviceState {
-  currentSettings: {
-    brightness: number      // DEFAULT_BRIGHTNESS = 128
-    currentPattern: number  // PATTERN_OFF = 0
-    powerMode: number       // 0
-    autoOff: number         // 0
-    color: [number, number, number]  // [255, 255, 255]
-    speed: number           // 50
-    ownerUserId: string
-    hasOwner: boolean
-  }
-  ramBuffer: typeof this.currentSettings  // copy of currentSettings on enter config
-  configModeActive: boolean
-  configDirty: boolean
-  verifiedUserId: string
-  globalBrightness: number
-  ledBuf: RGB[]             // length = LED_COUNT (default 16)
-}
-```
-
-Implement two public methods:
-
-```typescript
-// Mirrors loop() command dispatch in the .ino
-processCommand(data: Uint8Array): Uint8Array
-
-// Mirrors updatePattern() — run one frame, return current pixel array
-tick(now: number): ReadonlyArray<RGB>
-```
-
-`processCommand` dispatches on `data[0]`:
-- `CMD_STATUS` → return `[RESPONSE_ACK_SUCCESS]`
-- `CMD_ENTER_CONFIG` → set configModeActive, copy currentSettings to ramBuffer, return 8-byte config response: `[0x90, brightness, speed, R, G, B, pattern, powerMode > 0 ? 1 : 0]`
-- `CMD_EXIT_CONFIG` → clear configModeActive, configDirty, return `[RESPONSE_ACK_SUCCESS]`
-- `CMD_CONFIG_UPDATE` → read param byte from `data[1]`, apply to ramBuffer AND currentSettings (for immediate preview), set configDirty, return `[RESPONSE_ACK_SUCCESS]`
-- `CMD_COMMIT_CONFIG` → if configDirty, copy ramBuffer to currentSettings, set configDirty = false, return `[RESPONSE_ACK_COMMIT]`
-- `CMD_VERIFY_OWNERSHIP` → read userId, check against ownerUserId or !hasOwner, set verifiedUserId, return success or `[0x90, ERROR_NOT_OWNER]`
-- `CMD_CLAIM_DEVICE` → read userId, claim if unclaimed, return success or `[0x90, ERROR_ALREADY_CLAIMED]`
-- `CMD_UNCLAIM_DEVICE` → read userId, verify, clear owner, return success
-
 For ownership check: if `currentSettings.hasOwner` is true and `verifiedUserId` is empty, return `ERROR_NOT_OWNER` for all config commands. This matches `CHECK_OWNERSHIP_OR_RETURN()` in the `.ino`.
 
 `tick(now)` dispatches on `currentSettings.currentPattern` and calls the appropriate `PatternFn`. Returns `[...this.ledBuf]` (shallow copy).
 
-Write `src/engine/VirtualDevice.test.ts`. Cover:
-- CMD_STATUS returns success
-- CMD_ENTER_CONFIG returns correct 8-byte response with current settings
-- CMD_CONFIG_UPDATE param 0x01 (pattern) changes currentPattern
-- CMD_CONFIG_UPDATE param 0x02 (color) changes color
-- CMD_COMMIT_CONFIG commits ramBuffer, returns 0x91
-- CMD_EXIT_CONFIG clears configMode
-- Ownership: verify → config update works; skip verify → config update returns ERROR_NOT_OWNER
+Write `src/engine/VirtualDevice.test.ts`
 
 ### 5. Patterns
 
 Create one file per pattern in `src/engine/patterns/`. Each implements `PatternFn`.
 
-Port these from `bt-led-controller.ino` in this order:
-1. `off.ts` — clear all pixels
-2. `solid.ts` — fill with `cfg.color`
-3. `rainbow.ts` — red-white-blue blend cycle (the `.ino` uses 3-color cycle, not HSV rainbow)
-4. `pulse.ts` — sine brightness on `cfg.color`, period derived from `cfg.speed`
-5. `chase.ts` — `beat8`-driven positions with `fadeToBlackBy`
-6. `twinkle.ts` — random pixel sparkle
-7. `wave.ts` — HSV traveling wave with `cfg.speed` controlling time shift
-8. `breath.ts` — grayscale sine, `millis() >> 3` maps to `now >> 3`
-9. `strobe.ts` — on/off toggle at rate derived from `cfg.speed`
-10. `fire.ts` — heat decay simulation (NightDriverStrip algorithm)
-
 Create `src/engine/patterns/index.ts`:
-
-```typescript
-import type { PatternFn, PatternId } from '../../types/pattern'
-// import each pattern
-export const PATTERN_REGISTRY: Record<PatternId, PatternFn> = { ... }
-```
 
 Write a test for each pattern verifying the output buffer is non-trivially populated (not all zeros, within RGB range).
 
 ### 6. BleCommandService
 
 Create `src/engine/BleCommandService.ts`. This is the mock transport.
-
-```typescript
-export class BleCommandService {
-  constructor(private device: VirtualDevice) {}
-
-  // Encode and dispatch a command, return decoded response
-  async sendStatus(): Promise<boolean>
-  async verifyOwnership(userId: string): Promise<{ success: boolean; errorCode?: number }>
-  async enterConfigMode(): Promise<ConfigState>  // parse the 8-byte response
-  async exitConfigMode(): Promise<void>
-  async updateBrightness(value: number): Promise<void>
-  async updatePattern(patternId: PatternId): Promise<void>
-  async updateColor(r: number, g: number, b: number): Promise<void>
-  async updateSpeed(value: number): Promise<void>
-  async commitConfig(): Promise<void>
-}
-
-interface ConfigState {
-  brightness: number
-  speed: number
-  color: RGB
-  pattern: number
-  powerMode: number
-}
-```
 
 Each method encodes the appropriate `Uint8Array`, calls `device.processCommand()`, and decodes the response. The `async` wrapper exists so the interface is identical to a real BLE implementation (which would be truly async).
 
@@ -397,7 +213,7 @@ This section is a standing rule. Every agent that works on this project must fol
 2. Update this document: mark completed steps, note any deviations from the plan, record decisions made
 3. Write a "Prompt for next agent" section at the bottom of this file (do not remove previous ones — append)
 4. Include a sign-off timestamp in the format: `Completed by: [agent or role] — [ISO 8601 datetime]`
-5. Commit all changes including the updated Handoff.md
+5. Rename the old "Prompt for next agent" section so that it clearly indicates this prompt has been used
 
 The next agent's starting point is always the most recent "Prompt for next agent" section in this file, combined with the full document above it for context.
 
@@ -405,7 +221,7 @@ This workflow is also documented in `Architecture.md` under "Agent handoff workf
 
 ---
 
-## Prompt for next agent
+## Prompt for next agent (Completed)
 
 **Assigned phases:** Phase 1 (Foundation) — steps 1 through 6
 
@@ -439,7 +255,7 @@ Completed by: design / ideation session — 2026-05-08T00:00:00Z
 
 ## UI design specification (approved mockup — do not deviate without discussion)
 
-The mockup has been reviewed and signed off. Phase 2 must match these decisions exactly.
+The mockup has been reviewed and signed off. Phase 2 must match these decisions exactly, EXCEPT IF THERE ARE COLORS WHICH EXIST IN THE RN APP. The mockup is NOT the source of truth. Respect whichever colors/themes are ALREADY IN PLACE in the RN app
 
 ### App chrome
 
@@ -535,7 +351,7 @@ foot          (auto height, flex column, gap 11px)
 
 ---
 
-## Prompt for next agent
+## Prompt for next agent (Completed)
 
 **Supersedes:** previous Phase 1 prompt above.
 
@@ -625,7 +441,7 @@ Completed by: Phase 1 agent (Claude) — 2026-05-12T06:18:00Z
 
 ---
 
-## Prompt for next agent
+## Prompt for next agent (Completed)
 
 **Supersedes:** previous Phase 1 prompt above.
 
@@ -662,4 +478,111 @@ Completed by: Phase 1 agent (Claude) — 2026-05-12T06:18:00Z
 - Mark each Phase 2 step complete in this document.
 - Run `npx vitest run` and `cd apps/simulator && npm run build` and paste exit codes into your sign-off.
 - Write a "Prompt for next agent" section for Phase 3 (Vercel deploy + bonus effects) using the Roadmap.
+- Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
+
+---
+
+## Phase 2 sign-off
+
+**Phase 2 deliverables — status:**
+
+- [x] **Step 7** — `apps/simulator/src/hooks/usePatternLoop.ts`. `requestAnimationFrame` gated at 33ms (≈30 fps, matches `LED_UPDATE_INTERVAL_MS`).
+- [x] **Step 8** — `apps/simulator/src/components/LedStrip/`. Three-DOM-element-per-LED render (`.led` 34×34, `.led-halo` absolute inset 0 with `Math.max(r,g,b)/255 * 0.22` alpha, `.led-core` 14×14). 5 px gap. Strip wraps and centres in the canvas. No `filter: drop-shadow`. Dim cores fall back to `rgba(255,255,255,0.04)`.
+- [x] **Step 9** — `apps/simulator/src/components/ColorPicker/`. Canvas wheel (72×72, DPR-scaled, hue arcs + `createRadialGradient` saturation overlay + dark vignette ring) drawn with `pointToHueSat` math. Native `<input type="range">` for R/G/B. Hex input commits on blur/Enter. Whole `#color-col` greys out (`opacity 0.3; pointer-events: none`) with a "— controlled by heat palette" inline note when `pattern === 'fire'`.
+- [x] **Step 10** — `apps/simulator/src/components/PatternPanel/`. Two-column grid, 5 px gap. Selected card uses `rgba(83,74,183,0.18)` + `rgba(83,74,183,0.50)` per the UI spec. Speed slider underneath. Icons inlined from the Tabler SVG set (see deviation note).
+- [x] **Step 11** — `apps/simulator/src/App.tsx`. Verifies ownership → enters config mode → seeds pattern/colour/speed/brightness/powerMode through `BleCommandService` on mount and on every LED-count change. Every UI control routes through the service — no direct `VirtualDevice` access.
+- [x] **Step 12** — `apps/simulator/src/hooks/usePresets.ts`. `localStorage` under `led-simulator-presets-v1`, save/remove, `exportToFile` writes an `ExportEnvelope` JSON with optional `generatedCode`, `importFromFile` validates the schema string. Co-exports `encodeConfigToHash` / `decodeConfigFromHash` and a `useHashSync` side-effect hook (Step 16 below).
+- [x] **Step 13** — `apps/simulator/src/engine/CodeGenerator.ts`. `generateArduinoCode(preset)` emits a `customPattern()` body that uses only firmware-resident helpers (`fill_solid_buf`, `sin8_approx`, `clearBuf`, `map`, `millis`, `ledBuf`, `ledBufferChanged`, `showLeds`, `LED_COUNT`). Covers `off`, `solid`, `pulse`, `strobe` in full; the remaining patterns delegate to their existing firmware functions until templated.
+- [x] **Step 14** — `apps/simulator/src/components/PresetDrawer/` + `CodeExportModal/`. Slide-in drawer for save/load/import/export, modal for code copy. No external UI library — Tailwind v4 theme tokens + custom CSS.
+- [x] **Step 16 (Phase 3 URL hash)** — wired now because it's a one-line companion to `usePresets`. `LedConfig` is base64url-encoded into `window.location.hash` via `history.replaceState`; initial hash is decoded on mount and used as the seed config.
+
+**Verification (exit codes):**
+
+- `npx vitest run` (repo root): **exit 0** — 19 files, 66 tests, all green (7.34s).
+- `cd apps/simulator && npm run build`: **exit 0** — `dist/assets/index-*.css` 14.35 KB / `dist/assets/index-*.js` 170.70 KB (gzip 55.64 KB), `dist/index.html` 0.44 KB.
+
+**New tests added in Phase 2:**
+
+- `components/ColorPicker/colorMath.test.ts` — hex<->rgb round-trip, HSV anchors, `pointToHueSat` clamp.
+- `components/LedStrip/LedStrip.test.tsx` — DOM structure + halo alpha formula + dim-fallback core.
+- `components/PatternPanel/PatternPanel.test.tsx` — selected card aria + speed slider callback.
+- `engine/CodeGenerator.test.ts` — inline snapshots for `solid` and `pulse`, structural assertions for `strobe`/`fire`/`wave`.
+- `hooks/usePresets.test.ts` — localStorage persistence, replace-by-id, removal, file import (good + bad envelope), and base64url hash codec round-trip.
+
+**Deviations from the Phase 2 prompt:**
+
+- **No new npm dependencies.** The UI spec calls for "Tabler icons" — adding `@tabler/icons-react` would have been the obvious move, but the Phase 2 constraint says "no new dependencies without a comment in the deviation log here." Rather than pull in another runtime package for ~10 glyphs we inlined the matching Tabler SVG paths (MIT-licensed) into `apps/simulator/src/components/PatternPanel/icons.tsx`. If the icon catalogue grows past ~12 a future agent should switch to `@tabler/icons-react` with tree-shaking and delete `icons.tsx`.
+- **Test environment localStorage shim.** Node 25 ships an experimental built-in `localStorage` global that shadows jsdom's and is missing `clear`/`removeItem`. `apps/simulator/src/test-setup.ts` installs a Map-backed `Storage` stub on `globalThis` and `window` so storage-touching tests behave the same on any Node version. No runtime code is affected.
+- **`updatePowerMode` exposed via `BleCommandService`.** It existed in Phase 1 but was never called. The Phase 2 shell now seeds it during the verify→enter flow and on preset load, matching the rest of the param surface.
+- **Phase 3 step 16 (URL hash sharing) landed early.** It is one helper away from `usePresets` and the React shell already needed `useInitialHashConfig` / `useHashSync`, so it's wired now rather than left for the deploy agent. The Vercel deploy itself (step 15) is still untouched.
+- **`apps/simulator/src/App.tsx` eslint suppression.** The mount-time `useEffect` intentionally depends only on the rebuilt `ble` service — adding `config.*` to the dep list would re-issue the entire handshake on every slider tick. The suppression is one-line, scoped, and documented inline.
+
+**Color tokens — confirmation:**
+
+- `apps/simulator/src/styles/tokens.ts` is unchanged from Phase 1 and the `@theme` block in `src/index.css` continues to be the only place those tokens are declared. The new CSS in `src/index.css` consumes `var(--color-strip-canvas)`, `var(--color-primary)`, etc., so a future token change propagates everywhere without component edits.
+
+**Files added in Phase 2:**
+
+```
+apps/simulator/src/
+├── hooks/
+│   ├── usePatternLoop.ts
+│   ├── usePresets.ts
+│   └── usePresets.test.ts
+├── components/
+│   ├── LedStrip/LedStrip.{tsx,test.tsx}
+│   ├── ColorPicker/{ColorPicker.tsx, colorMath.ts, colorMath.test.ts}
+│   ├── PatternPanel/{PatternPanel.tsx, icons.tsx, PatternPanel.test.tsx}
+│   ├── PresetDrawer/PresetDrawer.tsx
+│   ├── CodeExportModal/CodeExportModal.tsx
+│   └── TopBar/TopBar.tsx
+└── engine/{CodeGenerator.ts, CodeGenerator.test.ts}
+```
+
+Completed by: Phase 2 agent (Claude Opus 4.7) — 2026-05-12T20:14:00Z
+
+---
+
+## Prompt for next agent
+
+**Supersedes:** previous Phase 2 prompt above.
+
+**Assigned phases:** Phase 3 (Deployment) — step 15 — plus Phase 4 (Bonus effects, Roadmap v1.5 additions).
+
+**Starting point:**
+- Read `Handoff.md` top-to-bottom. The Phase 2 sign-off above lists exactly what is wired and the deliberate deviations to be aware of.
+- Read `Roadmap.md` — v1.5 items (meteor / colorwipe / plasma effects, LED-count preset chips, pattern thumbnails, broader code-generator coverage) are the natural bonus targets after deploy.
+- Read `Architecture.md` and `Contributing.md`. They have not changed but contain the guard-rails on engine purity and 1:1 firmware parity.
+- Follow the "Agent workflow" section of this file. Append a new "Prompt for next agent" when you finish.
+
+**Where Phase 2 left off:**
+- `apps/simulator/` is feature-complete for v1. `npx vitest run` is green and `cd apps/simulator && npm run build` exits 0 (see Phase 2 sign-off for sizes).
+- URL hash sharing (step 16) is already done — `useInitialHashConfig` + `useHashSync` in `apps/simulator/src/hooks/usePresets.ts`. The deploy just needs to keep that working over HTTPS.
+- The Tabler-icon inlining is intentional and documented in the Phase 2 deviation log. Do **not** add `@tabler/icons-react` unless step 18 (broader pattern set) actually needs it; if you do, delete `apps/simulator/src/components/PatternPanel/icons.tsx`.
+
+**Phase 3 deliverables (deploy):**
+- `apps/simulator/vercel.json` (or a root-level equivalent) configuring a SPA rewrite so `/<hash>` paths fall back to `index.html`. Verify in production that an `https://<host>/#<base64config>` URL loads with the encoded config applied on first paint.
+- Document the Vercel project name, production URL, and any required environment variables (none expected for v1) in a new Phase 3 sign-off section.
+- The repo's existing root `package.json` belongs to the Expo RN app. Configure the Vercel project to use `apps/simulator/` as its root directory (`vercel --cwd apps/simulator` or the dashboard equivalent) so it does not try to build the RN app. Document the choice in your sign-off.
+- Run `npm run build` from `apps/simulator/` and confirm the production bundle (currently 170 KB JS / 14 KB CSS) is stable. Note any size changes.
+
+**Phase 4 / Roadmap v1.5 candidates (optional, pick what fits the time budget):**
+- Add the `meteor`, `colorwipe`, and `plasma` patterns to `packages/led-engine/src/patterns/` with tests, register them in `PATTERN_IDS` (and `PATTERN_INT`), add labels + icon paths in `PatternPanel/icons.tsx`, and extend `CodeGenerator.ts` with their firmware-helper equivalents (open a linked issue against the firmware if the helper does not exist yet).
+- Replace the `<select>` in `TopBar` with a chip row for the `LED_COUNT_OPTIONS` constants per the Roadmap v1.5 spec.
+- Pattern thumbnails: generate a 16-LED snapshot per pattern at fixed `(now=0, default config)` and render it inside each `pattern-card` to the left of the label.
+- Expand `CodeGenerator.ts` coverage: `rainbow`, `chase`, `twinkle`, `wave`, `breath`, `fade` already delegate to firmware functions; emit inline equivalents using the same helpers so the generated snippet is fully self-contained.
+- Add `meta` viewport / PWA manifest stub for the simulator (it's a small, free upgrade).
+
+**Phase 3/4 constraints (unchanged from Phase 2):**
+- No new dependencies without an explicit deviation note in this document.
+- Every new file goes through `tsc -b && vite build` cleanly.
+- `npx vitest run` must stay green at every commit. New patterns require new tests in `packages/led-engine/src/patterns/`.
+- Do not move the existing RN app files — the workspace coexistence is intentional.
+- All UI control flow continues to go through `BleCommandService` — do not poke `VirtualDevice` from React.
+
+**On completion:**
+- Mark each Phase 3 (and any Phase 4) step you tackle as complete in this document.
+- Run `npx vitest run` and `cd apps/simulator && npm run build` and paste exit codes into your sign-off, along with the production URL.
+- If you started but did not finish a Phase 4 bonus track, list what is half-done so the next agent can resume cleanly.
+- Write a "Prompt for next agent" section for the next phase (likely the rest of Phase 4 / Roadmap v1.5).
 - Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
