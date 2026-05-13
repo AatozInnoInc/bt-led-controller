@@ -1,9 +1,12 @@
 import type { PatternFn, PatternId } from '@bt-led/led-types';
 import { breath } from './breath';
 import { chase } from './chase';
+import { colorwipe } from './colorwipe';
 import { fade } from './fade';
 import { createFire } from './fire';
+import { meteor } from './meteor';
 import { off } from './off';
+import { plasma } from './plasma';
 import { pulse } from './pulse';
 import { rainbow } from './rainbow';
 import { solid } from './solid';
@@ -24,6 +27,9 @@ export const STATELESS_PATTERNS: Record<Exclude<PatternId, 'fire'>, PatternFn> =
   wave,
   breath,
   strobe,
+  meteor,
+  colorwipe,
+  plasma,
 };
 
 export function buildPatternRegistry(ledCount: number): Record<PatternId, PatternFn> {

@@ -79,14 +79,29 @@ describe('generateArduinoCode', () => {
     expect(out).toMatch(/clearBuf\(\);/);
   });
 
-  it('falls back with a reference call for not-yet-templated patterns', () => {
-    const out = generateArduinoCode(preset({ pattern: 'wave' }));
-    expect(out).toMatch(/wave\(\);/);
-    expect(out).toMatch(/customPattern/);
+  it('wave pattern emits the inline HSV wave loop (no fallback call)', () => {
+    const out = generateArduinoCode(preset({ pattern: 'wave', speed: 80 }));
+    expect(out).toMatch(/speedShift = map\(80, 0, 100, 4, 1\);/);
+    expect(out).toMatch(/hsv2rgb\(wavePhase, 255, v\);/);
+    // Self-contained — no call back to the firmware's wave() wrapper.
+    expect(out).not.toMatch(/^\s*wave\(\);/m);
   });
 
-  it('fire is flagged as simulator-only', () => {
-    const out = generateArduinoCode(preset({ pattern: 'fire' }));
-    expect(out).toMatch(/simulator-only/);
+  it('rainbow / chase / twinkle / breath / fade / off all emit inline bodies', () => {
+    for (const pattern of ['rainbow', 'chase', 'twinkle', 'breath', 'fade', 'off'] as const) {
+      const out = generateArduinoCode(preset({ pattern }));
+      // No bare firmware function call — body is inline.
+      expect(out, `pattern=${pattern}`).not.toMatch(new RegExp(`^\\s*${pattern}\\(\\);`, 'm'));
+      expect(out, `pattern=${pattern}`).toMatch(/customPattern/);
+    }
+  });
+
+  it('fire / meteor / colorwipe / plasma are flagged as simulator-only', () => {
+    for (const pattern of ['fire', 'meteor', 'colorwipe', 'plasma'] as const) {
+      const out = generateArduinoCode(preset({ pattern }));
+      expect(out, `pattern=${pattern}`).toMatch(/simulator-only/);
+      // Still a valid C++ body — must compile, hence a clearBuf() call.
+      expect(out, `pattern=${pattern}`).toMatch(/clearBuf\(\);/);
+    }
   });
 });

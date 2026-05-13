@@ -14,6 +14,9 @@ const LABELS: Record<PatternId, string> = {
   breath: 'Breath',
   strobe: 'Strobe',
   fire: 'Fire',
+  meteor: 'Meteor',
+  colorwipe: 'Color Wipe',
+  plasma: 'Plasma',
 };
 
 interface Props {

@@ -19,6 +19,15 @@ const PATHS: Record<PatternId, string> = {
     'M5 8h8.5a2.5 2.5 0 1 0 -2.34 -3.24M3 12h14.5a2.5 2.5 0 1 1 -2.34 3.24M4 16h5.5a2.5 2.5 0 1 1 -2.34 3.24',
   strobe: 'M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11',
   fire: 'M12 12c2 -2.96 0 -7 -1 -8c0 3.038 -1.773 4.741 -3 6c-1.226 1.26 -2 3.24 -2 5a6 6 0 1 0 12 0c0 -1.532 -1.056 -3.94 -2 -5c-1.786 3 -2.791 3 -4 2z',
+  // ti-meteor: falling streak with a trailing tail
+  meteor:
+    'M21 3l-5 5M19 13l2 -2M13 19l-2 2M14.929 14.929l3.536 3.536M11 5l3 3M5.5 13.5l5 5M3 21c3.949 -.625 7.5 -2.5 9 -4s3.375 -5.051 4 -9c-3.949 .625 -7.5 2.5 -9 4s-3.375 5.051 -4 9z',
+  // ti-color-swatch / brush: stylised colour-wipe brushstroke
+  colorwipe:
+    'M19 3h-4a2 2 0 0 0 -2 2v12a4 4 0 0 0 8 0v-12a2 2 0 0 0 -2 -2M13 7.35l-2 -2a2 2 0 0 0 -2.828 0l-2.828 2.828a2 2 0 0 0 0 2.828l9 9M7.3 13h-2.3a2 2 0 0 0 -2 2v4a2 2 0 0 0 2 2h12M17 17v.01',
+  // ti-circles-relation: overlapping circles — reads as plasma blobs
+  plasma:
+    'M9 9m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M15 15m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0',
 };
 
 const COLORS: Record<PatternId, string> = {
@@ -33,6 +42,9 @@ const COLORS: Record<PatternId, string> = {
   breath: 'rgba(180,180,180,0.60)',
   strobe: 'rgba(226,75,74,0.80)',
   fire: '#FAC775',
+  meteor: 'rgba(167,196,255,0.85)',
+  colorwipe: 'rgba(228,162,255,0.80)',
+  plasma: 'rgba(141,222,217,0.85)',
 };
 
 interface Props {

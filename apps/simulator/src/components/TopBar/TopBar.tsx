@@ -38,20 +38,26 @@ export function TopBar({
           <span className="brightness-value">{Math.round((brightness / 255) * 100)}%</span>
         </label>
 
-        <label className="led-count-row">
+        <div className="led-count-row" role="radiogroup" aria-label="LED count">
           <span className="panel-label">LEDs</span>
-          <select
-            value={ledCount}
-            onChange={(e) => onLedCount(Number(e.target.value))}
-            className="led-count-select"
-          >
-            {ledCountOptions.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="led-count-chips">
+            {ledCountOptions.map((n) => {
+              const selected = n === ledCount;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  className={`led-count-chip${selected ? ' is-selected' : ''}`}
+                  onClick={() => onLedCount(n)}
+                >
+                  {n}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <button className="btn-secondary" type="button" onClick={onPresets}>
           Presets

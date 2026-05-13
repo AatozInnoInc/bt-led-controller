@@ -1,0 +1,12 @@
+{
+  "name": "LED Simulator",
+  "short_name": "LED Sim",
+  "description": "Design and preview LED strip effects in the browser, then export Arduino code for the bt-led-controller firmware.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d0d0f",
+  "theme_color": "#0d0d0f",
+  "categories": ["utilities", "productivity"]
+}

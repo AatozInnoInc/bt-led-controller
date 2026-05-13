@@ -12,12 +12,17 @@ export const PATTERN_IDS = [
   'breath',
   'strobe',
   'fire',
+  'meteor',
+  'colorwipe',
+  'plasma',
 ] as const;
 
 export type PatternId = (typeof PATTERN_IDS)[number];
 
-// Integer ids match the firmware's PATTERN_* constants in device_config.h.
-// `fire` (10) is simulator-only until the firmware port lands.
+// Integer ids 0..9 match the firmware's PATTERN_* constants in device_config.h.
+// Ids 10..13 (fire, meteor, colorwipe, plasma) are simulator-only until the
+// firmware ports land — VirtualDevice accepts them via the PATTERN_FROM_INT
+// table rather than the MAX_EFFECTS bound from ble-protocol.
 export const PATTERN_INT: Record<PatternId, number> = {
   off: 0,
   solid: 1,
@@ -30,6 +35,9 @@ export const PATTERN_INT: Record<PatternId, number> = {
   breath: 8,
   strobe: 9,
   fire: 10,
+  meteor: 11,
+  colorwipe: 12,
+  plasma: 13,
 };
 
 export const PATTERN_FROM_INT: Record<number, PatternId> = Object.fromEntries(

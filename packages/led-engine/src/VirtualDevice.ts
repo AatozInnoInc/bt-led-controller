@@ -13,7 +13,6 @@ import {
   ERROR_INVALID_PARAMETER,
   ERROR_NOT_IN_CONFIG_MODE,
   ERROR_NOT_OWNER,
-  MAX_EFFECTS,
   PARAM_BRIGHTNESS,
   PARAM_COLOR_RGB,
   PARAM_PATTERN,
@@ -195,7 +194,8 @@ export class VirtualDevice {
   }
 
   private handleCommitConfig(): Uint8Array {
-    if (!this.configModeActive) return errorEnvelope(ERROR_NOT_IN_CONFIG_MODE);
+    if (!this.configModeActive)
+      return errorEnvelope(ERROR_NOT_IN_CONFIG_MODE);
     if (this.configDirty) {
       this.currentSettings = cloneSettings(this.ramBuffer);
       this.configDirty = false;
@@ -206,48 +206,60 @@ export class VirtualDevice {
   // Live-preview semantics from the .ino: each param update writes to BOTH ramBuffer
   // and currentSettings so the pattern reflects the change before commit.
   private handleConfigUpdate(data: Uint8Array): Uint8Array {
-    if (!this.configModeActive) return errorEnvelope(ERROR_NOT_IN_CONFIG_MODE);
-    if (data.length < 2) return errorEnvelope(ERROR_INVALID_PARAMETER);
+    if (!this.configModeActive)
+      return errorEnvelope(ERROR_NOT_IN_CONFIG_MODE);
+    if (data.length < 2)
+      return errorEnvelope(ERROR_INVALID_PARAMETER);
 
     const param = data[1];
 
     switch (param) {
       case PARAM_BRIGHTNESS: {
-        if (data.length < 3) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (data.length < 3)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         const v = data[2];
-        if (v > 255) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (v > 255)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.brightness = v;
         this.currentSettings.brightness = v;
         break;
       }
       case PARAM_PATTERN: {
-        if (data.length < 3) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (data.length < 3)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         const v = data[2];
-        // firmware accepts < MAX_EFFECTS; the simulator additionally allows
-        // PATTERN_INT.fire (10) since it is simulator-only.
-        if (v > MAX_EFFECTS) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        // Firmware accepts ids 0..MAX_EFFECTS (10); the simulator additionally
+        // accepts any id present in PATTERN_FROM_INT — that table is the
+        // single source of truth for sim-only effects like fire/meteor/plasma.
+        if (PATTERN_FROM_INT[v] === undefined)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.currentPattern = v;
         this.currentSettings.currentPattern = v;
         break;
       }
       case PARAM_COLOR_RGB: {
-        if (data.length < 5) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (data.length < 5)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.color = [data[2], data[3], data[4]];
         this.currentSettings.color = [data[2], data[3], data[4]];
         break;
       }
       case PARAM_POWER_MODE: {
-        if (data.length < 3) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (data.length < 3)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         const v = data[2];
-        if (v > 2) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (v > 2)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.powerMode = v;
         this.currentSettings.powerMode = v;
         break;
       }
       case PARAM_SPEED: {
-        if (data.length < 3) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (data.length < 3)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         const v = data[2];
-        if (v > 100) return errorEnvelope(ERROR_INVALID_PARAMETER);
+        if (v > 100)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.speed = v;
         this.currentSettings.speed = v;
         break;

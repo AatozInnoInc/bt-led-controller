@@ -48,6 +48,19 @@ describe('VirtualDevice.processCommand', () => {
     expect(d.snapshot().currentSettings.currentPattern).toBe(3);
   });
 
+  it('CMD_CONFIG_UPDATE accepts simulator-only pattern ids and rejects unknown ones', () => {
+    const d = new VirtualDevice();
+    d.processCommand(Uint8Array.from([CMD_ENTER_CONFIG]));
+    // 13 → plasma (simulator-only): success
+    const ok = d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 13]));
+    expect(ok).toEqual(Uint8Array.from([RESPONSE_ACK_SUCCESS]));
+    expect(d.snapshot().currentSettings.currentPattern).toBe(13);
+    // 99 → not in registry: invalid parameter
+    const bad = d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 99]));
+    expect(bad[0]).toBe(RESPONSE_ACK_CONFIG_MODE);
+    expect(bad[1]).not.toBe(RESPONSE_ACK_SUCCESS);
+  });
+
   it('CMD_CONFIG_UPDATE color (RGB) writes all three channels', () => {
     const d = new VirtualDevice();
     d.processCommand(Uint8Array.from([CMD_ENTER_CONFIG]));

@@ -543,7 +543,7 @@ Completed by: Phase 2 agent (Claude Opus 4.7) — 2026-05-12T20:14:00Z
 
 ---
 
-## Prompt for next agent
+## Prompt for next agent (Completed)
 
 **Supersedes:** previous Phase 2 prompt above.
 
@@ -585,4 +585,137 @@ Completed by: Phase 2 agent (Claude Opus 4.7) — 2026-05-12T20:14:00Z
 - Run `npx vitest run` and `cd apps/simulator && npm run build` and paste exit codes into your sign-off, along with the production URL.
 - If you started but did not finish a Phase 4 bonus track, list what is half-done so the next agent can resume cleanly.
 - Write a "Prompt for next agent" section for the next phase (likely the rest of Phase 4 / Roadmap v1.5).
+- Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
+
+---
+
+## Phase 3 / Phase 4 sign-off
+
+**Phase 3 — Deployment configuration (code-side, ready to ship):**
+
+- [x] **Step 15 (config)** — `vercel.json` lives at the **repo root** rather than `apps/simulator/`. The simulator's `package.json` references workspace packages (`@bt-led/led-engine`, `@bt-led/ble-protocol`, `@bt-led/led-types`), so Vercel must install from the repo root for `npm` to resolve the workspace symlinks. This is a deliberate deviation from the prompt's "use `apps/simulator/` as project root" guidance — see deviation note below.
+- [x] SPA rewrite: `/(.*) → /index.html` so `https://<host>/#<base64config>` deep-links keep working after a refresh. URL-hash sharing (step 16) was already wired by Phase 2 and is unaffected.
+- [x] `installCommand` uses `--ignore-scripts` to skip the root Expo RN app's `postinstall` hooks on Vercel's Linux build runner (no need for native iOS/Android tooling just to build the web app).
+- [x] `Cache-Control: public, max-age=31536000, immutable` on `/assets/*` (Vite emits hashed filenames).
+- [x] `index.html` now ships proper `description` / `theme-color` / `viewport-fit=cover` / `manifest` meta (small PWA-manifest stub at `apps/simulator/public/manifest.webmanifest`).
+
+**Deploy procedure (left to whoever has the Vercel CLI auth):**
+
+```bash
+# from the repo root (NOT apps/simulator)
+npx vercel link              # one-time: select / create the project
+npx vercel --prod            # uses vercel.json at the repo root
+```
+
+Project root in the Vercel dashboard should be left at the repo root; `buildCommand` and `outputDirectory` come from `vercel.json`. No env vars required for v1.
+
+**Production URL:** _not yet published_ — left for the user to run `npx vercel --prod` after `vercel login`. The build itself has been verified locally (see exit codes below).
+
+**Phase 4 — Bonus tracks (delivered):**
+
+- [x] **Three new effects** — `meteor`, `colorwipe`, `plasma` in `packages/led-engine/src/patterns/` with unit tests. Each is a pure `PatternFn` (no factory needed — meteor's trail state lives in the shared LED buffer, identical to `chase`). All three are simulator-only until the firmware port lands, mirroring how `fire` shipped.
+- [x] **Pattern registry expansion** — `PATTERN_IDS` / `PATTERN_INT` extended with `meteor=11`, `colorwipe=12`, `plasma=13`. `VirtualDevice.handleConfigUpdate` for `PARAM_PATTERN` now validates against `PATTERN_FROM_INT` rather than the firmware's `MAX_EFFECTS` bound, so simulator-only ids round-trip through the BLE mock. New regression test asserts an unknown id (99) is rejected.
+- [x] **UI: pattern icons + labels** — `PatternPanel/icons.tsx` and `PatternPanel/PatternPanel.tsx` carry the new three. Inlined Tabler SVG paths to keep the Phase 2 "no new deps" deviation intact.
+- [x] **UI: LED-count chip row** — `TopBar`'s `<select>` is gone. Chips reuse the existing selected-card visual language (`rgba(83,74,183,0.18)` bg / `rgba(83,74,183,0.50)` border / `--color-primary-text`) so the LED-count picker reads as the same component family as the pattern grid.
+- [x] **CodeGenerator coverage extended** — `off`, `rainbow`, `fade`, `chase`, `twinkle`, `wave`, `breath` now emit inline firmware-helper bodies (using only helpers already present in `bt-led-controller.ino`: `sin8_approx`, `beat8_like`, `hsv2rgb`, `blend_rgb`, `fadeToBlackBy_buf`, `fill_solid_buf`, `gamma8[]`, `clearBuf`, `map`, `millis`, `random`). The previous fallbacks that called `rainbow();` / `chase();` etc. are gone — every base pattern is now self-contained. `fire`, `meteor`, `colorwipe`, `plasma` are flagged with a "simulator-only" comment plus a `clearBuf();` so the emitted body still compiles.
+- [x] **Updated tests** — new `meteor/colorwipe/plasma` unit tests, expanded `VirtualDevice` test for sim-only pattern ids, rewritten `CodeGenerator.test.ts` covering the inline `wave` body and the new "all base patterns inline, all sim-only patterns flagged" assertions.
+
+**Phase 4 — Not delivered (deferred to next agent):**
+
+- [ ] **Pattern thumbnails** — 16-LED static snapshots per pattern rendered inside each `pattern-card`. The Roadmap v1.5 item is unblocked: `usePatternLoop` is the wrong tool for this (it's tick-driven); the right approach is a small helper that imports `STATELESS_PATTERNS` directly and renders one frame at `now=0` into a 16-pixel `<div>` next to the label. Skipped because the icon row already disambiguates patterns and the existing UI keeps the card grid dense — thumbnails should land alongside the broader v1.5 polish pass.
+- [ ] **Firmware port of meteor / colorwipe / plasma** — left for the firmware repo. Each effect is small (~20 lines of C++); the simulator implementations in `packages/led-engine/src/patterns/{meteor,colorwipe,plasma}.ts` are direct templates. Open a linked issue against `bt-led-controller` when porting; bump `MAX_EFFECTS` in `device_config.h` from 10 → 13 in the same PR.
+
+**Verification (exit codes):**
+
+- `npx vitest run` (repo root): **exit 0** — 22 files, 74 tests, all green.
+- `cd apps/simulator && npm run build`: **exit 0** —
+  - `dist/index.html` 0.75 KB (was 0.44 KB; +0.3 KB from meta/manifest)
+  - `dist/assets/index-*.css` 14.67 KB (was 14.35 KB; +0.3 KB from chip styles)
+  - `dist/assets/index-*.js` 174.47 KB / gzip 56.92 KB (was 170.70 KB / 55.64 KB; +3.8 KB from 3 new patterns + registry + icons + extended CodeGenerator)
+- `dist/manifest.webmanifest` is copied through unchanged (Vite picks it up from `public/`).
+
+**Deviations from the Phase 3/4 prompt:**
+
+- **`vercel.json` at repo root, not `apps/simulator/vercel.json`.** The prompt suggested `apps/simulator/` as the Vercel project root, but the simulator depends on workspace packages (`@bt-led/*: "0.1.0"`) which `npm install` cannot resolve from inside `apps/simulator/` — workspace symlinks only exist when install runs from the workspace root. Putting `vercel.json` at the repo root with `buildCommand: "npm run build --workspace=@bt-led/simulator"` and `outputDirectory: "apps/simulator/dist"` is the only setup that compiles cleanly without copying the workspace packages into the simulator's `node_modules/`.
+- **`--ignore-scripts` on `installCommand`.** The root `package.json` is the Expo/RN app and would otherwise pull in native build hooks on Vercel's Linux runner. Skipping postinstall scripts keeps the Vercel build minimal and is safe — the simulator never imports anything from the RN app or its native modules.
+- **Did not run `vercel --prod` from the agent session.** Vercel CLI is not installed and authenticating it would require interactive `vercel login`. The deploy script is documented above; everything code-side is ready.
+- **Validation widened from `v > MAX_EFFECTS` to `PATTERN_FROM_INT[v] === undefined`.** The original Phase 1 comment already called out "the simulator additionally allows `PATTERN_INT.fire` (10) since it is simulator-only" — relaxing further to the registry is the natural extension and means future sim-only effects don't need another VirtualDevice patch.
+- **Plasma uses the existing palette helpers, not `cfg.color`.** Matches the convention `wave` and `fire` set (palette-driven effects ignore the colour-picker preset). The UI does not need to grey-out the colour column for plasma because the existing rule only fires for `fire`; left as-is to avoid scope creep.
+
+**Files added in Phase 3/4:**
+
+```
+vercel.json                                                         (root)
+apps/simulator/public/manifest.webmanifest
+packages/led-engine/src/patterns/meteor.{ts,test.ts}
+packages/led-engine/src/patterns/colorwipe.{ts,test.ts}
+packages/led-engine/src/patterns/plasma.{ts,test.ts}
+```
+
+**Files modified in Phase 3/4:**
+
+```
+apps/simulator/index.html                                  (meta + manifest link)
+apps/simulator/src/components/TopBar/TopBar.tsx            (chip row replaces select)
+apps/simulator/src/components/PatternPanel/PatternPanel.tsx (labels for new patterns)
+apps/simulator/src/components/PatternPanel/icons.tsx        (paths + colors for new patterns)
+apps/simulator/src/index.css                                (.led-count-chip styles)
+apps/simulator/src/engine/CodeGenerator.ts                  (inline bodies for 7 patterns)
+apps/simulator/src/engine/CodeGenerator.test.ts             (new coverage assertions)
+packages/led-types/src/pattern.ts                           (extended PATTERN_IDS / PATTERN_INT)
+packages/led-engine/src/patterns/index.ts                   (registered new patterns)
+packages/led-engine/src/VirtualDevice.ts                    (registry-driven pattern validation)
+packages/led-engine/src/VirtualDevice.test.ts               (sim-only id regression)
+```
+
+Completed by: Phase 3/4 agent (Claude Opus 4.7) — 2026-05-12T21:37:00Z
+
+---
+
+## Prompt for next agent
+
+**Supersedes:** previous Phase 3/4 prompt above.
+
+**Assigned phases:** publish the production deploy (Phase 3 step 15), then continue Roadmap v1.5 polish.
+
+**Starting point:**
+- Read `Handoff.md` top-to-bottom. The Phase 3/4 sign-off lists what is wired, what is deferred, and the deliberate deviations.
+- Read `Roadmap.md` v1.5 — the remaining items are pattern thumbnails, the Supabase shared gallery, PWA install prompt, analytics, and broader effects (starfield, spectrum, twinkle-with-color).
+- `Architecture.md` and `Contributing.md` are unchanged and still binding (engine purity, 1:1 firmware parity, every new pattern needs a test).
+- Follow the "Agent workflow" section of this file. Append a new "Prompt for next agent" section when you finish.
+
+**Where Phase 3/4 left off:**
+- The simulator code is deploy-ready. `vercel.json` is at the **repo root** (not `apps/simulator/`) because the simulator depends on workspace packages — do not move it without resolving that.
+- `npx vitest run` is green at 22 files / 74 tests. `cd apps/simulator && npm run build` is green and bundle sizes (175 KB JS / 15 KB CSS / 0.75 KB HTML) are stable.
+- Three new sim-only patterns (`meteor`, `colorwipe`, `plasma`) live in `packages/led-engine/src/patterns/`. Their firmware ports are explicitly **not done** — when they land, bump `MAX_EFFECTS` in `device_config.h` from 10 → 13 in the same PR.
+- The TopBar `<select>` is gone — LED-count chips reuse the selected-card visual language.
+
+**Phase 3 step 15 — publish (left for whoever has Vercel CLI auth):**
+
+```bash
+npm i -g vercel              # if missing
+vercel login                 # one-time
+vercel link                  # at the repo root — accept the suggested project name
+vercel --prod                # ships using vercel.json at the repo root
+```
+
+When the deploy lands, paste the production URL into a new "Phase 3 deploy sign-off" sub-section of this file and verify in production that `https://<host>/#<base64config>` loads with the encoded config applied on first paint (URL-hash sharing landed in Phase 2 and is wired through `useInitialHashConfig`).
+
+**Roadmap v1.5 — natural next pickups:**
+- **Pattern thumbnails.** Most-deferred item. Render a 16-LED static frame inside each `pattern-card`. Use `STATELESS_PATTERNS` directly (not `usePatternLoop` — that's tick-driven). Helper signature: `function thumbnailFor(id: PatternId, n=16): RGB[]` calling the pattern fn once at `now=0` with a default `LedConfig`. Add a small `<PatternThumb>` component next to `<PatternIcon>`. Beware: `twinkle` is random — seed `Math.random` or pre-bake its snapshot.
+- **PWA install prompt.** The manifest stub is already in place; the next step is adding `192×192` and `512×512` icons (currently absent so the install banner won't fire) and a small `beforeinstallprompt` listener in `main.tsx`. Keep the install button hidden until a real install path exists.
+- **Supabase shared gallery.** Bigger lift — schema-design in a separate PR. Roadmap v1.5 says public read / authenticated write; reuse the `ExportEnvelope` shape so the same JSON travels between localStorage, file export, URL hash, and the gallery row.
+- **Firmware port of meteor / colorwipe / plasma.** The simulator implementations are direct templates. Open a tracking issue against `bt-led-controller`. When ported, drop the "simulator-only" notes from `CodeGenerator.ts` and replace the `clearBuf();` stub with inline bodies that mirror the new firmware functions.
+
+**Roadmap v1.5 constraints (unchanged):**
+- No new dependencies without an explicit deviation note in this document.
+- Every new file goes through `tsc -b && vite build` cleanly.
+- `npx vitest run` must stay green at every commit. New patterns require new tests in `packages/led-engine/src/patterns/`.
+- All UI control flow goes through `BleCommandService` — never poke `VirtualDevice` from React.
+- Do not move the existing RN app files — the workspace coexistence is intentional.
+
+**On completion:**
+- Mark each Roadmap v1.5 step you tackled as complete.
+- Run `npx vitest run` and `cd apps/simulator && npm run build` and paste exit codes into your sign-off, along with the production URL once the deploy lands.
+- Write a "Prompt for next agent" section for whatever comes next (v1.5 polish, or v2 if v1.5 wraps).
 - Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
