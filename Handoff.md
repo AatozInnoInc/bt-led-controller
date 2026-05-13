@@ -642,32 +642,6 @@ Project root in the Vercel dashboard should be left at the repo root; `buildComm
 - **Validation widened from `v > MAX_EFFECTS` to `PATTERN_FROM_INT[v] === undefined`.** The original Phase 1 comment already called out "the simulator additionally allows `PATTERN_INT.fire` (10) since it is simulator-only" — relaxing further to the registry is the natural extension and means future sim-only effects don't need another VirtualDevice patch.
 - **Plasma uses the existing palette helpers, not `cfg.color`.** Matches the convention `wave` and `fire` set (palette-driven effects ignore the colour-picker preset). The UI does not need to grey-out the colour column for plasma because the existing rule only fires for `fire`; left as-is to avoid scope creep.
 
-**Files added in Phase 3/4:**
-
-```
-vercel.json                                                         (root)
-apps/simulator/public/manifest.webmanifest
-packages/led-engine/src/patterns/meteor.{ts,test.ts}
-packages/led-engine/src/patterns/colorwipe.{ts,test.ts}
-packages/led-engine/src/patterns/plasma.{ts,test.ts}
-```
-
-**Files modified in Phase 3/4:**
-
-```
-apps/simulator/index.html                                  (meta + manifest link)
-apps/simulator/src/components/TopBar/TopBar.tsx            (chip row replaces select)
-apps/simulator/src/components/PatternPanel/PatternPanel.tsx (labels for new patterns)
-apps/simulator/src/components/PatternPanel/icons.tsx        (paths + colors for new patterns)
-apps/simulator/src/index.css                                (.led-count-chip styles)
-apps/simulator/src/engine/CodeGenerator.ts                  (inline bodies for 7 patterns)
-apps/simulator/src/engine/CodeGenerator.test.ts             (new coverage assertions)
-packages/led-types/src/pattern.ts                           (extended PATTERN_IDS / PATTERN_INT)
-packages/led-engine/src/patterns/index.ts                   (registered new patterns)
-packages/led-engine/src/VirtualDevice.ts                    (registry-driven pattern validation)
-packages/led-engine/src/VirtualDevice.test.ts               (sim-only id regression)
-```
-
 Completed by: Phase 3/4 agent (Claude Opus 4.7) — 2026-05-12T21:37:00Z
 
 ---
@@ -705,7 +679,7 @@ When the deploy lands, paste the production URL into a new "Phase 3 deploy sign-
 - **Pattern thumbnails.** Most-deferred item. Render a 16-LED static frame inside each `pattern-card`. Use `STATELESS_PATTERNS` directly (not `usePatternLoop` — that's tick-driven). Helper signature: `function thumbnailFor(id: PatternId, n=16): RGB[]` calling the pattern fn once at `now=0` with a default `LedConfig`. Add a small `<PatternThumb>` component next to `<PatternIcon>`. Beware: `twinkle` is random — seed `Math.random` or pre-bake its snapshot.
 - **PWA install prompt.** The manifest stub is already in place; the next step is adding `192×192` and `512×512` icons (currently absent so the install banner won't fire) and a small `beforeinstallprompt` listener in `main.tsx`. Keep the install button hidden until a real install path exists.
 - **Supabase shared gallery.** Bigger lift — schema-design in a separate PR. Roadmap v1.5 says public read / authenticated write; reuse the `ExportEnvelope` shape so the same JSON travels between localStorage, file export, URL hash, and the gallery row.
-- **Firmware port of meteor / colorwipe / plasma.** The simulator implementations are direct templates. Open a tracking issue against `bt-led-controller`. When ported, drop the "simulator-only" notes from `CodeGenerator.ts` and replace the `clearBuf();` stub with inline bodies that mirror the new firmware functions.
+- **Firmware port of meteor / colorwipe / plasma.** The simulator implementations are direct templates. This should be coded. Since it is a monoerpo, we can make the changes to `bt-led-controller` ino ourselves. When ported, drop the "simulator-only" notes from `CodeGenerator.ts` and replace the `clearBuf();` stub with inline bodies that mirror the new firmware functions.
 
 **Roadmap v1.5 constraints (unchanged):**
 - No new dependencies without an explicit deviation note in this document.

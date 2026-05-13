@@ -1,8 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build --workspace=@bt-led/simulator",
-  "outputDirectory": "apps/simulator/dist",
-  "installCommand": "npm install",
+  "outputDirectory": "dist",
+  "rootDirectory": "apps/simulator",
+  "installCommand": "npm install --workspaces --include-workspace-root",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {
