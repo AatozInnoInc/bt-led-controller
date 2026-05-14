@@ -56,10 +56,14 @@ const BODY: Partial<Record<PatternId, BodyBuilder>> = {
       `}`,
     ].join('\n'),
 
-  fade: () =>
+  fade: ({ config }) =>
     [
-      `// fade() in the firmware reduces to a white fill — kept for parity.`,
-      `fill_solid_buf(255, 255, 255);`,
+      `// Colour Fade: entire strip cycles through the HSV colour wheel.`,
+      `uint32_t period = (uint32_t)map(${config.speed}, 0, 100, 12000, 1000);`,
+      `if (period == 0) period = 1;`,
+      `uint8_t hue = (uint8_t)(((uint32_t)(millis() % period) * 256) / period);`,
+      `RGB c = hsv2rgb(hue, 255, 255);`,
+      `fill_solid_buf(c.r, c.g, c.b);`,
     ].join('\n'),
 
   chase: () =>
@@ -118,15 +122,100 @@ const BODY: Partial<Record<PatternId, BodyBuilder>> = {
       `  clearBuf();`,
       `}`,
     ].join('\n'),
+
+  meteor: ({ config }) =>
+    [
+      `// Meteor: 2-LED head sweeps the strip with a fading trail.`,
+      `uint16_t period = map(${config.speed}, 0, 100, 5000, 600);`,
+      `uint32_t now = millis();`,
+      `int head = (int)(((now % period) * (uint32_t)(LED_COUNT + 2)) / period);`,
+      `fadeToBlackBy_buf(64);`,
+      `RGB c = { ${config.color.r}, ${config.color.g}, ${config.color.b} };`,
+      `for (int i = 0; i < 2; i++) {`,
+      `  int idx = head - i;`,
+      `  if (idx >= 0 && idx < LED_COUNT) ledBuf[idx] = c;`,
+      `}`,
+    ].join('\n'),
+
+  colorwipe: ({ config }) =>
+    [
+      `// Color wipe: fill pixel-by-pixel, then erase, then repeat.`,
+      `uint32_t stepMs = map(${config.speed}, 0, 100, 200, 20);`,
+      `if (stepMs < 1) stepMs = 1;`,
+      `uint32_t cycle = stepMs * (uint32_t)LED_COUNT * 2;`,
+      `uint32_t step = (millis() % cycle) / stepMs;`,
+      `bool filling = step < (uint32_t)LED_COUNT;`,
+      `int cursor = filling ? (int)step : (int)(step - LED_COUNT);`,
+      `RGB on = { ${config.color.r}, ${config.color.g}, ${config.color.b} };`,
+      `for (int i = 0; i < LED_COUNT; i++) {`,
+      `  bool lit = filling ? (i <= cursor) : (i > cursor);`,
+      `  ledBuf[i] = lit ? on : (RGB){0, 0, 0};`,
+      `}`,
+    ].join('\n'),
+
+  plasma: ({ config }) =>
+    [
+      `// Plasma: two phase-shifted sines drive HSV hue + value. Palette-driven.`,
+      `uint8_t speedShift = map(${config.speed}, 0, 100, 5, 1);`,
+      `uint8_t t = (uint8_t)(millis() >> speedShift);`,
+      `for (int i = 0; i < LED_COUNT; i++) {`,
+      `  uint8_t pos = (uint8_t)((i * 255) / LED_COUNT);`,
+      `  uint8_t wave1 = sin8_approx((uint8_t)(pos + t));`,
+      `  uint8_t wave2 = sin8_approx((uint8_t)(pos * 2 + (uint8_t)(255 - t)));`,
+      `  uint8_t hue = (uint8_t)(((uint16_t)wave1 + (uint16_t)wave2) >> 1);`,
+      `  uint8_t v = gamma8[(uint8_t)((sin8_approx((uint8_t)(pos + (t << 1))) >> 1) + 96)];`,
+      `  ledBuf[i] = hsv2rgb(hue, 255, v);`,
+      `}`,
+    ].join('\n'),
+
+  fire: ({ config }) =>
+    [
+      `// NightDriverStrip heat-map fire. heat[] and lastFireUpdate are static`,
+      `// locals — they persist across calls on real hardware.`,
+      `static uint8_t heat[LED_COUNT] = {};`,
+      `static uint32_t lastFireUpdate = 0;`,
+      `float spd      = ${(config.speed / 100).toFixed(2)}f;`,
+      `float cooling  = 2.0f + (1.0f - spd) * 22.0f;`,
+      `float ignProb  = 0.35f + spd * 0.55f;`,
+      `float ignPower = 80.0f + spd * 130.0f;`,
+      `uint32_t frameMs = (uint32_t)(80.0f - spd * 55.0f);`,
+      `uint32_t nowMs = millis();`,
+      `if (nowMs - lastFireUpdate < frameMs && lastFireUpdate != 0) {`,
+      `  for (int i = 0; i < LED_COUNT; i++) {`,
+      `    uint8_t t192 = (uint8_t)((uint16_t)heat[i] * 191 / 255);`,
+      `    uint8_t ramp = (uint8_t)((t192 & 0x3f) << 2);`,
+      `    if (t192 > 0x80)      ledBuf[i] = {255, 255, ramp};`,
+      `    else if (t192 > 0x40) ledBuf[i] = {255, ramp, 0};`,
+      `    else                  ledBuf[i] = {ramp, 0, 0};`,
+      `  }`,
+      `  return;`,
+      `}`,
+      `lastFireUpdate = nowMs;`,
+      `for (int i = 0; i < LED_COUNT; i++) {`,
+      `  uint8_t cool = (uint8_t)(random((int)cooling + 1));`,
+      `  heat[i] = heat[i] > cool ? heat[i] - cool : 0;`,
+      `}`,
+      `for (int i = LED_COUNT - 1; i >= 2; i--)`,
+      `  heat[i] = (uint8_t)(((uint16_t)heat[i-1] + heat[i-2] + heat[i-2]) / 3);`,
+      `if ((float)random(1000) / 1000.0f < ignProb) {`,
+      `  uint8_t idx   = (uint8_t)random(min(7, LED_COUNT));`,
+      `  uint8_t boost = (uint8_t)(160 + random((int)ignPower + 1));`,
+      `  heat[idx] = (uint8_t)min(255, (int)heat[idx] + boost);`,
+      `}`,
+      `for (int i = 0; i < LED_COUNT; i++) {`,
+      `  uint8_t t192 = (uint8_t)((uint16_t)heat[i] * 191 / 255);`,
+      `  uint8_t ramp = (uint8_t)((t192 & 0x3f) << 2);`,
+      `  if (t192 > 0x80)      ledBuf[i] = {255, 255, ramp};`,
+      `  else if (t192 > 0x40) ledBuf[i] = {255, ramp, 0};`,
+      `  else                  ledBuf[i] = {ramp, 0, 0};`,
+      `}`,
+    ].join('\n'),
 };
 
-// Patterns that live only in the simulator until a firmware port lands.
-// Keeping them as comments so the generated snippet is still a valid C++ body.
+// Patterns not yet ported to firmware. Generated body still compiles (clearBuf stub).
 const SIM_ONLY: Partial<Record<PatternId, string>> = {
-  fire: 'fire is simulator-only — port the heat array (Uint8Array of LED_COUNT) first.',
-  meteor: 'meteor is simulator-only — needs a fadeToBlackBy + head-position helper.',
-  colorwipe: 'colorwipe is simulator-only — derive `step` from millis() and currentSettings.speed.',
-  plasma: 'plasma is simulator-only — needs the two-sine palette helper.',
+  larson: 'larson is simulator-only — port fadeToBlackBy_buf + triangle-wave position helper.',
+  confetti: 'confetti is simulator-only — port random HSV sparkle logic; needs random(256) for hue.',
 };
 
 export function generateArduinoCode(preset: LedPreset): string {
@@ -136,10 +225,11 @@ export function generateArduinoCode(preset: LedPreset): string {
     ? builder(preset)
     : `// ${SIM_ONLY[config.pattern] ?? 'pattern not yet templated'}\nclearBuf();`;
 
+  const sec = config.secondaryColor;
   const header = [
     `// Generated by LED Simulator`,
     `// Preset: ${name}`,
-    `// Pattern: ${config.pattern} · color rgb(${config.color.r}, ${config.color.g}, ${config.color.b})`,
+    `// Pattern: ${config.pattern} · color rgb(${config.color.r}, ${config.color.g}, ${config.color.b})${sec ? ` → rgb(${sec.r}, ${sec.g}, ${sec.b})` : ''}`,
     `// Speed: ${config.speed} · Brightness: ${config.brightness}`,
   ].join('\n');
 

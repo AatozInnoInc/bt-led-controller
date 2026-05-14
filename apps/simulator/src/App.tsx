@@ -14,6 +14,9 @@ import { CodeExportModal } from './components/CodeExportModal/CodeExportModal';
 
 const LED_COUNT_OPTIONS = [16, 30, 60, 96, 144] as const;
 
+// Patterns that use a colour gradient — show the Color B picker for these.
+const PALETTE_PATTERNS = new Set<PatternId>(['rainbow', 'chase', 'wave', 'plasma']);
+
 const DEFAULT_CONFIG: LedConfig = {
   pattern: 'rainbow',
   color: { r: 255, g: 255, b: 255 },
@@ -47,11 +50,15 @@ export function App() {
     let cancelled = false;
     void (async () => {
       const ownership = await ble.verifyOwnership('simulator-user');
-      if (!ownership.success || cancelled) return;
+      if (!ownership.success || cancelled)
+        return;
       await ble.enterConfigMode();
-      if (cancelled) return;
+      if (cancelled)
+        return;
       await ble.updatePattern(config.pattern);
       await ble.updateColor(config.color.r, config.color.g, config.color.b);
+      if (config.secondaryColor)
+        await ble.updateSecondaryColor(config.secondaryColor.r, config.secondaryColor.g, config.secondaryColor.b);
       await ble.updateSpeed(config.speed);
       await ble.updateBrightness(config.brightness);
       await ble.updatePowerMode(config.powerMode);
@@ -80,6 +87,14 @@ export function App() {
     [ble],
   );
 
+  const onSecondaryColor = useCallback(
+    (rgb: RGB) => {
+      setConfig((c) => ({ ...c, secondaryColor: rgb }));
+      void ble.updateSecondaryColor(rgb.r, rgb.g, rgb.b);
+    },
+    [ble],
+  );
+
   const onSpeed = useCallback(
     (value: number) => {
       setConfig((c) => ({ ...c, speed: value }));
@@ -104,6 +119,8 @@ export function App() {
       void (async () => {
         await ble.updatePattern(preset.config.pattern);
         await ble.updateColor(preset.config.color.r, preset.config.color.g, preset.config.color.b);
+        if (preset.config.secondaryColor)
+          await ble.updateSecondaryColor(preset.config.secondaryColor.r, preset.config.secondaryColor.g, preset.config.secondaryColor.b);
         await ble.updateSpeed(preset.config.speed);
         await ble.updateBrightness(preset.config.brightness);
         await ble.updatePowerMode(preset.config.powerMode);
@@ -138,6 +155,7 @@ export function App() {
   }, [config]);
 
   const fireActive = config.pattern === 'fire';
+  const isPalettePattern = PALETTE_PATTERNS.has(config.pattern);
 
   return (
     <main className="app-shell">
@@ -167,7 +185,10 @@ export function App() {
           color={config.color}
           disabled={fireActive}
           disabledHint="controlled by heat palette"
+          showSecondary={isPalettePattern}
+          secondaryColor={config.secondaryColor}
           onChange={onColor}
+          onSecondaryChange={onSecondaryColor}
         />
       </section>
 

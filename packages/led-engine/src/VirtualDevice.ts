@@ -14,6 +14,7 @@ import {
   ERROR_NOT_IN_CONFIG_MODE,
   ERROR_NOT_OWNER,
   PARAM_BRIGHTNESS,
+  PARAM_COLOR2_RGB,
   PARAM_COLOR_RGB,
   PARAM_PATTERN,
   PARAM_POWER_MODE,
@@ -32,6 +33,8 @@ interface Settings {
   powerMode: number;
   autoOff: number;
   color: [number, number, number];
+  color2: [number, number, number];
+  hasColor2: boolean;
   speed: number;
   ownerUserId: string;
   hasOwner: boolean;
@@ -43,12 +46,18 @@ const defaultSettings = (): Settings => ({
   powerMode: 0,
   autoOff: 0,
   color: [255, 255, 255],
+  color2: [0, 0, 255],
+  hasColor2: false,
   speed: 50,
   ownerUserId: '',
   hasOwner: false,
 });
 
-const cloneSettings = (s: Settings): Settings => ({ ...s, color: [...s.color] as [number, number, number] });
+const cloneSettings = (s: Settings): Settings => ({
+  ...s,
+  color: [...s.color] as [number, number, number],
+  color2: [...s.color2] as [number, number, number],
+});
 
 // Error envelope: [0x90, errorCode] — matches sendErrorResponse() in the .ino.
 const errorEnvelope = (code: number): Uint8Array => Uint8Array.from([RESPONSE_ACK_CONFIG_MODE, code]);
@@ -106,11 +115,18 @@ export class VirtualDevice {
   }
 
   // Mirrors updatePattern() — runs one pattern frame, returns the current pixel array.
+  // Brightness is applied here at the output layer (matching firmware's FastLED.setBrightness),
+  // so pattern functions always compute with full-range 0-255 values.
   tick(now: number): ReadonlyArray<RGB> {
     const id = PATTERN_FROM_INT[this.currentSettings.currentPattern] ?? 'off';
     const fn = this.patterns[id] ?? this.patterns.off;
     fn(this.ledBuf, this.toLedConfig(), now);
-    return this.ledBuf.map((p) => ({ ...p }));
+    const scale = this.currentSettings.brightness / 255;
+    return this.ledBuf.map((p) => ({
+      r: Math.round(p.r * scale),
+      g: Math.round(p.g * scale),
+      b: Math.round(p.b * scale),
+    }));
   }
 
   // Test/debug accessor. Not part of the BLE surface.
@@ -126,12 +142,14 @@ export class VirtualDevice {
 
   private toLedConfig() {
     const [r, g, b] = this.currentSettings.color;
+    const [r2, g2, b2] = this.currentSettings.color2;
     return {
       pattern: (PATTERN_FROM_INT[this.currentSettings.currentPattern] ?? 'off') as PatternId,
       color: { r, g, b },
       speed: this.currentSettings.speed,
       brightness: this.currentSettings.brightness,
       powerMode: this.currentSettings.powerMode,
+      secondaryColor: this.currentSettings.hasColor2 ? { r: r2, g: g2, b: b2 } : undefined,
     };
   }
 
@@ -228,9 +246,9 @@ export class VirtualDevice {
         if (data.length < 3)
           return errorEnvelope(ERROR_INVALID_PARAMETER);
         const v = data[2];
-        // Firmware accepts ids 0..MAX_EFFECTS (10); the simulator additionally
-        // accepts any id present in PATTERN_FROM_INT — that table is the
-        // single source of truth for sim-only effects like fire/meteor/plasma.
+        // Ids 0..13 have firmware equivalents. Ids 14+ (larson=14, confetti=15)
+        // are simulator-only until firmware ports land. PATTERN_FROM_INT is the
+        // single source of truth — all registered ids pass validation here.
         if (PATTERN_FROM_INT[v] === undefined)
           return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.currentPattern = v;
@@ -252,6 +270,15 @@ export class VirtualDevice {
           return errorEnvelope(ERROR_INVALID_PARAMETER);
         this.ramBuffer.powerMode = v;
         this.currentSettings.powerMode = v;
+        break;
+      }
+      case PARAM_COLOR2_RGB: {
+        if (data.length < 5)
+          return errorEnvelope(ERROR_INVALID_PARAMETER);
+        this.ramBuffer.color2 = [data[2], data[3], data[4]];
+        this.ramBuffer.hasColor2 = true;
+        this.currentSettings.color2 = [data[2], data[3], data[4]];
+        this.currentSettings.hasColor2 = true;
         break;
       }
       case PARAM_SPEED: {

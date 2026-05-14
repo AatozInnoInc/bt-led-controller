@@ -4,7 +4,7 @@
   --color-app: #0d0d0f;
   --color-strip-canvas: #060608;
   --color-divider: rgba(255, 255, 255, 0.07);
-  --color-panel-label: rgba(255, 255, 255, 0.28);
+  --color-panel-label: rgba(255, 255, 255, 0.60);
   --color-primary: #3c3489;
   --color-primary-border: #534ab7;
   --color-primary-text: #cecbf6;
@@ -232,8 +232,28 @@ body {
   color: var(--color-primary-text);
 }
 
+.pattern-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .pattern-label {
   line-height: 1;
+}
+
+.pattern-thumb {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  margin-top: 1px;
+}
+
+.pattern-thumb-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  min-width: 0;
 }
 
 .speed-row {
@@ -250,8 +270,24 @@ body {
 .color-col {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   transition: opacity 0.2s;
+}
+
+.color-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.color-section-label {
+  display: block;
+}
+
+.color-section-divider {
+  height: 1px;
+  background: var(--color-divider);
+  margin: 2px 0;
 }
 
 .color-col.is-disabled {

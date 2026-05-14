@@ -7,6 +7,7 @@ import {
   CMD_VERIFY_OWNERSHIP,
   ERROR_NONE,
   PARAM_BRIGHTNESS,
+  PARAM_COLOR2_RGB,
   PARAM_COLOR_RGB,
   PARAM_PATTERN,
   PARAM_POWER_MODE,
@@ -84,6 +85,15 @@ export class BleCommandService {
         Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_COLOR_RGB, r & 0xff, g & 0xff, b & 0xff]),
       ),
       'updateColor',
+    );
+  }
+
+  async updateSecondaryColor(r: number, g: number, b: number): Promise<void> {
+    this.expectSuccess(
+      this.device.processCommand(
+        Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_COLOR2_RGB, r & 0xff, g & 0xff, b & 0xff]),
+      ),
+      'updateSecondaryColor',
     );
   }
 

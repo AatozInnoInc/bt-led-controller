@@ -48,10 +48,10 @@ describe('VirtualDevice.processCommand', () => {
     expect(d.snapshot().currentSettings.currentPattern).toBe(3);
   });
 
-  it('CMD_CONFIG_UPDATE accepts simulator-only pattern ids and rejects unknown ones', () => {
+  it('CMD_CONFIG_UPDATE accepts all registered pattern ids and rejects unknown ones', () => {
     const d = new VirtualDevice();
     d.processCommand(Uint8Array.from([CMD_ENTER_CONFIG]));
-    // 13 → plasma (simulator-only): success
+    // 13 → fire (now fully implemented in firmware): success
     const ok = d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 13]));
     expect(ok).toEqual(Uint8Array.from([RESPONSE_ACK_SUCCESS]));
     expect(d.snapshot().currentSettings.currentPattern).toBe(13);
@@ -123,12 +123,23 @@ describe('VirtualDevice.tick', () => {
   });
 
   it('reflects committed pattern changes', () => {
-    const d = new VirtualDevice({ ledCount: 4 });
+    const d = new VirtualDevice({ ledCount: 4, initialSettings: { brightness: 255 } });
     d.processCommand(Uint8Array.from([CMD_ENTER_CONFIG]));
-    // solid (pattern 1) with red
+    // solid (pattern 1) with red, full brightness so scale = 1.0
     d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 1]));
     d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_COLOR_RGB, 200, 0, 0]));
     const out = d.tick(0);
     expect(out[0]).toEqual({ r: 200, g: 0, b: 0 });
+  });
+
+  it('scales pixel output by brightness', () => {
+    const d = new VirtualDevice({ ledCount: 4, initialSettings: { brightness: 128 } });
+    d.processCommand(Uint8Array.from([CMD_ENTER_CONFIG]));
+    d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 1]));
+    d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_COLOR_RGB, 255, 0, 0]));
+    const out = d.tick(0);
+    expect(out[0].r).toBe(Math.round(255 * (128 / 255)));
+    expect(out[0].g).toBe(0);
+    expect(out[0].b).toBe(0);
   });
 });

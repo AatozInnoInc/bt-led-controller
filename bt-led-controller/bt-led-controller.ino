@@ -376,6 +376,10 @@ void twinkle();
 void wave();
 void breath();
 void strobe();
+void meteor();
+void colorwipe();
+void plasma();
+void fire();
 
 // ----------------------------------------
 // Setup / Loop
@@ -1261,7 +1265,8 @@ void updatePattern() {
       break;
 
     case PATTERN_FADE:
-      fill_solid_buf(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2]);
+      fade();
+      ledBufferChanged = true;
       break;
 
     case PATTERN_CHASE:
@@ -1286,6 +1291,26 @@ void updatePattern() {
 
     case PATTERN_STROBE:
       strobe();
+      ledBufferChanged = true;
+      break;
+
+    case PATTERN_METEOR:
+      meteor();
+      ledBufferChanged = true;
+      break;
+
+    case PATTERN_COLORWIPE:
+      colorwipe();
+      ledBufferChanged = true;
+      break;
+
+    case PATTERN_PLASMA:
+      plasma();
+      ledBufferChanged = true;
+      break;
+
+    case PATTERN_FIRE:
+      fire();
       ledBufferChanged = true;
       break;
 
@@ -1322,6 +1347,7 @@ void setPattern(uint8_t pattern) {
       fade();
       break;
 
+
     case PATTERN_CHASE:
       chase();
       break;
@@ -1342,6 +1368,22 @@ void setPattern(uint8_t pattern) {
       strobe();
       break;
 
+    case PATTERN_METEOR:
+      meteor();
+      break;
+
+    case PATTERN_COLORWIPE:
+      colorwipe();
+      break;
+
+    case PATTERN_PLASMA:
+      plasma();
+      break;
+
+    case PATTERN_FIRE:
+      fire();
+      break;
+
     default:
       Serial.printf("[setPattern] Unknown pattern %d, clearing\n", pattern);
       clearBuf();
@@ -1352,18 +1394,22 @@ void setPattern(uint8_t pattern) {
   Serial.printf("[setPattern] Pattern %d applied, buffer changed: %d\n", pattern, ledBufferChanged);
 }
 
-// === Effect: Rainbow (Red-White-Blue Blend Cycle) ===
+// === Effect: Rainbow (Red-White-Blue Blend Cycle, scrolling with speed) ===
 void rainbow() {
   const RGB cycleColors[3] = { {255,0,0}, {255,255,255}, {0,0,255} };
+  uint32_t now = millis();
+  uint16_t period = (uint16_t)map(currentSettings.speed, 0, 100, 8000, 500);
+  if (period == 0)
+    period = 1;
+  // scrollOffset as a uint8 spanning one full cycle
+  uint8_t scrollOffset = (uint8_t)(((uint32_t)(now % period) * 256) / period);
 
   for (int i = 0; i < LED_COUNT; i++) {
-    float position = (float)i / (float)LED_COUNT;
+    uint8_t pos = (uint8_t)((uint16_t)i * 255 / LED_COUNT + scrollOffset); // wraps naturally
+    float position = (float)pos / 255.0f;
     int colorIndex = (int)(position * 3) % 3;
     float blendFactor = (position * 3) - (int)(position * 3);
-
-    RGB startColor = cycleColors[colorIndex];
-    RGB endColor = cycleColors[(colorIndex + 1) % 3];
-    ledBuf[i] = blend_rgb(startColor, endColor, (uint8_t)(blendFactor * 255));
+    ledBuf[i] = blend_rgb(cycleColors[colorIndex], cycleColors[(colorIndex + 1) % 3], (uint8_t)(blendFactor * 255));
   }
 }
 
@@ -1392,14 +1438,21 @@ void pulse() {
 }
 
 void fade() {
-  fill_solid_buf(255, 255, 255);
+  // Colour Fade: entire strip cycles through the HSV colour wheel.
+  // 1:1 port of packages/led-engine/src/patterns/fade.ts.
+  uint32_t period = (uint32_t)map(currentSettings.speed, 0, 100, 12000, 1000);
+  if (period == 0)
+    period = 1;
+  uint8_t hue = (uint8_t)(((uint32_t)(millis() % period) * 256) / period);
+  RGB c = hsv2rgb(hue, 255, 255);
+  fill_solid_buf(c.r, c.g, c.b);
 }
 
-#define CHASER_PULSE 12
 void chase() {
-  uint8_t pos1 = map(beat8_like(CHASER_PULSE, 0),   0, 255, 0, LED_COUNT - 1);
-  uint8_t pos2 = map(beat8_like(CHASER_PULSE, 85),  0, 255, 0, LED_COUNT - 1);
-  uint8_t pos3 = map(beat8_like(CHASER_PULSE, 170), 0, 255, 0, LED_COUNT - 1);
+  uint8_t bpm = (uint8_t)map(currentSettings.speed, 0, 100, 5, 30);
+  uint8_t pos1 = map(beat8_like(bpm,   0), 0, 255, 0, LED_COUNT - 1);
+  uint8_t pos2 = map(beat8_like(bpm,  85), 0, 255, 0, LED_COUNT - 1);
+  uint8_t pos3 = map(beat8_like(bpm, 170), 0, 255, 0, LED_COUNT - 1);
 
   fadeToBlackBy_buf(20);
 
@@ -1409,8 +1462,10 @@ void chase() {
 }
 
 void twinkle() {
+  RGB on = { currentSettings.color[0], currentSettings.color[1], currentSettings.color[2] };
   for (int i = 0; i < LED_COUNT; i++) {
-    if (random(10) < 3) ledBuf[i] = {255, 255, 255};
+    if (random(10) < 3)
+      ledBuf[i] = on;
     else ledBuf[i] = {0, 0, 0};
   }
   // Note: ledBufferChanged is set by caller
@@ -1442,9 +1497,13 @@ void wave() {
 
 void breath() {
   uint8_t b = (uint8_t)((sin8_approx((uint8_t)(millis() >> 3)) + 1) >> 1);
-  // Original used HSV(0,0,brightness) => grayscale
-  ledBuf[0] = {b, b, b};
-  for (int i = 1; i < LED_COUNT; i++) ledBuf[i] = ledBuf[0];
+  RGB c = {
+    (uint8_t)((uint16_t)currentSettings.color[0] * b / 255),
+    (uint8_t)((uint16_t)currentSettings.color[1] * b / 255),
+    (uint8_t)((uint16_t)currentSettings.color[2] * b / 255)
+  };
+  for (int i = 0; i < LED_COUNT; i++)
+    ledBuf[i] = c;
   // Note: ledBufferChanged is set by caller
 }
 
@@ -1464,3 +1523,64 @@ void strobe() {
   }
   ledBufferChanged = true;
 }
+
+// === Effect: Meteor (head + fading trail) ===
+// 1:1 port of packages/led-engine/src/patterns/meteor.ts.
+#define METEOR_HEAD_SIZE 2
+#define METEOR_TRAIL_FADE 64
+void meteor() {
+  uint16_t period = map(currentSettings.speed, 0, 100, 5000, 600);
+  uint32_t now = millis();
+  uint32_t span = (uint32_t)(LED_COUNT + METEOR_HEAD_SIZE);
+  int head = (int)(((now % period) * span) / period);
+
+  fadeToBlackBy_buf(METEOR_TRAIL_FADE);
+
+  RGB c = { currentSettings.color[0], currentSettings.color[1], currentSettings.color[2] };
+  for (int i = 0; i < METEOR_HEAD_SIZE; i++) {
+    int idx = head - i;
+    if (idx >= 0 && idx < LED_COUNT) {
+    ledBuf[idx] = c;
+  }
+}
+
+// === Effect: Color Wipe (fill, then erase, then repeat) ===
+// 1:1 port of packages/led-engine/src/patterns/colorwipe.ts
+void colorwipe() {
+  uint32_t stepMs = map(currentSettings.speed, 0, 100, 200, 20);
+  if (stepMs < 1)
+    stepMs = 1;
+  uint32_t cycle = stepMs * (uint32_t)LED_COUNT * 2;
+  uint32_t t = millis() % cycle;
+  uint32_t step = t / stepMs;
+  bool filling = step < (uint32_t)LED_COUNT;
+  int cursor = filling ? (int)step : (int)(step - LED_COUNT);
+
+  RGB on = { currentSettings.color[0], currentSettings.color[1], currentSettings.color[2] };
+  RGB off = { 0, 0, 0 };
+  for (int i = 0; i < LED_COUNT; i++) {
+    bool lit = filling ? (i <= cursor) : (i > cursor);
+    ledBuf[i] = lit ? on : off;
+  }
+}
+
+// === Effect: Plasma (two-sine HSV palette) ===
+// 1:1 port of packages/led-engine/src/patterns/plasma.ts. Palette-driven:
+// ignores currentSettings.color, same convention as wave()
+void plasma() {
+  uint8_t speedShift = map(currentSettings.speed, 0, 100, 5, 1);
+  uint8_t t = (uint8_t)(millis() >> speedShift);
+
+  for (int i = 0; i < LED_COUNT; i++) {
+    uint8_t pos = (uint8_t)((i * 255) / LED_COUNT);
+    uint8_t wave1 = sin8_approx((uint8_t)(pos + t));
+    uint8_t wave2 = sin8_approx((uint8_t)(pos * 2 + (uint8_t)(255 - t)));
+    uint8_t hue = (uint8_t)(((uint16_t)wave1 + (uint16_t)wave2) >> 1);
+    uint8_t v = gamma8[(uint8_t)((sin8_approx((uint8_t)(pos + (t << 1))) >> 1) + 96)];
+    ledBuf[i] = hsv2rgb(hue, 255, v);
+  }
+}
+
+// Fire effect — extracted to fire_effect.h for readability.
+// The include must appear after all globals (ledBuf, currentSettings, etc.) are defined.
+#include "fire_effect.h"

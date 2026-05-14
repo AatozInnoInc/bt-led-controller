@@ -28,7 +28,7 @@
 // LED Patterns Configuration
 #define MAX_BRIGHTNESS 255            // Maximum brightness (0-255)
 #define DEFAULT_BRIGHTNESS 128        // Default brightness on startup
-#define MAX_EFFECTS 10                // Maximum number of effects
+#define MAX_EFFECTS 14                // Maximum number of effects
 
 // Settings Storage
 #define SETTINGS_VERSION 1            // Settings version for migration
@@ -67,6 +67,10 @@
 #define PATTERN_WAVE 7
 #define PATTERN_BREATH 8
 #define PATTERN_STROBE 9
+#define PATTERN_METEOR 10
+#define PATTERN_COLORWIPE 11
+#define PATTERN_PLASMA 12
+#define PATTERN_FIRE 13
 
 // Command Definitions
 #define CMD_VERSION 'V'

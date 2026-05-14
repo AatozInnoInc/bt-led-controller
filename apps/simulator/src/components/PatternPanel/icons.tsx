@@ -28,6 +28,12 @@ const PATHS: Record<PatternId, string> = {
   // ti-circles-relation: overlapping circles — reads as plasma blobs
   plasma:
     'M9 9m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M15 15m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0',
+  // ti-eye: eye + iris — reads as the Cylon scanner eye
+  larson:
+    'M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6z',
+  // ti-sparkles: three stars — reads as random glitter/confetti
+  confetti:
+    'M16 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10.5 10.5l1 -1M16.5 4.5l1 -1M7.5 16.5l1 -1M4.5 4.5l1 1M16.5 16.5l1 1M10 14h-2M12 6v-2M18 12h2',
 };
 
 const COLORS: Record<PatternId, string> = {
@@ -35,7 +41,7 @@ const COLORS: Record<PatternId, string> = {
   solid: 'rgba(255,220,130,0.70)',
   rainbow: 'rgba(127,119,221,0.80)',
   pulse: 'rgba(93,202,165,0.80)',
-  fade: 'rgba(255,255,255,0.45)',
+  fade: 'rgba(160,220,255,0.80)',
   chase: 'rgba(255,255,255,0.50)',
   twinkle: 'rgba(250,199,117,0.80)',
   wave: 'rgba(133,183,235,0.80)',
@@ -45,6 +51,8 @@ const COLORS: Record<PatternId, string> = {
   meteor: 'rgba(167,196,255,0.85)',
   colorwipe: 'rgba(228,162,255,0.80)',
   plasma: 'rgba(141,222,217,0.85)',
+  larson: 'rgba(255,80,80,0.90)',
+  confetti: 'rgba(255,220,255,0.85)',
 };
 
 interface Props {

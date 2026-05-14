@@ -44,15 +44,27 @@ Goal: make the tool useful for clients and collaborators who are not developers.
 
 ---
 
+## v1.5 additions (in progress)
+
+- Larson Scanner effect (KITT/Cylon bouncing dot with fading trail)
+- Confetti effect (random coloured sparkles, FastLED DemoReel100 style)
+- Color Fade effect (uniform hue-wheel rotation, replaces static white fill)
+- Secondary-colour gradient picker (Color A / Color B for rainbow, chase, wave, plasma)
+- Brightness scaling fixed in simulator output layer
+
+---
+
 ## v2 — Advanced effects studio
 
 Goal: support complex multi-parameter effects and become the primary design tool before any firmware work begins.
 
 ### Features
 
+- **TODO: Pattern Maker** — an interactive canvas where a user can compose a new LED effect from scratch. Concept: define keyframes on a timeline (color, brightness, position) and the tool generates the interpolated animation + exports firmware C++ code. Should support both single-zone and per-LED keyframing. Prior art: WLED's segment timelines, Jinx! sequencer, xLights. Target: v2 milestone or a standalone v2.5.
 - Effect parameter editor (expose per-effect knobs beyond speed/color, e.g. fire cooling rate, chase dot count)
 - Effect sequencer (define a timed sequence of presets — play on loop or on trigger)
 - Custom palette editor (define a named color palette, use it across effects)
+- Larson Scanner, Confetti firmware ports (larson=14, confetti=15 currently sim-only)
 - Starfield, spectrum, and twinkle-with-color effects (NightDriverStrip)
 - Side-by-side A/B comparison view (two configs rendered simultaneously)
 - Keyboard shortcuts for rapid iteration

@@ -1,13 +1,14 @@
 import type { PatternId } from '@bt-led/led-types';
 import { PATTERN_IDS } from '@bt-led/led-types';
 import { PatternIcon } from './icons';
+import { PatternThumb } from './PatternThumb';
 
 const LABELS: Record<PatternId, string> = {
   off: 'Off',
   solid: 'Solid',
   rainbow: 'Rainbow',
   pulse: 'Pulse',
-  fade: 'Fade',
+  fade: 'Color Fade',
   chase: 'Chase',
   twinkle: 'Twinkle',
   wave: 'Wave',
@@ -17,6 +18,8 @@ const LABELS: Record<PatternId, string> = {
   meteor: 'Meteor',
   colorwipe: 'Color Wipe',
   plasma: 'Plasma',
+  larson: 'Larson',
+  confetti: 'Confetti',
 };
 
 interface Props {
@@ -45,8 +48,11 @@ export function PatternPanel({ pattern, speed, onPattern, onSpeed }: Props) {
               className={`pattern-card${selected ? ' is-selected' : ''}`}
               onClick={() => onPattern(id)}
             >
-              <PatternIcon id={id} />
-              <span className="pattern-label">{LABELS[id]}</span>
+              <span className="pattern-card-header">
+                <PatternIcon id={id} />
+                <span className="pattern-label">{LABELS[id]}</span>
+              </span>
+              <PatternThumb id={id} />
             </button>
           );
         })}

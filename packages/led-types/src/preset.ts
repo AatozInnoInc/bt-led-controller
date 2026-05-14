@@ -12,6 +12,9 @@ export interface LedConfig {
   speed: number;
   brightness: number;
   powerMode: number;
+  /** Optional gradient end-colour for palette-driven patterns (rainbow, chase, wave, plasma).
+   *  When undefined the pattern falls back to its built-in colour defaults. */
+  secondaryColor?: RGB;
 }
 
 export interface LedPreset {

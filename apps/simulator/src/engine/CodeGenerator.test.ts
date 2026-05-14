@@ -87,20 +87,54 @@ describe('generateArduinoCode', () => {
     expect(out).not.toMatch(/^\s*wave\(\);/m);
   });
 
-  it('rainbow / chase / twinkle / breath / fade / off all emit inline bodies', () => {
-    for (const pattern of ['rainbow', 'chase', 'twinkle', 'breath', 'fade', 'off'] as const) {
+  it('all firmware patterns emit inline bodies — no bare function call', () => {
+    for (const pattern of [
+      'rainbow',
+      'chase',
+      'twinkle',
+      'breath',
+      'fade',
+      'off',
+      'meteor',
+      'colorwipe',
+      'plasma',
+      'fire',
+    ] as const) {
       const out = generateArduinoCode(preset({ pattern }));
-      // No bare firmware function call — body is inline.
       expect(out, `pattern=${pattern}`).not.toMatch(new RegExp(`^\\s*${pattern}\\(\\);`, 'm'));
       expect(out, `pattern=${pattern}`).toMatch(/customPattern/);
     }
   });
 
-  it('fire / meteor / colorwipe / plasma are flagged as simulator-only', () => {
-    for (const pattern of ['fire', 'meteor', 'colorwipe', 'plasma'] as const) {
+  it('fade emits an HSV colour-wheel body', () => {
+    const out = generateArduinoCode(preset({ pattern: 'fade', speed: 50 }));
+    expect(out).toMatch(/hsv2rgb\(hue, 255, 255\)/);
+    expect(out).toMatch(/millis\(\) % period/);
+  });
+
+  it('meteor / colorwipe / plasma bake the firmware-helper pipeline inline', () => {
+    expect(generateArduinoCode(preset({ pattern: 'meteor', speed: 60 }))).toMatch(
+      /map\(60, 0, 100, 5000, 600\);[\s\S]*fadeToBlackBy_buf\(64\);/,
+    );
+    expect(generateArduinoCode(preset({ pattern: 'colorwipe', speed: 30 }))).toMatch(
+      /map\(30, 0, 100, 200, 20\);[\s\S]*filling \? \(i <= cursor\) : \(i > cursor\)/,
+    );
+    expect(generateArduinoCode(preset({ pattern: 'plasma', speed: 90 }))).toMatch(
+      /map\(90, 0, 100, 5, 1\);[\s\S]*hsv2rgb\(hue, 255, v\);/,
+    );
+  });
+
+  it('fire emits an inline heat-map body (no longer simulator-only)', () => {
+    const out = generateArduinoCode(preset({ pattern: 'fire', speed: 60 }));
+    expect(out).toMatch(/static uint8_t heat\[LED_COUNT\]/);
+    expect(out).toMatch(/fireHeatColor|t192.*ramp/);
+    expect(out).not.toMatch(/simulator-only/);
+  });
+
+  it('larson and confetti are flagged as simulator-only', () => {
+    for (const pattern of ['larson', 'confetti'] as const) {
       const out = generateArduinoCode(preset({ pattern }));
       expect(out, `pattern=${pattern}`).toMatch(/simulator-only/);
-      // Still a valid C++ body — must compile, hence a clearBuf() call.
       expect(out, `pattern=${pattern}`).toMatch(/clearBuf\(\);/);
     }
   });

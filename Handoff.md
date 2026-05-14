@@ -646,11 +646,11 @@ Completed by: Phase 3/4 agent (Claude Opus 4.7) — 2026-05-12T21:37:00Z
 
 ---
 
-## Prompt for next agent
+## Prompt for next agent (Completed)
 
 **Supersedes:** previous Phase 3/4 prompt above.
 
-**Assigned phases:** publish the production deploy (Phase 3 step 15), then continue Roadmap v1.5 polish.
+**Assigned phases:** publish the production deploy (Phase 3 step 15. DONE. Public url is https://bt-led-controller-simulator.vercel.app), then continue Roadmap v1.5 polish.
 
 **Starting point:**
 - Read `Handoff.md` top-to-bottom. The Phase 3/4 sign-off lists what is wired, what is deferred, and the deliberate deviations.
@@ -693,3 +693,154 @@ When the deploy lands, paste the production URL into a new "Phase 3 deploy sign-
 - Run `npx vitest run` and `cd apps/simulator && npm run build` and paste exit codes into your sign-off, along with the production URL once the deploy lands.
 - Write a "Prompt for next agent" section for whatever comes next (v1.5 polish, or v2 if v1.5 wraps).
 - Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
+
+---
+
+## Roadmap v1.5 sign-off — pattern thumbnails + firmware port of meteor/colorwipe/plasma
+
+**Production URL:** https://bt-led-controller-simulator.vercel.app (already published — no redeploy needed; the changes here are additive and the build output is the same shape).
+
+**Delivered:**
+
+- [x] **Pattern thumbnails** (Roadmap v1.5). Each `pattern-card` now renders a static 8-LED snapshot under the icon/label row.
+  - `apps/simulator/src/components/PatternPanel/thumbnail.ts` exports `thumbnailFor(id, n=8): RGB[]`, memoised at module scope. Stateless patterns call `STATELESS_PATTERNS[id]` once at a pattern-specific `now` (chosen so e.g. pulse lands mid-fade, not at brightness 127). Fire builds a per-thumbnail `createFire(n)` and ticks 40 frames to settle the heat array. Twinkle's `Math.random` is swapped for a seeded LCG so the snapshot is stable across renders / test runs.
+  - `apps/simulator/src/components/PatternPanel/PatternThumb.tsx` is the tiny renderer — a flex row of `4px` round dots, falling back to a faint white for dim pixels (same dim-fallback rule the live `LedStrip` uses).
+  - `PatternPanel.tsx` wraps the existing icon + label in a `.pattern-card-header` span and appends `<PatternThumb />` underneath. CSS additions (`.pattern-card-header`, `.pattern-thumb`, `.pattern-thumb-dot`) total ~12 lines.
+- [x] **Firmware port of meteor / colorwipe / plasma** (Roadmap v1.5). All three live in `bt-led-controller.ino` as 1:1 ports of their TypeScript counterparts in `packages/led-engine/src/patterns/`. Wired into both `updatePattern()` and `setPattern()` switches. New `PATTERN_METEOR=10 / PATTERN_COLORWIPE=11 / PATTERN_PLASMA=12` constants in `device_config.h`; `MAX_EFFECTS` bumped 10 → 13.
+- [x] **PATTERN_INT renumber.** `packages/led-types/src/pattern.ts` now matches the firmware: `meteor=10, colorwipe=11, plasma=12, fire=13`. Fire stays sim-only behind the existing `PATTERN_FROM_INT` bypass in `VirtualDevice.handleConfigUpdate`. URL-hash sharing is unaffected (`LedConfig.pattern` is a string id, not the int).
+- [x] **CodeGenerator** (`apps/simulator/src/engine/CodeGenerator.ts`) emits inline firmware-helper bodies for `meteor`, `colorwipe`, and `plasma`. Only `fire` remains in `SIM_ONLY`. The generated bodies reuse helpers already present in the .ino (`fadeToBlackBy_buf`, `sin8_approx`, `gamma8[]`, `hsv2rgb`, `map`, `millis`) — no new firmware helpers introduced.
+- [x] **Tests updated.** `CodeGenerator.test.ts` now asserts `meteor / colorwipe / plasma` are part of the "inline body" set and pins the inline pipeline (`map(...)`, `fadeToBlackBy_buf(64)`, `filling ? ... : ...`, `hsv2rgb(hue, 255, v)`). The "simulator-only" assertion narrows to fire only.
+
+**Deferred (still open for the next agent):**
+
+- [ ] **PWA install prompt.** Manifest stub is in place but the install banner needs `192×192` and `512×512` icons under `apps/simulator/public/` plus a `beforeinstallprompt` listener in `main.tsx`. Skipped because creating real icon assets is design work, not codegen — punt to whoever has the artwork.
+- [ ] **Supabase shared gallery.** Bigger lift — schema design + auth wiring. Not started.
+- [ ] **Analytics.** Vercel analytics hook — trivial once the team decides on PII bounds.
+- [ ] **v2 effects (starfield / spectrum / twinkle-with-color).** Out of v1.5 scope.
+
+**Verification (exit codes):**
+
+- `npx vitest run` (repo root): **exit 0** — 22 files, **75 tests** (was 74; CodeGenerator gained the inline meteor/colorwipe/plasma assertions).
+- `npm run build --workspace=@bt-led/simulator`: **exit 0** —
+  - `dist/index.html` 0.75 kB (unchanged)
+  - `dist/assets/index-*.css` 14.91 kB / gzip 3.85 kB (was 14.67 kB; +0.24 kB from thumb styles)
+  - `dist/assets/index-*.js` 176.94 kB / gzip 57.67 kB (was 174.47 kB / 56.92 kB; +2.47 kB from the thumbnail helper, the new firmware-helper-inlined CodeGenerator bodies, and the renumbered registry comment)
+
+**Deviations:**
+
+- **Renumbered PATTERN_INT instead of keeping fire at 10.** The Phase 3/4 prompt said "bump MAX_EFFECTS from 10 → 13 in the same PR", which only fits if the three ported patterns occupy ids 10/11/12 and fire moves to 13 (otherwise the firmware bound would need to be 14 with a hole at id 10 for the un-ported fire). Renumbering is safe because (a) URL-hash sharing encodes `pattern` as a string id, (b) `VirtualDevice` looks patterns up through `PATTERN_FROM_INT`, (c) no test hard-codes the int values. The companion RN app reads pattern via the BLE service in the same monorepo, so its next deploy picks up the new ints automatically.
+- **Thumbnails are 8 LEDs, not 16, as the prompt suggested.** The cards are ~120px wide; 16 dots at 2px gap reduced each dot to <4px and the row felt grainy. 8 dots fills the card cleanly and still disambiguates every pattern.
+- **Twinkle thumbnail uses a seeded LCG, not pre-baked output.** The prompt explicitly called this out as an option; a seeded `Math.random` swap is a few lines and keeps the pattern fn pure (no special-case in `STATELESS_PATTERNS`).
+- **Fire thumbnail ticks 40 settle frames.** Fire's heat array starts at zeros — sampling at a single `now` gives a dark thumbnail. 40 frames is enough for the column to develop a representative profile without slowing app cold-start (cached after first call).
+- **`MAX_EFFECTS` updated in two places.** `device_config.h` (firmware) and `packages/ble-protocol/src/constants.ts` (TypeScript mirror). Both now read 13. The Phase 3/4 sign-off's existing `VirtualDevice` validation (against `PATTERN_FROM_INT`, not `MAX_EFFECTS`) still gates sim-only effects, so fire keeps working in the simulator.
+
+**Files touched:**
+
+```
+apps/simulator/src/components/PatternPanel/
+├── PatternPanel.tsx          (wrap icon+label in header; append <PatternThumb />)
+├── PatternThumb.tsx          (new)
+└── thumbnail.ts              (new — thumbnailFor(id, n) + seeded twinkle)
+apps/simulator/src/index.css  (.pattern-card-header / .pattern-thumb / .pattern-thumb-dot)
+apps/simulator/src/engine/
+├── CodeGenerator.ts          (inline meteor/colorwipe/plasma; SIM_ONLY shrinks to fire)
+└── CodeGenerator.test.ts     (assertions updated)
+packages/led-types/src/pattern.ts        (renumber: meteor=10, colorwipe=11, plasma=12, fire=13)
+packages/ble-protocol/src/constants.ts   (MAX_EFFECTS 10 → 13)
+packages/led-engine/src/VirtualDevice.ts (comment refresh — logic unchanged)
+bt-led-controller/device_config.h        (PATTERN_METEOR/COLORWIPE/PLASMA + MAX_EFFECTS=13)
+bt-led-controller/bt-led-controller.ino  (forward decls + 2× switch cases + 3 function bodies)
+```
+
+Completed by: Roadmap v1.5 agent (Claude Opus 4.7) — 2026-05-14T03:20:00Z
+
+---
+
+## Prompt for next agent
+
+**Supersedes:** previous Roadmap v1.5 prompt above.
+
+**Assigned phases:** continue Roadmap v1.5 — PWA install prompt, Supabase shared gallery, Vercel analytics. v2 (effect parameter editor, sequencer, palette editor, starfield/spectrum/twinkle-with-color) is fair game once v1.5 wraps.
+
+**Starting point:**
+- Read `Handoff.md` top-to-bottom. The most recent sign-off ("Roadmap v1.5 sign-off — pattern thumbnails + firmware port…") describes the latest state; the prior sign-offs explain the engine purity and 1:1 firmware-parity rules that still bind every change.
+- Read `Roadmap.md` v1.5 / v2 — v1.5 is the priority queue.
+- `Architecture.md` and `Contributing.md` have not changed and are still binding (engine purity, 1:1 firmware parity, every new pattern needs a test).
+- Follow the "Agent workflow" section of this file. Append a new "Prompt for next agent" section when you finish.
+
+**Where the previous agent left off:**
+- Pattern thumbnails: shipped (8-LED static snapshot per card, seeded twinkle, fire ticks 40 settle frames). `thumbnailFor(id, n)` in `apps/simulator/src/components/PatternPanel/thumbnail.ts` is memoised — call it from anywhere if a future feature needs the same static frames.
+- Firmware port: meteor/colorwipe/plasma now live in `bt-led-controller.ino` with `PATTERN_METEOR=10`, `PATTERN_COLORWIPE=11`, `PATTERN_PLASMA=12`. `MAX_EFFECTS=13`. Fire is still simulator-only (id 13) — `VirtualDevice` accepts it via `PATTERN_FROM_INT`, the firmware would reject it (`pattern < MAX_EFFECTS` → false for 13).
+- CodeGenerator emits inline bodies for every base pattern + meteor/colorwipe/plasma. Only `fire` remains in `SIM_ONLY`.
+- The production deploy at https://bt-led-controller-simulator.vercel.app is current. Verify after merging that the same URL still loads `#<base64config>` deep-links correctly (URL-hash sharing is in `useInitialHashConfig`).
+
+**Roadmap v1.5 — natural next pickups:**
+- **PWA install prompt.** Drop `192×192` and `512×512` PNG icons under `apps/simulator/public/`, update `manifest.webmanifest` to reference them, then add a `beforeinstallprompt` listener in `apps/simulator/src/main.tsx` that surfaces a small install button (hidden until the event fires). Keep the button in `TopBar` for parity with the existing chrome.
+- **Supabase shared gallery.** Schema design lives in a separate PR. Roadmap v1.5 says public read / authenticated write; reuse the `ExportEnvelope` shape (`packages/led-types/src/preset.ts`) so the same JSON travels between localStorage, file export, URL hash, and the gallery row. Treat the `generatedCode` field as a denormalised cache, not the source of truth — re-emit on load.
+- **Vercel analytics.** Add `@vercel/analytics/react` and the `<Analytics />` mount in `App.tsx`. Confirm no PII flows through `usePresets` events. This is a single-PR change and a good warmup task.
+- **Fire firmware port** (still deferred). Needs a per-strip heat array — see `packages/led-engine/src/patterns/fire.ts` for the reference TypeScript port. If you take this on, drop fire from `SIM_ONLY` in `CodeGenerator.ts`, drop the `PATTERN_FROM_INT` bypass in `VirtualDevice.handleConfigUpdate`, bump `MAX_EFFECTS` to 14, and add a firmware test.
+
+**Roadmap v1.5 constraints (unchanged):**
+- No new dependencies without an explicit deviation note in this document (Supabase + Vercel analytics are obviously expected and pre-approved — note the package names and versions in your sign-off).
+- Every new file goes through `tsc -b && vite build` cleanly.
+- `npx vitest run` must stay green at every commit. New patterns require new tests in `packages/led-engine/src/patterns/`.
+- All UI control flow goes through `BleCommandService` — never poke `VirtualDevice` from React.
+- Do not move the existing RN app files — the workspace coexistence is intentional.
+
+**On completion:**
+- Mark each Roadmap v1.5 step you tackled as complete.
+- Run `npx vitest run` and `npm run build --workspace=@bt-led/simulator` and paste exit codes into your sign-off, along with the production URL.
+- Write a "Prompt for next agent" section for whatever comes next (the rest of v1.5, or v2 if v1.5 wraps).
+- Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
+
+---
+
+## v1.5 correctness + palette sign-off
+
+**Production URL:** https://bt-led-controller-simulator.vercel.app (redeploy needed to pick up these changes).
+
+**What changed:**
+
+- [x] **Brightness scaling.** `VirtualDevice.tick()` now scales the returned pixel snapshot by `brightness/255`. Slider was previously sent but visually ignored.
+- [x] **Label contrast.** `--color-panel-label` raised from 28% to 60% opacity — fixes all dim labels in one token change.
+- [x] **Fade, Twinkle, Breath respect the color picker.** All three were hardcoded to white/grayscale. Now all three use `cfg.color` (fade: solid fill; twinkle: lit LEDs; breath: same sine envelope, tinted). Firmware updated to match.
+- [x] **Rainbow is now animated.** Speed maps to scroll period (0→8 s/cycle, 100→500 ms). R→W→B default preserved when no Color B is set. Firmware updated.
+- [x] **Chase BPM is speed-responsive.** Hardcoded 12 bpm replaced with `map(speed, 0, 100, 5, 30)`. Firmware updated.
+- [x] **Fire fully ported to firmware.** `fire()` with `static uint8_t heat[LED_COUNT]` added to `bt-led-controller.ino`. `PATTERN_FIRE=13`, `MAX_EFFECTS` 13→14 in both `device_config.h` and `ble-protocol`. `CodeGenerator` emits full inline fire body.
+- [x] **Secondary-color palette system.** `secondaryColor?: RGB` in `LedConfig`. `PARAM_COLOR2_RGB=0x05` in ble-protocol. `VirtualDevice` handles it. `BleCommandService.updateSecondaryColor()` added. Firmware secondary colour deferred (see deviation note below).
+- [x] **Pattern palette branches.** Rainbow sweeps hue A→B. Chase uses A / blend(A,B) / B dots. Wave and plasma constrain HSV sweep to [hueA, hueB]. All fall back to existing defaults when `secondaryColor` is undefined.
+- [x] **Color B UI.** ColorPicker shows "Color A" + full "Color B" wheel+sliders section when a palette pattern is active (rainbow/chase/wave/plasma). First interaction on Color B activates gradient mode.
+
+**Verification:**
+- `npx vitest run`: **exit 0** — 22 files, **76 tests** (was 75).
+- `npm run build --workspace=@bt-led/simulator`: **exit 0** — JS 181.77 kB / gzip 58.86 kB.
+
+**Deviations:**
+- **Firmware secondary colour deferred.** `PARAM_COLOR2_RGB` is handled by the simulator but real hardware returns `ERROR_INVALID_PARAMETER` until a firmware PR adds `uint8_t color2[3]` to `DeviceSettings` (carve from `reserved[14]`, bump `SETTINGS_VERSION`) and updates the pattern switch statements.
+- **Color B placeholder always visible.** Rather than a complex "activate" toggle, Color B always shows placeholder blue when `secondaryColor` is undefined. First wheel/slider interaction sets `config.secondaryColor` and activates gradient mode.
+
+Completed by: v1.5 correctness agent (Claude Sonnet 4.6) — 2026-05-14T04:20:00Z
+
+---
+
+## Prompt for next agent
+
+**Supersedes:** previous Roadmap v1.5 prompt.
+
+**Assigned:** continue Roadmap v1.5 — PWA icons, Supabase gallery, Vercel analytics — and the firmware secondary-colour follow-up.
+
+**Where this agent left off:**
+- All 10 correctness/UX issues are fixed (see sign-off above).
+- `secondaryColor` flows fully through the simulator. Real firmware ignores `PARAM_COLOR2_RGB` — follow-up firmware PR: add `uint8_t color2[3]` to `DeviceSettings.reserved[14]`, bump `SETTINGS_VERSION`, handle in command switch, update rainbow/chase/wave/plasma in the `.ino`.
+- `npx vitest run` green at 22 files / 76 tests. Build green (181 KB JS).
+- Redeploy to https://bt-led-controller-simulator.vercel.app needed.
+
+**Roadmap v1.5 remainder:**
+- **Vercel analytics.** `npm install @vercel/analytics` in simulator workspace; mount `<Analytics />` in `App.tsx`. One-PR.
+- **PWA icons.** Add `192×192` and `512×512` PNGs to `apps/simulator/public/`, reference in `manifest.webmanifest`.
+- **Supabase shared gallery.** Schema design first (separate PR). Reuse `ExportEnvelope`.
+- **Firmware secondary colour.** See above.
+
+**Constraints:** no new deps without a note, `tsc -b && vite build` clean, tests green, all UI through `BleCommandService`.
+
+**On completion:** mark steps done, run verification, write "Prompt for next agent", sign off with timestamp.

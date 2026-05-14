@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RGB } from '@bt-led/led-types';
 import { hexToRgb, hsvToRgb, pointToHueSat, rgbToHex, rgbToHsv } from './colorMath';
 
@@ -8,15 +8,17 @@ interface Props {
   color: RGB;
   disabled?: boolean;
   disabledHint?: string;
+  showSecondary?: boolean;
+  secondaryColor?: RGB;
   onChange(color: RGB): void;
+  onSecondaryChange?: (color: RGB) => void;
 }
 
 // Draws hue arcs around the wheel, then a radial white→transparent overlay for
 // saturation, then a thin dark vignette ring per the UI spec.
 function paintWheel(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext('2d');
-  if (!ctx)
-    return;
+  if (!ctx) return;
   const w = canvas.width;
   const cx = w / 2;
   const cy = w / 2;
@@ -50,78 +52,69 @@ function paintWheel(canvas: HTMLCanvasElement) {
   ctx.stroke();
 }
 
-export function ColorPicker({ color, disabled, disabledHint, onChange }: Props) {
+// A single colour picker section (wheel + sliders + hex).
+function ColorSection({
+  label,
+  color,
+  disabled,
+  onChange,
+}: {
+  label?: string;
+  color: RGB;
+  disabled?: boolean;
+  onChange(c: RGB): void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [hexInput, setHexInput] = useState(() => rgbToHex(color));
 
-  useEffect(() => {
-    if (canvasRef.current) paintWheel(canvasRef.current);
-  }, []);
-
-  useEffect(() => {
-    setHexInput(rgbToHex(color));
-  }, [color]);
+  useEffect(() => { if (canvasRef.current) paintWheel(canvasRef.current); }, []);
+  useEffect(() => { setHexInput(rgbToHex(color)); }, [color]);
 
   const currentHSV = rgbToHsv(color.r, color.g, color.b);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  // Cursor position on the wheel — scale ratio cos×s onto a half-width radius.
   const radius = WHEEL_SIZE / 2 - 1;
   const cursorX = WHEEL_SIZE / 2 + Math.cos((currentHSV.h * Math.PI) / 180) * currentHSV.s * radius;
   const cursorY = WHEEL_SIZE / 2 + Math.sin((currentHSV.h * Math.PI) / 180) * currentHSV.s * radius;
 
-  const pickFromEvent = (clientX: number, clientY: number) => {
+  const pickFromEvent = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
-    if (!canvas)
-      return;
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * WHEEL_SIZE - WHEEL_SIZE / 2;
     const y = ((clientY - rect.top) / rect.height) * WHEEL_SIZE - WHEEL_SIZE / 2;
     const { h, s } = pointToHueSat(x, y, radius);
     onChange(hsvToRgb(h, s, currentHSV.v || 1));
-  };
+  }, [currentHSV.v, onChange, radius]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (disabled)
-      return;
+    if (disabled) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
     pickFromEvent(e.clientX, e.clientY);
   };
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!draggingRef.current)
-      return;
+    if (!draggingRef.current) return;
     pickFromEvent(e.clientX, e.clientY);
   };
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     draggingRef.current = false;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId))
       e.currentTarget.releasePointerCapture(e.pointerId);
-    }
   };
 
-  const onChannel = (key: keyof RGB) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onChannel = (key: keyof RGB) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange({ ...color, [key]: Number(e.target.value) });
-  };
 
   const onHexCommit = () => {
     const rgb = hexToRgb(hexInput);
-    if (rgb)
-      onChange(rgb);
+    if (rgb) onChange(rgb);
     else setHexInput(rgbToHex(color));
   };
 
   return (
-    <section
-      id="color-col"
-      className={`color-col${disabled ? ' is-disabled' : ''}`}
-      aria-disabled={disabled}
-    >
-      <header className="panel-header">
-        <span className="panel-label">Color</span>
-        {disabled && disabledHint ? <span className="panel-note">— {disabledHint}</span> : null}
-      </header>
-
+    <div className="color-section">
+      {label && <span className="color-section-label panel-label">{label}</span>}
       <div className="color-wheel-wrap">
         <canvas
           ref={canvasRef}
@@ -134,11 +127,7 @@ export function ColorPicker({ color, disabled, disabledHint, onChange }: Props) 
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         />
-        <span
-          className="color-cursor"
-          style={{ left: `${cursorX}px`, top: `${cursorY}px` }}
-          aria-hidden
-        />
+        <span className="color-cursor" style={{ left: `${cursorX}px`, top: `${cursorY}px` }} aria-hidden />
       </div>
 
       <div className="rgb-sliders">
@@ -173,6 +162,51 @@ export function ColorPicker({ color, disabled, disabledHint, onChange }: Props) 
           className="hex-input"
         />
       </label>
+    </div>
+  );
+}
+
+export function ColorPicker({
+  color,
+  disabled,
+  disabledHint,
+  showSecondary,
+  secondaryColor,
+  onChange,
+  onSecondaryChange,
+}: Props) {
+  // Placeholder shown in the Color B wheel before the user picks a value.
+  const colorB = secondaryColor ?? { r: 0, g: 0, b: 255 };
+
+  return (
+    <section
+      id="color-col"
+      className={`color-col${disabled ? ' is-disabled' : ''}`}
+      aria-disabled={disabled}
+    >
+      <header className="panel-header">
+        <span className="panel-label">{showSecondary ? 'Color A' : 'Color'}</span>
+        {disabled && disabledHint ? <span className="panel-note">— {disabledHint}</span> : null}
+      </header>
+
+      <ColorSection color={color} disabled={disabled} onChange={onChange} />
+
+      {showSecondary && onSecondaryChange && (
+        <>
+          <div className="color-section-divider" />
+          <header className="panel-header">
+            <span className="panel-label">Color B</span>
+            {!secondaryColor && (
+              <span className="panel-note">— move wheel or sliders to activate</span>
+            )}
+          </header>
+          <ColorSection
+            color={colorB}
+            disabled={disabled}
+            onChange={onSecondaryChange}
+          />
+        </>
+      )}
     </section>
   );
 }
