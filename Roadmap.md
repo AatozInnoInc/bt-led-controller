@@ -51,6 +51,7 @@ Goal: make the tool useful for clients and collaborators who are not developers.
 - Color Fade effect (uniform hue-wheel rotation, replaces static white fill)
 - Secondary-colour gradient picker (Color A / Color B for rainbow, chase, wave, plasma)
 - Brightness scaling fixed in simulator output layer
+- Work WITH THE USER to find good LED patterns on the internet. Start with a web search for popular, good LED patterns, then ask the user for approval on a set of patterns, with the goal of implementing 5 patterns E2E
 
 ---
 
