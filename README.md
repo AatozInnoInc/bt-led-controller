@@ -88,7 +88,7 @@ bt-led-controller/
 └── charts/                 # architecture docs (Mermaid)
 ```
 
-See [`Architecture.md`](./Architecture.md) for design decisions, [`Handoff.md`](./Handoff.md) for the simulator build plan, and [`charts/repository-structure.md`](./charts/repository-structure.md) for the full diagram.
+See [`Architecture.md`](docs/Architecture.md) for design decisions, [`Handoff.md`](docs/Handoff.md) for the simulator build plan, and [`charts/repository-structure.md`](./charts/repository-structure.md) for the full diagram.
 
 ---
 
@@ -119,7 +119,7 @@ Both must stay green at every commit.
 
 ## Contributing
 
-1. Read [`charts/Contributing.md`](./charts/Contributing.md) — non-negotiable rules for the shared engine
+1. Read [`Contributing.md`](Contributing.md) — non-negotiable rules for the shared engine
 2. Create a feature branch
 3. Keep changes surgical; one concern per PR
 4. Run both test suites

@@ -2,7 +2,7 @@
 
 ## Before you start
 
-Read `Architecture.md` and the charts in `charts/`. The most important thing to understand is that the engine is a port — not an adaptation — of `bt-led-controller.ino`. Changes to the engine must preserve 1:1 parity with the firmware.
+Read [`Architecture.md`](docs/Architecture.md) and the charts in `charts/`. The most important thing to understand is that the engine is a port — not an adaptation — of `bt-led-controller.ino`. Changes to the engine must preserve 1:1 parity with the firmware.
 
 ---
 
@@ -67,4 +67,4 @@ The preset format is consumed by the companion RN app. Any change to `ExportEnve
 - [ ] If engine changed: behaviour matches `bt-led-controller.ino`
 - [ ] If preset format changed: companion RN app team informed
 - [ ] Charts in `charts/` updated if architecture changed
-- [ ] `Architecture.md` decision log updated if a significant decision was made
+- [ ] [`Architecture.md`](docs/Architecture.md) decision log updated if a significant decision was made
