@@ -20,6 +20,7 @@
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
+#include <math.h>
 
 #include "device_config.h"
 
@@ -583,7 +584,11 @@ void resetToDefaultSettings() {
   memset(currentSettings.ownerUserId, 0, sizeof(currentSettings.ownerUserId));
   currentSettings.hasOwner = false;
 
-  for (int i = 0; i < 14; i++) currentSettings.reserved[i] = 0;
+  memset(currentSettings.color2, 0, sizeof(currentSettings.color2));
+  currentSettings.hasSecondaryColor = 0;
+
+  for (int i = 0; i < (int)sizeof(currentSettings.reserved); i++)
+    currentSettings.reserved[i] = 0;
 
   currentSettings.checksum = calculateChecksum(&currentSettings);
 }
@@ -780,7 +785,8 @@ bool validateConfig(DeviceSettings* settings) {
   return validateBrightness(settings->brightness) &&
          validatePattern(settings->currentPattern) &&
          validatePowerMode(settings->powerMode) &&
-         validateColor(settings->color[0], settings->color[1], settings->color[2]);
+         validateColor(settings->color[0], settings->color[1], settings->color[2]) &&
+         (settings->hasSecondaryColor == 0 || settings->hasSecondaryColor == 1);
 }
 
 bool validateBrightness(uint8_t brightness) { return brightness <= MAX_BRIGHTNESS; }
@@ -1013,6 +1019,54 @@ void handleCommitConfig() {
   }
 }
 
+// Reads three RGB bytes already known present on bleuart; updates staging + live settings and previews LEDs.
+static bool applyConfigRgbPreviewFromBle(bool isSecondary, const char* errorMessage) {
+  int r = bleuart.read();
+  int g = bleuart.read();
+  int b = bleuart.read();
+
+  Serial.printf(
+      "  %s RGB(%d, %d, %d), current pattern: %d\n",
+      isSecondary ? "Secondary color update" : "Color update",
+      r, g, b,
+      ramBuffer.currentPattern);
+
+  if (validateColor(r, g, b)) {
+    uint8_t ur = (uint8_t)r;
+    uint8_t ug = (uint8_t)g;
+    uint8_t ub = (uint8_t)b;
+
+    if (isSecondary) {
+      ramBuffer.color2[0] = ur;
+      ramBuffer.color2[1] = ug;
+      ramBuffer.color2[2] = ub;
+      ramBuffer.hasSecondaryColor = 1;
+      currentSettings.color2[0] = ur;
+      currentSettings.color2[1] = ug;
+      currentSettings.color2[2] = ub;
+      currentSettings.hasSecondaryColor = 1;
+    } else {
+      ramBuffer.color[0] = ur;
+      ramBuffer.color[1] = ug;
+      ramBuffer.color[2] = ub;
+      currentSettings.color[0] = ur;
+      currentSettings.color[1] = ug;
+      currentSettings.color[2] = ub;
+    }
+
+    // Apply color immediately for real-time preview
+    // Re-apply current pattern with new color so all patterns see the change
+    Serial.printf("  Re-applying pattern %d with new color\n", ramBuffer.currentPattern);
+    setPattern(ramBuffer.currentPattern);
+    showLeds();
+    Serial.printf("  Color applied and LEDs shown\n");
+    return true;
+  } else {
+    sendErrorResponse(ERROR_INVALID_PARAMETER, errorMessage);
+    return false;
+  }
+}
+
 void handleConfigUpdate() {
   CHECK_OWNERSHIP_OR_RETURN();
 
@@ -1074,29 +1128,8 @@ void handleConfigUpdate() {
     }
     case 0x02: { // Color (RGB)
       if (bleuart.available() >= 3) {
-        int r = bleuart.read();
-        int g = bleuart.read();
-        int b = bleuart.read();
-        Serial.printf("  Color update: RGB(%d, %d, %d), current pattern: %d\n", r, g, b, ramBuffer.currentPattern);
-        if (validateColor(r, g, b)) {
-          ramBuffer.color[0] = r;
-          ramBuffer.color[1] = g;
-          ramBuffer.color[2] = b;
-          // Also update currentSettings for immediate preview
-          currentSettings.color[0] = r;
-          currentSettings.color[1] = g;
-          currentSettings.color[2] = b;
+        if (applyConfigRgbPreviewFromBle(false, "Invalid color")) {
           updated = true;
-          
-          // Apply color immediately for real-time preview
-          // Re-apply current pattern with new color so all patterns see the change
-          Serial.printf("  Re-applying pattern %d with new color\n", ramBuffer.currentPattern);
-          setPattern(ramBuffer.currentPattern);
-          showLeds();
-          Serial.printf("  Color applied and LEDs shown\n");
-        } else {
-          sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid color");
-          return;
         }
       }
       break;
@@ -1130,6 +1163,14 @@ void handleConfigUpdate() {
         } else {
           sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid speed (must be 0-100)");
           return;
+        }
+      }
+      break;
+    }
+    case 0x05: { // Secondary color (RGB), PARAM_COLOR2_RGB in ble-protocol
+      if (bleuart.available() >= 3) {
+        if (applyConfigRgbPreviewFromBle(true, "Invalid secondary color")) {
+          updated = true;
         }
       }
       break;
@@ -1394,32 +1435,47 @@ void setPattern(uint8_t pattern) {
   Serial.printf("[setPattern] Pattern %d applied, buffer changed: %d\n", pattern, ledBufferChanged);
 }
 
-// === Effect: Rainbow (Red-White-Blue Blend Cycle, scrolling with speed) ===
+// === Effect: Rainbow (Red-White-Blue cycle) ===
+// Mirrors packages/led-engine/src/patterns/rainbow.ts
 void rainbow() {
-  const RGB cycleColors[3] = { {255,0,0}, {255,255,255}, {0,0,255} };
+  const RGB cycleColors[3] = { {255, 0, 0}, {255, 255, 255}, {0, 0, 255} };
   uint32_t now = millis();
   uint16_t period = (uint16_t)map(currentSettings.speed, 0, 100, 8000, 500);
   if (period == 0)
     period = 1;
-  // scrollOffset as a uint8 spanning one full cycle
-  uint8_t scrollOffset = (uint8_t)(((uint32_t)(now % period) * 256) / period);
 
-  for (int i = 0; i < LED_COUNT; i++) {
-    uint8_t pos = (uint8_t)((uint16_t)i * 255 / LED_COUNT + scrollOffset); // wraps naturally
-    float position = (float)pos / 255.0f;
-    int colorIndex = (int)(position * 3) % 3;
-    float blendFactor = (position * 3) - (int)(position * 3);
-    ledBuf[i] = blend_rgb(cycleColors[colorIndex], cycleColors[(colorIndex + 1) % 3], (uint8_t)(blendFactor * 255));
+  if (currentSettings.hasSecondaryColor) {
+    uint8_t h1, s1, v1, h2, s2, v2;
+    rgb2hsv(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2], &h1, &s1, &v1);
+    rgb2hsv(currentSettings.color2[0], currentSettings.color2[1], currentSettings.color2[2], &h2, &s2, &v2);
+    uint8_t maxS = (s1 > s2) ? s1 : s2;
+    uint8_t sUse = (maxS > 0) ? (uint8_t)255 : (uint8_t)180;
+    for (int i = 0; i < LED_COUNT; i++) {
+      double position = fmod(((double)i / (double)LED_COUNT) + ((double)now / (double)period), 1.0);
+      int hi = (int)h1 + (int)round((double)((int)h2 - (int)h1) * position);
+      uint8_t hue = (uint8_t)((hi + 256) & 0xff);
+      ledBuf[i] = hsv2rgb(hue, sUse, 255);
+    }
+  } else {
+    uint8_t scrollOffset = (uint8_t)(((uint32_t)(now % period) * 256) / period);
+    for (int i = 0; i < LED_COUNT; i++) {
+      uint8_t pos = (uint8_t)((uint16_t)i * 255 / LED_COUNT + scrollOffset);
+      float position = (float)pos / 255.0f;
+      int colorIndex = (int)(position * 3) % 3;
+      float blendFactor = (position * 3) - (int)(position * 3);
+      ledBuf[i] = blend_rgb(cycleColors[colorIndex], cycleColors[(colorIndex + 1) % 3], (uint8_t)(blendFactor * 255));
+    }
   }
 }
 
+// Mirrors packages/led-engine/src/patterns/pulse.ts
+// Pulse effect: fade brightness in and out using sine wave
+// Use current color from settings
 void pulse() {
-  // Pulse effect: fade brightness in and out using sine wave
-  // Use current color from settings
   uint8_t r = currentSettings.color[0];
   uint8_t g = currentSettings.color[1];
   uint8_t b = currentSettings.color[2];
-  
+
   // Calculate pulse brightness (0-255) using sine wave
   uint32_t now = millis();
   // Speed control: use currentSettings.speed (0-100) to control pulse rate
@@ -1437,9 +1493,9 @@ void pulse() {
   ledBufferChanged = true;
 }
 
+// Mirrors packages/led-engine/src/patterns/fade.ts
+// Colour Fade: entire strip cycles through the HSV colour wheel.
 void fade() {
-  // Colour Fade: entire strip cycles through the HSV colour wheel.
-  // 1:1 port of packages/led-engine/src/patterns/fade.ts.
   uint32_t period = (uint32_t)map(currentSettings.speed, 0, 100, 12000, 1000);
   if (period == 0)
     period = 1;
@@ -1448,19 +1504,31 @@ void fade() {
   fill_solid_buf(c.r, c.g, c.b);
 }
 
+// Mirrors packages/led-engine/src/patterns/chase.ts
 void chase() {
   uint8_t bpm = (uint8_t)map(currentSettings.speed, 0, 100, 5, 30);
-  uint8_t pos1 = map(beat8_like(bpm,   0), 0, 255, 0, LED_COUNT - 1);
-  uint8_t pos2 = map(beat8_like(bpm,  85), 0, 255, 0, LED_COUNT - 1);
+  uint8_t pos1 = map(beat8_like(bpm, 0), 0, 255, 0, LED_COUNT - 1);
+  uint8_t pos2 = map(beat8_like(bpm, 85), 0, 255, 0, LED_COUNT - 1);
   uint8_t pos3 = map(beat8_like(bpm, 170), 0, 255, 0, LED_COUNT - 1);
 
   fadeToBlackBy_buf(20);
 
-  ledBuf[pos1] = {255, 0, 0};
-  ledBuf[pos2] = {255, 255, 255};
-  ledBuf[pos3] = {0, 0, 255};
+  RGB red = {255, 0, 0};
+  RGB white = {255, 255, 255};
+  RGB blue = {0, 0, 255};
+  RGB cA = { currentSettings.color[0], currentSettings.color[1], currentSettings.color[2] };
+  RGB cB = { currentSettings.color2[0], currentSettings.color2[1], currentSettings.color2[2] };
+
+  RGB dot1 = currentSettings.hasSecondaryColor ? cA : red;
+  RGB dot3 = currentSettings.hasSecondaryColor ? cB : blue;
+  RGB dot2 = currentSettings.hasSecondaryColor ? blend_rgb(dot1, dot3, 128) : white;
+
+  ledBuf[pos1] = dot1;
+  ledBuf[pos2] = dot2;
+  ledBuf[pos3] = dot3;
 }
 
+// Mirrors packages/led-engine/src/patterns/twinkle.ts
 void twinkle() {
   RGB on = { currentSettings.color[0], currentSettings.color[1], currentSettings.color[2] };
   for (int i = 0; i < LED_COUNT; i++) {
@@ -1471,22 +1539,39 @@ void twinkle() {
   // Note: ledBufferChanged is set by caller
 }
 
+// Mirrors packages/led-engine/src/patterns/wave.ts
+// Wave effect: traveling wave of color across the strip
+// Use speed setting to control wave speed
 void wave() {
-  // Wave effect: traveling wave of color across the strip
-  // Use speed setting to control wave speed
   uint32_t now = millis();
   // Map speed to wave speed: 0 = slow (>> 4), 100 = fast (>> 1)
   uint8_t speedShift = map(currentSettings.speed, 0, 100, 4, 1);
   uint8_t timePhase = (uint8_t)(now >> speedShift);
-  
+
+  uint8_t hueA = 0;
+  uint8_t hueB = 255;
+  uint8_t s1 = 0, v1 = 0, s2 = 0, v2 = 0;
+
+  if (currentSettings.hasSecondaryColor) {
+    rgb2hsv(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2], &hueA, &s1, &v1);
+    rgb2hsv(currentSettings.color2[0], currentSettings.color2[1], currentSettings.color2[2], &hueB, &s2, &v2);
+  }
+
   for (int i = 0; i < LED_COUNT; i++) {
     // Create a wave that travels along the strip
     // Each LED has a phase offset based on position
-    uint8_t positionPhase = (uint8_t)((i * 255) / LED_COUNT);
     // Combine time and position for traveling wave
     uint8_t wavePhase = timePhase + positionPhase;
     uint8_t sineVal = sin8_approx(wavePhase);
-    uint8_t g = gamma8[sineVal];
+    uint8_t gv = gamma8[sineVal];
+
+    uint8_t hue;
+    if (currentSettings.hasSecondaryColor) {
+      int hi = (int)hueA + (int)round((double)((int)hueB - (int)hueA) * (double)wavePhase / 255.0);
+      hue = (uint8_t)((hi + 256) & 0xff);
+    } else {
+      hue = wavePhase;
+    }
 
     // Use HSV color space for smooth color transitions
     RGB rgb = hsv2rgb(wavePhase, 255, g);
@@ -1495,6 +1580,7 @@ void wave() {
   ledBufferChanged = true;
 }
 
+// Mirrors packages/led-engine/src/patterns/breath.ts
 void breath() {
   uint8_t b = (uint8_t)((sin8_approx((uint8_t)(millis() >> 3)) + 1) >> 1);
   RGB c = {
@@ -1507,9 +1593,10 @@ void breath() {
   // Note: ledBufferChanged is set by caller
 }
 
+// Mirrors packages/led-engine/src/patterns/strobe.ts
+// Strobe effect: rapid on/off flashing
+// Use speed setting to control strobe rate: 0 = slow, 100 = fast
 void strobe() {
-  // Strobe effect: rapid on/off flashing
-  // Use speed setting to control strobe rate: 0 = slow, 100 = fast
   uint32_t now = millis();
   // Map speed to strobe period: 0 = 1000ms (1Hz), 100 = 50ms (20Hz)
   uint16_t strobePeriod = map(currentSettings.speed, 0, 100, 1000, 50);
@@ -1525,7 +1612,7 @@ void strobe() {
 }
 
 // === Effect: Meteor (head + fading trail) ===
-// 1:1 port of packages/led-engine/src/patterns/meteor.ts.
+// Mirrors packages/led-engine/src/patterns/meteor.ts
 #define METEOR_HEAD_SIZE 2
 #define METEOR_TRAIL_FADE 64
 void meteor() {
@@ -1539,13 +1626,14 @@ void meteor() {
   RGB c = { currentSettings.color[0], currentSettings.color[1], currentSettings.color[2] };
   for (int i = 0; i < METEOR_HEAD_SIZE; i++) {
     int idx = head - i;
-    if (idx >= 0 && idx < LED_COUNT) {
-    ledBuf[idx] = c;
+    if ((idx >= 0) && (idx < LED_COUNT)) {
+      ledBuf[idx] = c;
+    }
   }
 }
 
 // === Effect: Color Wipe (fill, then erase, then repeat) ===
-// 1:1 port of packages/led-engine/src/patterns/colorwipe.ts
+// Mirrors packages/led-engine/src/patterns/colorwipe.ts
 void colorwipe() {
   uint32_t stepMs = map(currentSettings.speed, 0, 100, 200, 20);
   if (stepMs < 1)
@@ -1565,19 +1653,35 @@ void colorwipe() {
 }
 
 // === Effect: Plasma (two-sine HSV palette) ===
-// 1:1 port of packages/led-engine/src/patterns/plasma.ts. Palette-driven:
+// Mirrors packages/led-engine/src/patterns/plasma.ts
 // ignores currentSettings.color, same convention as wave()
 void plasma() {
   uint8_t speedShift = map(currentSettings.speed, 0, 100, 5, 1);
   uint8_t t = (uint8_t)(millis() >> speedShift);
 
+  uint8_t hueA = 0;
+  uint8_t hueB = 255;
+  uint8_t s1 = 0, v1 = 0, s2 = 0, v2 = 0;
+  if (currentSettings.hasSecondaryColor) {
+    rgb2hsv(currentSettings.color[0], currentSettings.color[1], currentSettings.color[2], &hueA, &s1, &v1);
+    rgb2hsv(currentSettings.color2[0], currentSettings.color2[1], currentSettings.color2[2], &hueB, &s2, &v2);
+  }
+
   for (int i = 0; i < LED_COUNT; i++) {
     uint8_t pos = (uint8_t)((i * 255) / LED_COUNT);
     uint8_t wave1 = sin8_approx((uint8_t)(pos + t));
     uint8_t wave2 = sin8_approx((uint8_t)(pos * 2 + (uint8_t)(255 - t)));
-    uint8_t hue = (uint8_t)(((uint16_t)wave1 + (uint16_t)wave2) >> 1);
-    uint8_t v = gamma8[(uint8_t)((sin8_approx((uint8_t)(pos + (t << 1))) >> 1) + 96)];
-    ledBuf[i] = hsv2rgb(hue, 255, v);
+    uint8_t rawHue = (uint8_t)(((uint16_t)wave1 + (uint16_t)wave2) >> 1);
+    uint8_t hue;
+    if (currentSettings.hasSecondaryColor) {
+      int hi = (int)hueA + (int)round((double)((int)hueB - (int)hueA) * (double)rawHue / 255.0);
+      hue = (uint8_t)((hi + 256) & 0xff);
+    } else {
+      hue = rawHue;
+    }
+
+    uint8_t vbright = gamma8[(uint8_t)((sin8_approx((uint8_t)(pos + (t << 1))) >> 1) + 96)];
+    ledBuf[i] = hsv2rgb(hue, 255, vbright);
   }
 }
 

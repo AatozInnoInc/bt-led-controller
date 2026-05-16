@@ -1,10 +1,8 @@
 #pragma once
-// fire_effect.h — NightDriverStrip heat-map fire effect.
-// Included from bt-led-controller.ino after all globals (ledBuf, currentSettings,
-// LED_COUNT, millis(), random(), min()) are in scope.
-//
-// Extracted so the main sketch stays focused on pattern dispatch and BLE handling.
-// 1:1 port of packages/led-engine/src/patterns/fire.ts.
+// Mirrors packages/led-engine/src/patterns/fire.ts
+// Adapted from NightDriverStrip heat-map fire effect.
+// Included from bt-led-controller.ino after globals (ledBuf, currentSettings, LED_COUNT,
+// millis(), random(), min()) — extracted so dispatch + BLE handling stay readable.
 
 // Maps a heat value (0–255) to a fire-palette RGB colour:
 //   black → red → yellow → white
@@ -37,7 +35,7 @@ void fire() {
 
   // Cool every cell
   for (int i = 0; i < LED_COUNT; i++) {
-    uint8_t cool = (uint8_t)(random((int)cooling + 1));
+    uint8_t cool = (uint8_t)random((int)cooling + 1);
     heat[i] = heat[i] > cool ? heat[i] - cool : 0;
   }
   // Diffuse heat upward

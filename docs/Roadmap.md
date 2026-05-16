@@ -33,14 +33,19 @@ Goal: make the tool useful for clients and collaborators who are not developers.
 
 ### Features
 
-- Supabase shared preset gallery (public read, authenticated write)
 - "Share preset" one-click copy of URL hash link
 - Meteor, colorwipe, and plasma effects (NightDriverStrip)
 - LED count selector in UI (16 / 30 / 60 / 144 presets)
 - Pattern preview thumbnails (static snapshots for the pattern grid)
 - Improved code generator coverage (all 10 base patterns + fire)
 - PWA manifest and install prompt (mobile use on the go)
-- Basic analytics (Vercel analytics, no PII)
+
+### Deferred near term (explicitly paused)
+
+Moved here from earlier v1.5 planning — not prioritized for immediate work:
+
+- Shared preset gallery (Supabase — public read, authenticated write).
+- Simulator analytics (`@vercel/analytics`).
 
 ---
 

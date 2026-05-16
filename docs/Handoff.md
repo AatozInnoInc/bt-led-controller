@@ -37,42 +37,11 @@ This workflow is also documented in [`Architecture.md`](/docs/Architecture.md) u
 
 ---
 
-## Prompt for next agent
+## Prompt archive (superseded 2026-05-15)
 
-**Supersedes:** previous Roadmap v1.5 prompt above.
+Older prompts queued PWA, Supabase preset gallery, and Vercel analytics alongside firmware Colour B.
 
-**Assigned phases:** continue Roadmap v1.5 — PWA install prompt, Supabase shared gallery, Vercel analytics. v2 (effect parameter editor, sequencer, palette editor, starfield/spectrum/twinkle-with-color) is fair game once v1.5 wraps.
-
-**Starting point:**
-- Read `Handoff.md` top-to-bottom. The most recent sign-off ("Roadmap v1.5 sign-off — pattern thumbnails + firmware port…") describes the latest state; the prior sign-offs explain the engine purity and 1:1 firmware-parity rules that still bind every change.
-- Read `Roadmap.md` v1.5 / v2 — v1.5 is the priority queue.
-- [`Architecture.md`](/docs/Architecture.md) and [`Contributing.md`](../Contributing.md) have not changed and are still binding (engine purity, 1:1 firmware parity, every new pattern needs a test).
-- Follow the "Agent workflow" section of this file. Append a new "Prompt for next agent" section when you finish.
-
-**Where the previous agent left off:**
-- Pattern thumbnails: shipped (8-LED static snapshot per card, seeded twinkle, fire ticks 40 settle frames). `thumbnailFor(id, n)` in `apps/simulator/src/components/PatternPanel/thumbnail.ts` is memoised — call it from anywhere if a future feature needs the same static frames.
-- Firmware port: meteor/colorwipe/plasma now live in `bt-led-controller.ino` with `PATTERN_METEOR=10`, `PATTERN_COLORWIPE=11`, `PATTERN_PLASMA=12`. `MAX_EFFECTS=13`. Fire is still simulator-only (id 13) — `VirtualDevice` accepts it via `PATTERN_FROM_INT`, the firmware would reject it (`pattern < MAX_EFFECTS` → false for 13).
-- CodeGenerator emits inline bodies for every base pattern + meteor/colorwipe/plasma. Only `fire` remains in `SIM_ONLY`.
-- The production deploy at https://bt-led-controller-simulator.vercel.app is current. Verify after merging that the same URL still loads `#<base64config>` deep-links correctly (URL-hash sharing is in `useInitialHashConfig`).
-
-**Roadmap v1.5 — natural next pickups:**
-- **PWA install prompt.** Drop `192×192` and `512×512` PNG icons under `apps/simulator/public/`, update `manifest.webmanifest` to reference them, then add a `beforeinstallprompt` listener in `apps/simulator/src/main.tsx` that surfaces a small install button (hidden until the event fires). Keep the button in `TopBar` for parity with the existing chrome.
-- **Supabase shared gallery.** Schema design lives in a separate PR. Roadmap v1.5 says public read / authenticated write; reuse the `ExportEnvelope` shape (`packages/led-types/src/preset.ts`) so the same JSON travels between localStorage, file export, URL hash, and the gallery row. Treat the `generatedCode` field as a denormalised cache, not the source of truth — re-emit on load.
-- **Vercel analytics.** Add `@vercel/analytics/react` and the `<Analytics />` mount in `App.tsx`. Confirm no PII flows through `usePresets` events. This is a single-PR change and a good warmup task.
-- **Fire firmware port** (still deferred). Needs a per-strip heat array — see `packages/led-engine/src/patterns/fire.ts` for the reference TypeScript port. If you take this on, drop fire from `SIM_ONLY` in `CodeGenerator.ts`, drop the `PATTERN_FROM_INT` bypass in `VirtualDevice.handleConfigUpdate`, bump `MAX_EFFECTS` to 14, and add a firmware test.
-
-**Roadmap v1.5 constraints (unchanged):**
-- No new dependencies without an explicit deviation note in this document (Supabase + Vercel analytics are obviously expected and pre-approved — note the package names and versions in your sign-off).
-- Every new file goes through `tsc -b && vite build` cleanly.
-- `npx vitest run` must stay green at every commit. New patterns require new tests in `packages/led-engine/src/patterns/`.
-- All UI control flow goes through `BleCommandService` — never poke `VirtualDevice` from React.
-- Do not move the existing RN app files — the workspace coexistence is intentional.
-
-**On completion:**
-- Mark each Roadmap v1.5 step you tackled as complete.
-- Run `npx vitest run` and `npm run build --workspace=@bt-led/simulator` and paste exit codes into your sign-off, along with the production URL.
-- Write a "Prompt for next agent" section for whatever comes next (the rest of v1.5, or v2 if v1.5 wraps).
-- Sign off with `Completed by: [agent or role] — [ISO 8601 datetime]`.
+**User reorder (2026-05-15):** finish **firmware secondary colour** first, then **PWA** (icons + install affordance), then **five approved LED patterns** E2E. **Supabase** and **Vercel analytics** are deferred; they now live under **Deferred near term** in `Roadmap.md`.
 
 ---
 
@@ -88,7 +57,7 @@ This workflow is also documented in [`Architecture.md`](/docs/Architecture.md) u
 - [x] **Rainbow is now animated.** Speed maps to scroll period (0→8 s/cycle, 100→500 ms). R→W→B default preserved when no Color B is set. Firmware updated.
 - [x] **Chase BPM is speed-responsive.** Hardcoded 12 bpm replaced with `map(speed, 0, 100, 5, 30)`. Firmware updated.
 - [x] **Fire fully ported to firmware.** `fire()` with `static uint8_t heat[LED_COUNT]` added to `bt-led-controller.ino`. `PATTERN_FIRE=13`, `MAX_EFFECTS` 13→14 in both `device_config.h` and `ble-protocol`. `CodeGenerator` emits full inline fire body.
-- [x] **Secondary-color palette system.** `secondaryColor?: RGB` in `LedConfig`. `PARAM_COLOR2_RGB=0x05` in ble-protocol. `VirtualDevice` handles it. `BleCommandService.updateSecondaryColor()` added. Firmware secondary colour deferred (see deviation note below).
+- [x] **Secondary-color palette system.** `secondaryColor?: RGB` in `LedConfig`. `PARAM_COLOR2_RGB=0x05` in ble-protocol. `VirtualDevice` handles it. `BleCommandService.updateSecondaryColor()` added. Firmware parity shipped 2026-05-15 (`SETTINGS_VERSION` 2, see sign-off below).
 - [x] **Pattern palette branches.** Rainbow sweeps hue A→B. Chase uses A / blend(A,B) / B dots. Wave and plasma constrain HSV sweep to [hueA, hueB]. All fall back to existing defaults when `secondaryColor` is undefined.
 - [x] **Color B UI.** ColorPicker shows "Color A" + full "Color B" wheel+sliders section when a palette pattern is active (rainbow/chase/wave/plasma). First interaction on Color B activates gradient mode.
 
@@ -97,32 +66,39 @@ This workflow is also documented in [`Architecture.md`](/docs/Architecture.md) u
 - `npm run build --workspace=@bt-led/simulator`: **exit 0** — JS 181.77 kB / gzip 58.86 kB.
 
 **Deviations:**
-- **Firmware secondary colour deferred.** `PARAM_COLOR2_RGB` is handled by the simulator but real hardware returns `ERROR_INVALID_PARAMETER` until a firmware PR adds `uint8_t color2[3]` to `DeviceSettings` (carve from `reserved[14]`, bump `SETTINGS_VERSION`) and updates the pattern switch statements.
+- **Firmware secondary colour (historical deviation).** Resolved on hardware 2026-05-15 (`SETTINGS_VERSION` 2, `PARAM_COLOR2_RGB` `0x05`, pattern parity). This bullet is left for traceability.
 - **Color B placeholder always visible.** Rather than a complex "activate" toggle, Color B always shows placeholder blue when `secondaryColor` is undefined. First wheel/slider interaction sets `config.secondaryColor` and activates gradient mode.
 
 Completed by: v1.5 correctness agent (Claude Sonnet 4.6) — 2026-05-14T04:20:00Z
 
 ---
 
+## Firmware secondary colour (hardware) — sign-off
+
+**What changed**
+
+- **`device_config.h`:** `SETTINGS_VERSION` → **2**; **`reserved[14]`** tail replaced by **`color2[3]`**, **`hasSecondaryColor`**, **`reserved[10]`** (still 14 bytes in that region).
+- **`bt-led-controller.ino`:** `handleConfigUpdate` handles **`0x05`** (`PARAM_COLOR2_RGB`); previews via `setPattern` / `showLeds`. `rainbow`, `chase`, `wave`, `plasma` match the Colour B branches in `packages/led-engine`.
+- **`packages/ble-protocol/src/constants.ts`:** JSDoc for `PARAM_COLOR2_RGB` no longer implies firmware lacks support.
+
+**Operational note:** On-disk settings with **`SETTINGS_VERSION` 1** no longer validate — device follows the existing **invalid settings → defaults** flow until the user recommits (**one-time wipe of saved settings**, same as prior version bumps).
+
+**Physical hardware verify:** BLE config Colour A + Colour B on rainbow/chase/wave/plasma → commit → power-cycle persists gradient behaviour.
+
+**Simulator / CI verification**
+
+- `npx vitest run`: **exit 0** — 24 test files / **83** tests.
+- `npm run build --workspace=@bt-led/simulator`: **exit 0** — JS approx **183.7 kB** (gzip approx **59.5 kB**).
+
+Completed by: Cursor agent — 2026-05-15T23:20:00Z
+
+---
+
 ## Prompt for next agent
 
-**Supersedes:** previous Roadmap v1.5 prompt.
+**Queued work (owner 2026-05-15):**
 
-**Assigned:** continue Roadmap v1.5 — PWA icons, Supabase gallery, Vercel analytics — and the firmware secondary-colour follow-up.
+1. **PWA** — `192×192` / `512×512` PNGs in `apps/simulator/public/`, `manifest.webmanifest` `icons`, `beforeinstallprompt` in `main.tsx`, install affordance on `TopBar`.
+2. **Five LED patterns** — research + explicit user-approved list → engine + parity tests; UI strictly via `BleCommandService`.
 
-**Where this agent left off:**
-- All 10 correctness/UX issues are fixed (see sign-off above).
-- `secondaryColor` flows fully through the simulator. Real firmware ignores `PARAM_COLOR2_RGB` — follow-up firmware PR: add `uint8_t color2[3]` to `DeviceSettings.reserved[14]`, bump `SETTINGS_VERSION`, handle in command switch, update rainbow/chase/wave/plasma in the `.ino`.
-- `npx vitest run` green at 22 files / 76 tests. Build green (181 KB JS).
-- Redeploy to https://bt-led-controller-simulator.vercel.app needed (DONE).
-
-**Roadmap v1.5 remainder:**
-- **Vercel analytics.** `npm install @vercel/analytics` in simulator workspace; mount `<Analytics />` in `App.tsx`. One-PR.
-- **PWA icons.** Add `192×192` and `512×512` PNGs to `apps/simulator/public/`, reference in `manifest.webmanifest`.
-- **Supabase shared gallery.** Schema design first (separate PR). Reuse `ExportEnvelope`.
-- **Firmware secondary colour.** See above.
-- Work WITH THE USER to find good LED patterns on the internet. Start with a web search for popular, good LED patterns, then ask the user for approval on a set of patterns, with the goal of implementing 5 patterns E2E
-
-**Constraints:** no new deps without a note, `tsc -b && vite build` clean, tests green, all UI through `BleCommandService`.
-
-**On completion:** mark steps done, run verification, write "Prompt for next agent", sign off with timestamp.
+**Verify before sign-off:** `npx vitest run`, `npm run build --workspace=@bt-led/simulator`, both exit **0**.

@@ -31,7 +31,7 @@
 #define MAX_EFFECTS 14                // Maximum number of effects
 
 // Settings Storage
-#define SETTINGS_VERSION 1            // Settings version for migration
+#define SETTINGS_VERSION 2            // v2: color2 RGB + secondary flag (SETTINGS_VERSION was 1)
 #define SETTINGS_MAGIC 0x4C454447     // "LEDG" magic number for settings validation
 
 // ========================================
@@ -143,11 +143,13 @@ struct DeviceSettings {
   uint8_t powerMode;           // Power mode (0=normal, 1=low power, 2=eco)
   uint8_t autoOff;             // Auto-off timeout in minutes (0=disabled)
   uint8_t maxEffects;          // Maximum number of effects
-  uint8_t color[3];            // RGB color
+  uint8_t color[3];            // RGB color (Color A / primary palette anchor)
   uint8_t speed;               // Animation speed (0-100)
   char ownerUserId[MAX_USER_ID_LENGTH + 1]; // Owner user ID (null-terminated string)
   bool hasOwner;               // True if device has been claimed
-  uint8_t reserved[14];        // Reserved for future use (reduced to make room for ownership)
+  uint8_t color2[3];           // Secondary RGB (Color B) when hasSecondaryColor
+  uint8_t hasSecondaryColor;   // 0 = rainbow/chase/wave/plasma use defaults; 1 = use color2
+  uint8_t reserved[10];        // Reserved for future use
   uint32_t checksum;           // Settings checksum
 };
 

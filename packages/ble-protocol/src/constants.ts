@@ -33,7 +33,7 @@ export const PARAM_PATTERN = 0x01;
 export const PARAM_COLOR_RGB = 0x02;
 export const PARAM_POWER_MODE = 0x03;
 export const PARAM_SPEED = 0x04;
-/** Secondary gradient colour for palette-driven effects (simulator-side; firmware support deferred). */
+/** Secondary gradient colour for palette-driven effects (`DeviceSettings.color2` + `hasSecondaryColor` on firmware). */
 export const PARAM_COLOR2_RGB = 0x05;
 
 export const MAX_USER_ID_LENGTH = 64;
