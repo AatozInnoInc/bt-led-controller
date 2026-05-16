@@ -1061,10 +1061,10 @@ static bool applyConfigRgbPreviewFromBle(bool isSecondary, const char* errorMess
     showLeds();
     Serial.printf("  Color applied and LEDs shown\n");
     return true;
-  } else {
-    sendErrorResponse(ERROR_INVALID_PARAMETER, errorMessage);
-    return false;
   }
+
+  sendErrorResponse(ERROR_INVALID_PARAMETER, errorMessage);
+  return false;
 }
 
 void handleConfigUpdate() {
