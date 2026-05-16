@@ -94,11 +94,40 @@ Completed by: Cursor agent — 2026-05-15T23:20:00Z
 
 ---
 
+## PWA install (simulator) — sign-off
+
+**What shipped**
+
+- **`public/icons/icon-192.png`**, **`public/icons/icon-512.png`** (theme-aligned art; regenerate with **`npm run icons:pwa`** in `@bt-led/simulator`).
+- **`manifest.webmanifest`** `icons[]`; **`index.html`** `apple-touch-icon`.
+- **`src/pwaInstall.ts`** captures `beforeinstallprompt`; **`main.tsx`** calls `initPwaInstallListeners()` and registers **`/sw.js`** in **production** only (minimal pass-through SW for Chromium install eligibility).
+- **`TopBar`** **Install app** button (shown only when the deferred prompt exists).
+
+**How to smoke-test**
+
+- Production or **HTTPS**: open site, satisfy browser installability; confirm **Install app** appears and opens the OS/browser install sheet. Local **`npm run preview --workspace=@bt-led/simulator`** after a build is enough to confirm manifest, icons, and SW are copied to `dist/`.
+
+**Simulator / CI**
+
+- `npx vitest run`: **exit 0** — **24** files / **83** tests.
+- `npm run build --workspace=@bt-led/simulator`: **exit 0** — JS **~184.7 kB** (gzip **~59.8 kB**).
+
+Completed by: Cursor agent — 2026-05-15T23:50:00Z
+
+---
+
+## Prompt archive (PWA work assigned 2026-05-15)
+
+**Was:** Queue item 1: PWA; Queue item 2: five LED patterns.
+
+**Status:** **PWA** slice completed (sign-off above). **Deferred** analytics / Supabase remain in `Roadmap.md`.
+
+---
+
 ## Prompt for next agent
 
-**Queued work (owner 2026-05-15):**
+**Assigned:** **Five LED patterns E2E** — web research plus explicit maintainer-approved list → `packages/led-engine` + Vitest assertions; simulator UI only through `BleCommandService`.
 
-1. **PWA** — `192×192` / `512×512` PNGs in `apps/simulator/public/`, `manifest.webmanifest` `icons`, `beforeinstallprompt` in `main.tsx`, install affordance on `TopBar`.
-2. **Five LED patterns** — research + explicit user-approved list → engine + parity tests; UI strictly via `BleCommandService`.
+**Deferred:** Shared Supabase gallery, Vercel analytics (`Roadmap.md` » Deferred near term).
 
-**Verify before sign-off:** `npx vitest run`, `npm run build --workspace=@bt-led/simulator`, both exit **0**.
+**Verify:** `npx vitest run` and `npm run build --workspace=@bt-led/simulator` exit **0**; redeploy simulator when convenient.

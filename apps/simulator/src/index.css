@@ -36,17 +36,20 @@ body {
 }
 
 .top-bar {
-  height: 48px;
+  min-height: 48px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  column-gap: 16px;
+  row-gap: 10px;
 }
 
 .top-brand {
   display: flex;
   flex-direction: column;
   line-height: 1.05;
+  flex-shrink: 0;
 }
 
 .top-title {
@@ -65,19 +68,33 @@ body {
 
 .top-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
+  /* Full-width row under the title: .app-shell is max 880px; one horizontal row of all controls overflows. */
+  flex: 1 1 100%;
+  min-width: 0;
 }
 
-.brightness-row,
+.brightness-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.brightness-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 .led-count-row {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.brightness-row input[type="range"] {
-  width: 96px;
 }
 
 .brightness-value,
@@ -92,7 +109,9 @@ body {
 
 .led-count-chips {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
+  max-width: 100%;
 }
 
 .led-count-chip {
@@ -297,24 +316,23 @@ body {
 
 .color-wheel-wrap {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: max-content;
+  height: max-content;
   margin: 0 auto;
+  touch-action: none;
 }
 
 .color-wheel {
   cursor: crosshair;
   border-radius: 50%;
   display: block;
+  touch-action: none;
 }
 
 .color-cursor {
   position: absolute;
-  width: 5px;
-  height: 5px;
   border-radius: 50%;
   background: transparent;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 2.5px rgba(0, 0, 0, 0.6);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -639,10 +657,112 @@ input[type="range"]:disabled::-moz-range-thumb {
   }
   .top-bar {
     flex-wrap: wrap;
-    height: auto;
     padding: 6px 0;
   }
-  .brightness-row input[type="range"] {
-    width: 72px;
+}
+
+@media (max-width: 380px) {
+  @media (pointer: fine) {
+    .led-count-chip {
+      padding: 4px 6px;
+      font-size: 10px;
+    }
+  }
+}
+
+/* Touch / iOS: larger thumb, track, tap targets (brightness, speed, RGB sliders, LED chips). */
+@media (pointer: coarse) {
+  .top-title {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .top-subtitle {
+    padding-top: 0.5em;
+    font-size: 12px;
+    letter-spacing: 0.07em;
+  }
+
+  .led-count-chip {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+
+  input[type="range"] {
+    height: 44px;
+  }
+
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+    margin-top: -12px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+  }
+
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+  }
+
+  input[type="range"]:disabled::-webkit-slider-thumb,
+  input[type="range"]:disabled::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    margin-top: -12px;
+  }
+
+  input[type="range"]:disabled::-moz-range-thumb {
+    margin-top: 0;
+  }
+
+  .brightness-row {
+    flex-basis: 100%;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .speed-row {
+    gap: 12px;
+    min-height: 44px;
+  }
+
+  .rgb-sliders {
+    gap: 10px;
+  }
+
+  .rgb-row {
+    grid-template-columns: 20px 1fr 38px;
+    gap: 12px;
+    min-height: 44px;
+  }
+
+  .rgb-label {
+    font-size: 12px;
+  }
+
+  .rgb-value {
+    font-size: 13px;
+  }
+
+  .brightness-value {
+    font-size: 13px;
+  }
+
+  .speed-value {
+    font-size: 13px;
   }
 }

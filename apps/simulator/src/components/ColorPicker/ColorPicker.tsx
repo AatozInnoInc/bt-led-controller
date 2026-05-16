@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RGB } from '@bt-led/led-types';
+import { useColorWheelSize } from '../../hooks/useColorWheelSize';
 import { hexToRgb, hsvToRgb, pointToHueSat, rgbToHex, rgbToHsv } from './colorMath';
-
-const WHEEL_SIZE = 72;
 
 interface Props {
   color: RGB;
@@ -57,44 +56,71 @@ function ColorSection({
   label,
   color,
   disabled,
+  wheelSize,
   onChange,
 }: {
   label?: string;
   color: RGB;
   disabled?: boolean;
+  wheelSize: number;
   onChange(c: RGB): void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [hexInput, setHexInput] = useState(() => rgbToHex(color));
 
-  useEffect(() => { if (canvasRef.current) paintWheel(canvasRef.current); }, []);
   useEffect(() => { setHexInput(rgbToHex(color)); }, [color]);
 
   const currentHSV = rgbToHsv(color.r, color.g, color.b);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const radius = WHEEL_SIZE / 2 - 1;
-  const cursorX = WHEEL_SIZE / 2 + Math.cos((currentHSV.h * Math.PI) / 180) * currentHSV.s * radius;
-  const cursorY = WHEEL_SIZE / 2 + Math.sin((currentHSV.h * Math.PI) / 180) * currentHSV.s * radius;
+  const radius = wheelSize / 2 - 1;
+  const cursorX = wheelSize / 2 + Math.cos((currentHSV.h * Math.PI) / 180) * currentHSV.s * radius;
+  const cursorY = wheelSize / 2 + Math.sin((currentHSV.h * Math.PI) / 180) * currentHSV.s * radius;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const buf = Math.round(wheelSize * dpr);
+    canvas.width = buf;
+    canvas.height = buf;
+    paintWheel(canvas);
+  }, [wheelSize, dpr]);
 
   const pickFromEvent = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = ((clientX - rect.left) / rect.width) * WHEEL_SIZE - WHEEL_SIZE / 2;
-    const y = ((clientY - rect.top) / rect.height) * WHEEL_SIZE - WHEEL_SIZE / 2;
+    const x = ((clientX - rect.left) / rect.width) * wheelSize - wheelSize / 2;
+    const y = ((clientY - rect.top) / rect.height) * wheelSize - wheelSize / 2;
     const { h, s } = pointToHueSat(x, y, radius);
     onChange(hsvToRgb(h, s, currentHSV.v || 1));
-  }, [currentHSV.v, onChange, radius]);
+  }, [currentHSV.v, onChange, radius, wheelSize]);
+
+  const cursorDiameter = Math.round(Math.max(16, wheelSize * 0.21));
+  const ringW = Math.max(2.5, cursorDiameter * 0.12);
+  const ringOuter = ringW + 1.25;
+  const cursorStyle = {
+    left: `${cursorX}px`,
+    top: `${cursorY}px`,
+    width: `${cursorDiameter}px`,
+    height: `${cursorDiameter}px`,
+    boxShadow: `0 0 0 ${ringW}px #fff, 0 0 0 ${ringOuter}px rgba(0, 0, 0, 0.58)`,
+  } as const;
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (disabled) return;
+    if (disabled)
+      return;
+    if (e.pointerType === 'touch')
+      e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
     pickFromEvent(e.clientX, e.clientY);
   };
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!draggingRef.current) return;
+    if (!draggingRef.current)
+      return;
+    if (e.pointerType === 'touch')
+      e.preventDefault();
     pickFromEvent(e.clientX, e.clientY);
   };
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -118,16 +144,16 @@ function ColorSection({
       <div className="color-wheel-wrap">
         <canvas
           ref={canvasRef}
-          width={Math.round(WHEEL_SIZE * dpr)}
-          height={Math.round(WHEEL_SIZE * dpr)}
-          style={{ width: WHEEL_SIZE, height: WHEEL_SIZE }}
+          width={Math.round(wheelSize * dpr)}
+          height={Math.round(wheelSize * dpr)}
+          style={{ width: wheelSize, height: wheelSize, touchAction: 'none' }}
           className="color-wheel"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         />
-        <span className="color-cursor" style={{ left: `${cursorX}px`, top: `${cursorY}px` }} aria-hidden />
+        <span className="color-cursor" style={cursorStyle} aria-hidden />
       </div>
 
       <div className="rgb-sliders">
@@ -175,6 +201,8 @@ export function ColorPicker({
   onChange,
   onSecondaryChange,
 }: Props) {
+  const wheelSize = useColorWheelSize();
+
   // Placeholder shown in the Color B wheel before the user picks a value.
   const colorB = secondaryColor ?? { r: 0, g: 0, b: 255 };
 
@@ -189,7 +217,7 @@ export function ColorPicker({
         {disabled && disabledHint ? <span className="panel-note">— {disabledHint}</span> : null}
       </header>
 
-      <ColorSection color={color} disabled={disabled} onChange={onChange} />
+      <ColorSection color={color} disabled={disabled} wheelSize={wheelSize} onChange={onChange} />
 
       {showSecondary && onSecondaryChange && (
         <>
@@ -203,6 +231,7 @@ export function ColorPicker({
           <ColorSection
             color={colorB}
             disabled={disabled}
+            wheelSize={wheelSize}
             onChange={onSecondaryChange}
           />
         </>
