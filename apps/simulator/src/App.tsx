@@ -5,6 +5,7 @@ import { BleCommandService } from './engine/BleCommandService';
 import { generateArduinoCode } from './engine/CodeGenerator';
 import { usePatternLoop } from './hooks/usePatternLoop';
 import { useHashSync, useInitialHashConfig, usePresets } from './hooks/usePresets';
+import { usePwaInstall } from './hooks/usePwaInstall';
 import { LedStrip } from './components/LedStrip/LedStrip';
 import { ColorPicker } from './components/ColorPicker/ColorPicker';
 import { PatternPanel } from './components/PatternPanel/PatternPanel';
@@ -43,6 +44,7 @@ export function App() {
   const ble = useMemo(() => new BleCommandService(device), [device]);
   const { pixels } = usePatternLoop(device);
   const presets = usePresets();
+  const pwaInstall = usePwaInstall();
 
   useHashSync(config);
 
@@ -163,10 +165,12 @@ export function App() {
         ledCount={ledCount}
         brightness={config.brightness}
         ledCountOptions={LED_COUNT_OPTIONS}
+        pwaInstallOffered={pwaInstall.offered}
         onLedCount={onLedCount}
         onBrightness={onBrightness}
         onPresets={() => setPresetsOpen(true)}
         onExportCode={() => setExportOpen(true)}
+        onInstallPwa={pwaInstall.install}
       />
 
       <section className="strip-bg">

@@ -2,26 +2,30 @@ interface Props {
   ledCount: number;
   brightness: number;
   ledCountOptions: ReadonlyArray<number>;
+  pwaInstallOffered: boolean;
   onLedCount(value: number): void;
   onBrightness(value: number): void;
   onPresets(): void;
   onExportCode(): void;
+  onInstallPwa(): void | Promise<void>;
 }
 
 export function TopBar({
   ledCount,
   brightness,
   ledCountOptions,
+  pwaInstallOffered,
   onLedCount,
   onBrightness,
   onPresets,
   onExportCode,
+  onInstallPwa,
 }: Props) {
   return (
     <header className="top-bar">
       <div className="top-brand">
         <span className="top-title">LED Simulator</span>
-        <span className="top-subtitle">bt-led-controller</span>
+        <span className="top-subtitle">Visualize Your LEDs</span>
       </div>
 
       <div className="top-actions">
@@ -62,6 +66,18 @@ export function TopBar({
         <button className="btn-secondary" type="button" onClick={onPresets}>
           Presets
         </button>
+        {pwaInstallOffered ? (
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={() => {
+              void onInstallPwa();
+            }}
+            aria-label="Install app"
+          >
+            Install app
+          </button>
+        ) : null}
         <button className="btn-primary" type="button" onClick={onExportCode}>
           Export code
         </button>
