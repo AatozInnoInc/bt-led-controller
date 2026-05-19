@@ -55,6 +55,10 @@ describe('VirtualDevice.processCommand', () => {
     const ok = d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 13]));
     expect(ok).toEqual(Uint8Array.from([RESPONSE_ACK_SUCCESS]));
     expect(d.snapshot().currentSettings.currentPattern).toBe(13);
+    // 36 → dissolve (high simulator pattern id): success
+    const dissolveOk = d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 36]));
+    expect(dissolveOk).toEqual(Uint8Array.from([RESPONSE_ACK_SUCCESS]));
+    expect(d.snapshot().currentSettings.currentPattern).toBe(36);
     // 99 → not in registry: invalid parameter
     const bad = d.processCommand(Uint8Array.from([CMD_CONFIG_UPDATE, PARAM_PATTERN, 99]));
     expect(bad[0]).toBe(RESPONSE_ACK_CONFIG_MODE);

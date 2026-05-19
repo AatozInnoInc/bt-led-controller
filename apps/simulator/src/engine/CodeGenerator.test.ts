@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import type { LedPreset } from '@bt-led/led-types';
+import type { LedPreset, PatternId } from '@bt-led/led-types';
+import { PATTERN_IDS } from '@bt-led/led-types';
 import { generateArduinoCode } from './CodeGenerator';
+
+/** Matches patterns that have full inline bodies in CodeGenerator.ts `BODY`. */
+const FIRMWARE_CODEGEN_PATTERN_IDS = new Set<PatternId>([
+  'off',
+  'solid',
+  'rainbow',
+  'pulse',
+  'fade',
+  'chase',
+  'twinkle',
+  'wave',
+  'breath',
+  'strobe',
+  'meteor',
+  'colorwipe',
+  'plasma',
+  'fire',
+]);
 
 const preset = (overrides: Partial<LedPreset['config']>): LedPreset => ({
   id: 'live',
@@ -131,11 +150,15 @@ describe('generateArduinoCode', () => {
     expect(out).not.toMatch(/simulator-only/);
   });
 
-  it('larson and confetti are flagged as simulator-only', () => {
-    for (const pattern of ['larson', 'confetti'] as const) {
+  it('patterns without Arduino codegen templates are flagged simulator-only', () => {
+    for (const pattern of PATTERN_IDS) {
       const out = generateArduinoCode(preset({ pattern }));
-      expect(out, `pattern=${pattern}`).toMatch(/simulator-only/);
-      expect(out, `pattern=${pattern}`).toMatch(/clearBuf\(\);/);
+      if (FIRMWARE_CODEGEN_PATTERN_IDS.has(pattern)) {
+        expect(out, pattern).not.toMatch(/simulator-only/);
+      } else {
+        expect(out, pattern).toMatch(/simulator-only/);
+        expect(out, pattern).toMatch(/clearBuf\(\);/);
+      }
     }
   });
 });

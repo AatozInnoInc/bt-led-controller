@@ -17,13 +17,34 @@ export const PATTERN_IDS = [
   'plasma',
   'larson',
   'confetti',
+  // Simulator-first pack (ids 16–36); firmware accepts only 0..13 until ported.
+  'glitter',
+  'fairy',
+  'sparkle_plus',
+  'pacifica',
+  'aurora',
+  'sunrise',
+  'gradient',
+  'lighthouse',
+  'icu',
+  'chase_rainbow',
+  'running_saw',
+  'railway',
+  'bpm',
+  'perlin_move',
+  'distortion_waves',
+  'lightning',
+  'rain',
+  'fireworks',
+  'candle',
+  'bouncing_balls',
+  'dissolve',
 ] as const;
 
 export type PatternId = (typeof PATTERN_IDS)[number];
 
-// Integer ids 0..13 all have firmware equivalents (MAX_EFFECTS = 14).
-// Ids 14+ (larson, confetti) are simulator-only until firmware ports land.
-// VirtualDevice uses PATTERN_FROM_INT for validation, so all registered ids work.
+// Integer ids 0..13 have firmware equivalents (MAX_EFFECTS = 14).
+// Ids 14..36 are simulator-only until individually ported.
 export const PATTERN_INT: Record<PatternId, number> = {
   off: 0,
   solid: 1,
@@ -41,6 +62,27 @@ export const PATTERN_INT: Record<PatternId, number> = {
   fire: 13,
   larson: 14,
   confetti: 15,
+  glitter: 16,
+  fairy: 17,
+  sparkle_plus: 18,
+  pacifica: 19,
+  aurora: 20,
+  sunrise: 21,
+  gradient: 22,
+  lighthouse: 23,
+  icu: 24,
+  chase_rainbow: 25,
+  running_saw: 26,
+  railway: 27,
+  bpm: 28,
+  perlin_move: 29,
+  distortion_waves: 30,
+  lightning: 31,
+  rain: 32,
+  fireworks: 33,
+  candle: 34,
+  bouncing_balls: 35,
+  dissolve: 36,
 };
 
 export const PATTERN_FROM_INT: Record<number, PatternId> = Object.fromEntries(

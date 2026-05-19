@@ -1,5 +1,5 @@
 import type { LedConfig, PatternId, RGB } from '@bt-led/led-types';
-import { STATELESS_PATTERNS, createFire } from '@bt-led/led-engine';
+import { STATELESS_PATTERNS, createBouncingBalls, createFire } from '@bt-led/led-engine';
 
 // White is a clean neutral: pattern structure (which LEDs are lit, trails, gradients)
 // reads clearly regardless of pattern. Palette-driven effects (rainbow, wave, plasma,
@@ -18,7 +18,7 @@ const NOW: Record<PatternId, number> = {
   solid: 0,
   rainbow: 0,
   pulse: 400,
-  fade: 1500,    // mid-cycle → warm yellow hue
+  fade: 1500,
   chase: 200,
   twinkle: 0,
   wave: 600,
@@ -28,12 +28,40 @@ const NOW: Record<PatternId, number> = {
   meteor: 400,
   colorwipe: 800,
   plasma: 600,
-  larson: 500,   // dot somewhere near the middle of its travel
+  larson: 500,
   confetti: 0,
+  glitter: 350,
+  fairy: 0,
+  sparkle_plus: 0,
+  pacifica: 900,
+  aurora: 700,
+  sunrise: 5200,
+  gradient: 900,
+  lighthouse: 700,
+  icu: 900,
+  chase_rainbow: 400,
+  running_saw: 600,
+  railway: 400,
+  bpm: 0,
+  perlin_move: 1300,
+  distortion_waves: 500,
+  lightning: 1820,
+  rain: 950,
+  fireworks: 0,
+  candle: 450,
+  bouncing_balls: 800,
+  dissolve: 1400,
 };
 
-// Patterns that use Math.random. Swap in a seeded LCG for stable thumbnails.
-const RANDOM_PATTERNS = new Set<PatternId>(['twinkle', 'confetti']);
+// Patterns that use Math.random — seeded LCG keeps grid thumbnails stable.
+const RANDOM_PATTERNS = new Set<PatternId>([
+  'twinkle',
+  'confetti',
+  'glitter',
+  'fairy',
+  'sparkle_plus',
+  'fireworks',
+]);
 
 function withSeededRandom<T>(seed: number, fn: () => T): T {
   const original = Math.random;
@@ -62,16 +90,18 @@ export function thumbnailFor(id: PatternId, n = 8): RGB[] {
 
   const run = () => {
     if (id === 'fire') {
-      // Tick multiple frames so the heat column has time to develop.
       const fire = createFire(n);
       for (let i = 0; i < 40; i++) fire(pixels, cfg, i * 40);
+    } else if (id === 'bouncing_balls') {
+      const bb = createBouncingBalls(n);
+      for (let i = 0; i < 36; i++) bb(pixels, cfg, now + i * 36);
     } else if (id === 'larson') {
-      // Tick a few frames so the fading trail is visible.
       for (let i = 5; i >= 0; i--) {
         STATELESS_PATTERNS.larson(pixels, cfg, now - i * 40);
       }
     } else {
-      STATELESS_PATTERNS[id](pixels, cfg, now);
+      const fn = STATELESS_PATTERNS[id as keyof typeof STATELESS_PATTERNS];
+      fn(pixels, cfg, now);
     }
   };
 

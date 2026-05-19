@@ -222,6 +222,8 @@ body {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 5px;
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
 }
 
 .pattern-card {

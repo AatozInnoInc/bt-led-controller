@@ -15,8 +15,17 @@ import { CodeExportModal } from './components/CodeExportModal/CodeExportModal';
 
 const LED_COUNT_OPTIONS = [16, 30, 60, 96, 144] as const;
 
-// Patterns that use a colour gradient — show the Color B picker for these.
-const PALETTE_PATTERNS = new Set<PatternId>(['rainbow', 'chase', 'wave', 'plasma']);
+// Patterns that honour Color B (secondary RGB / hue span) when set.
+const PALETTE_PATTERNS = new Set<PatternId>([
+  'rainbow',
+  'chase',
+  'wave',
+  'plasma',
+  'fade',
+  'glitter',
+  'running_saw',
+  'railway',
+]);
 
 const DEFAULT_CONFIG: LedConfig = {
   pattern: 'rainbow',

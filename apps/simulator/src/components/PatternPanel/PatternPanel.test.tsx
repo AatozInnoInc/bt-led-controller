@@ -9,11 +9,11 @@ describe('PatternPanel', () => {
       <PatternPanel pattern="rainbow" speed={50} onPattern={onPattern} onSpeed={() => {}} />,
     );
 
-    const rainbow = screen.getByRole('radio', { name: /rainbow/i });
+    const rainbow = screen.getByRole('radio', { name: /^Rainbow$/ });
     expect(rainbow).toHaveAttribute('aria-checked', 'true');
     expect(rainbow.className).toMatch(/is-selected/);
 
-    const fire = screen.getByRole('radio', { name: /fire/i });
+    const fire = screen.getByRole('radio', { name: /^Fire$/ });
     fireEvent.click(fire);
     expect(onPattern).toHaveBeenCalledWith('fire');
   });

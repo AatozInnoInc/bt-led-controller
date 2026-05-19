@@ -116,6 +116,67 @@ Completed by: Cursor agent — 2026-05-15T23:50:00Z
 
 ---
 
+## Simulator pattern pack (21 effects) — sign-off
+
+**Maintainer:** Approved the full suite as shipped; no further simulator-only pattern work is queued.
+
+**What shipped (BLE ids 16–36, simulator-only until individually ported to firmware)**
+
+| Id | Slug | UI label |
+|----|------|----------|
+| 16 | `glitter` | Glitter |
+| 17 | `fairy` | Fairy |
+| 18 | `sparkle_plus` | Sparkle+ |
+| 19 | `pacifica` | Pacifica |
+| 20 | `aurora` | Aurora |
+| 21 | `sunrise` | Sunrise |
+| 22 | `gradient` | Gradient |
+| 23 | `lighthouse` | Lighthouse |
+| 24 | `icu` | ICU |
+| 25 | `chase_rainbow` | Chase Rainbow |
+| 26 | `running_saw` | Running Saw |
+| 27 | `railway` | Railway |
+| 28 | `bpm` | BPM |
+| 29 | `perlin_move` | Perlin Move |
+| 30 | `distortion_waves` | Distortion Waves |
+| 31 | `lightning` | Lightning |
+| 32 | `rain` | Rain |
+| 33 | `fireworks` | Fireworks |
+| 34 | `candle` | Candle |
+| 35 | `bouncing_balls` | Bouncing Balls |
+| 36 | `dissolve` | Dissolve |
+
+**Engine / types**
+
+- `packages/led-types/src/pattern.ts`: `PATTERN_IDS` and `PATTERN_INT` extended through **36**.
+- `packages/led-engine/src/patterns/*.ts`: one module per effect; `simNoise.ts` for deterministic noise helpers (simulator-only, not firmware parity).
+- `bouncing_balls`: stateful factory `createBouncingBalls(ledCount)` (same role as `createFire`).
+- `packages/led-engine/src/patterns/index.ts`: registry wires all ids; `extendedPack.test.ts` asserts RGB bounds and non-zero energy per effect.
+
+**Simulator UI**
+
+- `PatternPanel`: labels and icons for every `PatternId`; grid scrolls (`max-height` + `overflow-y` on `.pattern-grid`).
+- `thumbnail.ts`: preview ticks for new ids (including stateful `bouncing_balls`).
+- `App.tsx`: `PALETTE_PATTERNS` adds `fade`, `glitter`, `running_saw`, `railway` for Color B where the engine uses `secondaryColor`.
+
+**Codegen**
+
+- `CodeGenerator.ts`: `SIM_ONLY` is derived from `PATTERN_IDS` minus patterns with inline `BODY` templates (no manual list to maintain). Export for ids 14+ still emits `clearBuf()` with a simulator-only comment.
+
+**Not in scope for this slice**
+
+- Firmware ports for ids 14–36 (larson/confetti remain 14–15; new pack is 16–36).
+- RN app pattern picker parity.
+
+**Simulator / CI verification**
+
+- `npx vitest run`: **exit 0** — **25** test files / **125** tests.
+- `npm run build --workspace=@bt-led/simulator`: **exit 0** — JS **~198.4 kB** (gzip **~63.3 kB**).
+
+Completed by: Cursor agent — 2026-05-19T12:00:00Z
+
+---
+
 ## Prompt archive (PWA work assigned 2026-05-15)
 
 **Was:** Queue item 1: PWA; Queue item 2: five LED patterns.
@@ -124,10 +185,23 @@ Completed by: Cursor agent — 2026-05-15T23:50:00Z
 
 ---
 
+## Prompt archive (five LED patterns assigned 2026-05-15)
+
+**Was:** Research plus maintainer-approved list → five patterns E2E in `led-engine` and simulator.
+
+**Status:** Superseded. Maintainer expanded scope to **21** simulator effects (sign-off above). Suite is **closed** unless a new pattern is explicitly requested.
+
+---
+
 ## Prompt for next agent
 
-**Assigned:** **Five LED patterns E2E** — web research plus explicit maintainer-approved list → `packages/led-engine` + Vitest assertions; simulator UI only through `BleCommandService`.
+**Context:** Simulator has **37** patterns (ids **0–36**). Ids **0–13** have firmware equivalents; **14–36** are simulator-only (`larson` through `dissolve`).
 
-**Deferred:** Shared Supabase gallery, Vercel analytics (`Roadmap.md` » Deferred near term).
+**Not assigned:** Additional simulator-only effects (maintainer satisfied with current pack).
 
-**Verify:** `npx vitest run` and `npm run build --workspace=@bt-led/simulator` exit **0**; redeploy simulator when convenient.
+**Reasonable next work (pick only what the user asks for)**
+
+1. **Firmware:** Port selected ids from 14–36 (start with `larson` / `confetti` if aligning with `Roadmap.md` v2 notes, or any single effect from the 21-pack table above)
+2. **Deferred near term** (`Roadmap.md`): Supabase shared preset gallery; Vercel analytics
+
+**Verify before sign-off:** `npx vitest run` and `npm run build --workspace=@bt-led/simulator` exit **0** -- DONE

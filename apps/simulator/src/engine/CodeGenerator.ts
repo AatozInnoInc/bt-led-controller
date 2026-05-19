@@ -1,4 +1,5 @@
 import type { LedPreset, PatternId } from '@bt-led/led-types';
+import { PATTERN_IDS } from '@bt-led/led-types';
 
 // Generates a self-contained C++ function body that drops into bt-led-controller.ino
 // alongside the existing pattern functions. Uses ONLY helpers already present in
@@ -212,11 +213,17 @@ const BODY: Partial<Record<PatternId, BodyBuilder>> = {
     ].join('\n'),
 };
 
-// Patterns not yet ported to firmware. Generated body still compiles (clearBuf stub).
-const SIM_ONLY: Partial<Record<PatternId, string>> = {
-  larson: 'larson is simulator-only — port fadeToBlackBy_buf + triangle-wave position helper.',
-  confetti: 'confetti is simulator-only — port random HSV sparkle logic; needs random(256) for hue.',
-};
+function patternHasFirmwareCodegenBody(id: PatternId): boolean {
+  return Object.prototype.hasOwnProperty.call(BODY, id);
+}
+
+// Patterns without inline Arduino templates above: export still compiles (clearBuf stub).
+const SIM_ONLY: Partial<Record<PatternId, string>> = Object.fromEntries(
+  PATTERN_IDS.filter((pid) => !patternHasFirmwareCodegenBody(pid)).map((pid) => [
+    pid,
+    `${pid} is simulator-only — TypeScript implementation not ported to firmware.`,
+  ]),
+) as Partial<Record<PatternId, string>>;
 
 export function generateArduinoCode(preset: LedPreset): string {
   const { config, name } = preset;

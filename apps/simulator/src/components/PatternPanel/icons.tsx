@@ -3,6 +3,9 @@ import type { PatternId } from '@bt-led/led-types';
 // Inlined Tabler icon SVG paths (MIT-licensed). Phase 2 keeps zero new deps; if
 // the icon set grows past ~10 a future agent should consider @tabler/icons-react.
 
+const SPARKLES_PATH =
+  'M16 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10.5 10.5l1 -1M16.5 4.5l1 -1M7.5 16.5l1 -1M4.5 4.5l1 1M16.5 16.5l1 1M10 14h-2M12 6v-2M18 12h2';
+
 const PATHS: Record<PatternId, string> = {
   off: 'M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z',
   solid:
@@ -32,8 +35,31 @@ const PATHS: Record<PatternId, string> = {
   larson:
     'M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6z',
   // ti-sparkles: three stars — reads as random glitter/confetti
-  confetti:
-    'M16 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10.5 10.5l1 -1M16.5 4.5l1 -1M7.5 16.5l1 -1M4.5 4.5l1 1M16.5 16.5l1 1M10 14h-2M12 6v-2M18 12h2',
+  confetti: SPARKLES_PATH,
+  glitter: SPARKLES_PATH,
+  fairy: SPARKLES_PATH,
+  sparkle_plus: SPARKLES_PATH,
+  pacifica: 'M3 12c1.333 -4 2.667 -4 4 0s2.667 4 4 0s2.667 -4 4 0s2.667 4 4 0',
+  aurora: 'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M12 3v18M3 12h18',
+  sunrise: 'M12 19a1 1 0 0 1 1 1v1a1 1 0 0 1 -2 0v-1a1 1 0 0 1 1 -1zm0 -16a1 1 0 0 1 1 1v1a1 1 0 0 1 -2 0v-1a1 1 0 0 1 1 -1zm9 9a1 1 0 0 1 0 2h-1a1 1 0 0 1 0 -2h1zM4 11a1 1 0 0 1 0 2h-1a1 1 0 0 1 0 -2h1zm12.95 -6.36a1 1 0 0 1 1.41 1.41l-.7 .7a1 1 0 1 1 -1.41 -1.41l.7 -.7zM5.64 16.95a1 1 0 1 1 1.41 1.41l-.7 .7a1 1 0 0 1 -1.41 -1.41l.7 -.7zm12.72 0l.7 .7a1 1 0 0 1 -1.41 1.41l-.7 -.7a1 1 0 0 1 1.41 -1.41zM6.34 4.64l.7 .7a1 1 0 1 1 -1.41 1.41l-.7 -.7a1 1 0 1 1 1.41 -1.41zM12 7a5 5 0 1 1 0 10a5 5 0 0 1 0 -10z',
+  gradient: 'M22 17h-2a8 8 0 1 0 -16 0h-2a10 10 0 1 1 20 0zm-4 0h-2a4 4 0 1 0 -8 0h-2a6 6 0 1 1 12 0zm-4 0h-4a2 2 0 1 1 4 0z',
+  lighthouse:
+    'M21 3l-5 5M19 13l2 -2M13 19l-2 2M14.929 14.929l3.536 3.536M11 5l3 3M5.5 13.5l5 5M3 21c3.949 -.625 7.5 -2.5 9 -4s3.375 -5.051 4 -9c-3.949 .625 -7.5 2.5 -9 4s-3.375 5.051 -4 9z',
+  icu: 'M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6z',
+  chase_rainbow:
+    'M22 17h-2a8 8 0 1 0 -16 0h-2a10 10 0 1 1 20 0zm-4 0h-2a4 4 0 1 0 -8 0h-2a6 6 0 1 1 12 0zm-4 0h-4a2 2 0 1 1 4 0z',
+  running_saw: 'M3 12c1.333 -4 2.667 -4 4 0s2.667 4 4 0s2.667 -4 4 0s2.667 4 4 0',
+  railway: 'M5 12l14 0M13 18l6 -6M13 6l6 6',
+  bpm: 'M3 12h4l3 8l4 -16l3 8h4',
+  perlin_move:
+    'M9 9m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M15 15m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0',
+  distortion_waves: 'M3 12c1.333 -4 2.667 -4 4 0s2.667 4 4 0s2.667 -4 4 0s2.667 4 4 0',
+  lightning: 'M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11',
+  rain: 'M3 12c1.333 -4 2.667 -4 4 0s2.667 4 4 0s2.667 -4 4 0s2.667 4 4 0',
+  fireworks: SPARKLES_PATH,
+  candle: 'M12 12c2 -2.96 0 -7 -1 -8c0 3.038 -1.773 4.741 -3 6c-1.226 1.26 -2 3.24 -2 5a6 6 0 1 0 12 0c0 -1.532 -1.056 -3.94 -2 -5c-1.786 3 -2.791 3 -4 2z',
+  bouncing_balls: 'M12 7a5 5 0 1 1 0 10a5 5 0 0 1 0 -10z',
+  dissolve: 'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M12 3v18M3 12h18',
 };
 
 const COLORS: Record<PatternId, string> = {
@@ -53,6 +79,27 @@ const COLORS: Record<PatternId, string> = {
   plasma: 'rgba(141,222,217,0.85)',
   larson: 'rgba(255,80,80,0.90)',
   confetti: 'rgba(255,220,255,0.85)',
+  glitter: 'rgba(255,245,200,0.90)',
+  fairy: 'rgba(255,210,170,0.88)',
+  sparkle_plus: 'rgba(230,230,255,0.88)',
+  pacifica: 'rgba(100,190,210,0.90)',
+  aurora: 'rgba(120,255,170,0.85)',
+  sunrise: 'rgba(255,190,120,0.88)',
+  gradient: 'rgba(200,160,255,0.85)',
+  lighthouse: 'rgba(255,200,120,0.88)',
+  icu: 'rgba(255,130,130,0.88)',
+  chase_rainbow: 'rgba(180,140,255,0.85)',
+  running_saw: 'rgba(140,200,255,0.85)',
+  railway: 'rgba(255,255,200,0.80)',
+  bpm: 'rgba(255,100,180,0.85)',
+  perlin_move: 'rgba(160,220,200,0.85)',
+  distortion_waves: 'rgba(220,130,255,0.85)',
+  lightning: 'rgba(240,240,255,0.95)',
+  rain: 'rgba(120,200,255,0.85)',
+  fireworks: 'rgba(255,200,255,0.90)',
+  candle: 'rgba(255,170,90,0.88)',
+  bouncing_balls: 'rgba(180,220,255,0.88)',
+  dissolve: 'rgba(200,200,240,0.80)',
 };
 
 interface Props {
