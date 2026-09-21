@@ -35,6 +35,7 @@ import { BluetoothDevice } from '../types/bluetooth';
 import { DeviceSettings, RGBColor } from '../utils/bleConstants';
 import { ConfigModeStatus } from '../domain/bluetooth/configurationModule';
 import { hexToRgb, rgbToHex } from '../utils/colors';
+import { EmiRiskBanner } from '../components/EmiRiskBanner';
 
 // Development mode: Set to true to test UI without a real device connection
 const forceDevMode = Constants.expoConfig?.extra?.forceDevMode === true;
@@ -1312,6 +1313,13 @@ const ConfigScreen: React.FC = () => {
       {config && (
         <View style={styles.section}>
           <ColorPicker />
+          <EmiRiskBanner
+            color={selectedColor}
+            brightness={brightness}
+            speed={speed}
+            effectType={effectType}
+            deviceId={connectedDevice?.id ?? 'unknown-device'}
+          />
         </View>
       )}
 
