@@ -36,3 +36,6 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .vercel
+
+# Claude Code local agent worktrees (session-local, never project content)
+.claude/
