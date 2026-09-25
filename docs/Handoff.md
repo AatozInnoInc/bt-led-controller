@@ -216,7 +216,7 @@ Completed by: nightly session worker (Claude Sonnet) — 2026-09-22T01:20:00Z
 
 ---
 
-## Prompt for next agent
+## Prompt archive (simulator next steps, superseded 2026-09-24)
 
 **Context:** Simulator has **37** patterns (ids **0–36**). Ids **0–13** have firmware equivalents; **14–36** are simulator-only (`larson` through `dissolve`).
 
@@ -228,3 +228,51 @@ Completed by: nightly session worker (Claude Sonnet) — 2026-09-22T01:20:00Z
 2. **Deferred near term** (`Roadmap.md`): Supabase shared preset gallery; Vercel analytics
 
 **Verify before sign-off:** `npx vitest run` and `npm run build --workspace=@bt-led/simulator` exit **0** -- DONE
+
+---
+
+## RN app and firmware safety hardening (Q18): orchestration plan
+
+**Why this work exists.** The Jest suite for the RN app is the project's safety net, and today most of it does not run. It protects against drawing too much power, which can burn out the LEDs, the controller or other parts. The LEDs are installed inside a guitar, so a burnout can ruin the instrument. It also protects ownership security: a claimed controller accepts commands only from its claimed device, except the claim/pair command while the controller is unclaimed. Device pairing does not work today. The maintainer has made this the top-priority program. It spans several nights.
+
+**Verified state on `main` at a093930 (2026-09-24, merged tree of PRs #3, #4 and #5):**
+
+| Area | Finding |
+|---|---|
+| Suite totals | 15 of 18 suites fail; 70 of 153 tests fail. `tsc --noEmit` reports 211 errors, all in test files. |
+| Module paths | 10 suites fail with "Cannot find module". Tests import `../domains/...` or `../domain/configDomainController`, but the code lives under `src/domain/...` with different file names. 4 of these suites are duplicate copies under the root `__tests__/`. |
+| Power safety | `parameterValidation.test.ts` calls `calculateCurrentDraw`, which no longer exists (the API is `calculateLEDCurrent` / `calculateTotalCurrent`). None of the power tests run. |
+| Ownership security | `ownership.test.ts` fails to load. |
+| Pairing | `devicePairing.test.ts` passes against mocks while real pairing is broken, so it does not cover the real path. |
+| Protocol | `ProtocolSpecification.test.ts`: `CMD_EXIT_CONFIG` and `CMD_COMMIT_CONFIG` disagree with the spec (17 and 18 are swapped). `packages/ble-protocol` is meant to be the single source of truth. |
+| Encoder tests | `bleCommandEncoder` and `errorHandling` fail with "color is not iterable". The tests pass `(r, g, b)`, but `encodeColorUpdate` takes an `[r, g, b]` tuple. Fix the tests. |
+| Firmware | The firmware does no current limiting of its own. `validateBrightness(uint8_t)` is always true, `validateColor()` returns true, and the brightness handler (`case 0x00`) sets `globalBrightness` directly, bypassing `applyPowerMode()`. The only power guard is app-side: `validatePowerConsumption`, sized for `MAX_LED_COUNT = 14` against 400 mA. The build runs up to 30 LEDs; full white at 30 LEDs is about 1,800 mA. |
+
+**Open PRs at plan time:** #4 (approved), #5 (approved), #3 (changes requested: owner's name in code comments, no firmware limiter behind `BRIGHTNESS_INPUT_IS_PERCENT`, no Handoff entry, plus rule-compliance items). Review comments are on each PR.
+
+**Sequence (one small PR per slice, maintainer merges each):**
+
+| Slice | Scope | Recommended worker model |
+|---|---|---|
+| H1 | Triage and mechanical repair: fix test import paths to `src/domain/...`, rewrite tuple-colour tests, delete the root `__tests__/` only after its `src/__tests__` twins pass, move the EMI tests under `src/__tests__/domain/`, and add a CI workflow running jest, `tsc --noEmit` and vitest on every PR. | Sonnet (mechanical, high volume) |
+| H2 | Power safety: firmware frame-current limiter as a pure C/C++ header, host-tested with g++ in CI; shared constants with the app (30 LEDs, mA per channel, 400 mA limit configurable until the battery is chosen); fix `validateBrightness`; route `case 0x00` through `applyPowerMode()`; revive the power tests; property-style tests over colour × brightness × LED count ≤ 30, proving computed current ≤ limit in both the firmware and the app. | Opus (safety-critical design) |
+| H3 | Protocol integrity: settle `CMD_EXIT_CONFIG` / `CMD_COMMIT_CONFIG` against the firmware; `packages/ble-protocol` feeds the app and a checked firmware header; a drift test fails when the two disagree. | Opus |
+| H4+ | Ownership and pairing: an unclaimed controller accepts only claim/pair; a claimed controller rejects every command from a non-owner; the claim persists across reboot; factory reset is the only way to unclaim. Firmware enforcement first, then `ownership.test.ts` loading and passing, then pairing tests that exercise the real encode-to-handler path, then diagnose and fix pairing. Steps that need a phone and a device become short, time-boxed hands-on steps for the maintainer. | Opus (security) |
+
+**Standing constraints for every slice.** Follow `.cursor/rules/*`, `README.md` and `Contributing.md`. Never delete, skip or weaken an assertion that encodes a power, security or protocol invariant; fix the code or the test so the invariant holds. A test may be deleted only if it is a verified duplicate of a passing test. No slice may increase the failing-test count, and the program ends with zero failures. Critical decisions go to the maintainer as questions and wait for an answer.
+
+Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
+
+---
+
+## Prompt for next agent
+
+**Role:** worker for slice H1 of the RN app and firmware safety hardening plan above. Recommended model: Sonnet.
+
+**Read first:** this whole document (especially "Agent workflow" and the hardening plan directly above), `.cursor/rules/*`, `README.md`, `Contributing.md`, `docs/Architecture.md`, `jest.config.js`.
+
+**Task:** make every suite that fails on "Cannot find module" or "color is not iterable" load and run against the current code, with its assertions intact. Remove the root `__tests__/` directory once its `src/__tests__` twins pass. Move the EMI tests to `src/__tests__/domain/emi/`. Add a GitHub Actions workflow that runs `npx jest`, `npx tsc --noEmit` and `npx vitest run` on pull requests. Leave power, ownership, pairing and protocol failures that reflect real bugs failing, and list them for H2 to H4. Do not mask them.
+
+**Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
+
+**Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
