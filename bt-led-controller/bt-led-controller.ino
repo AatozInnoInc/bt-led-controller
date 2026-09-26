@@ -66,6 +66,45 @@ const uint8_t CLOCK_DELAYS[] = {
 
 const uint8_t CURRENT_CLOCK_DELAY = CLOCK_DELAYS[BITBANG_FREQUENCY_MODE];
 
+// ----------------------------------------
+// APA102 Dimming Strategy (EMI Control)
+// ----------------------------------------
+// The APA102 has two independent PWM stages: a 5-bit "global brightness"
+// field (in the LED header byte) and 8-bit per-channel color PWM. The
+// 5-bit field is refreshed once per frame and, at typical frame rates,
+// its own duty-cycle carrier lands in the ~440-580 Hz range - inside
+// what a guitar pickup reproduces. The 8-bit color PWM runs at a fixed
+// ~19.2 kHz, above hearing.
+//
+// Mode 0: dim via the 5-bit global brightness field (default, unchanged
+//         behavior - this is what the strip has always done).
+// Mode 1: pin the global field wide open (31/31) and dim by scaling the
+//         8-bit R/G/B channels instead, moving all dimming duty-cycling
+//         onto the inaudible ~19.2 kHz carrier.
+#define APA102_BRIGHTNESS_MODE 0
+
+// ----------------------------------------
+// Brightness Input Scale
+// ----------------------------------------
+// The React Native app's brightness slider sends 0-100 (see
+// src/utils/parameterValidation.ts). The firmware's brightness field is
+// 0-255 (MAX_BRIGHTNESS). Off (default) preserves today's behavior: a
+// raw 0-100 value from the app only ever reaches ~39% of true intensity.
+// On: brightness values received over BLE are treated as 0-100 and
+// scaled to the full 0-255 range before being stored or applied.
+#define BRIGHTNESS_INPUT_IS_PERCENT 0
+
+// Scaling the raw 0-100 slider up to 0-255 raises the drive current the
+// firmware will ask for at any given slider position (today's ~39% cap no
+// longer applies). MAX_FRAME_CURRENT_MA is the firmware-side current
+// limiter that is meant to bound that draw; it does not exist yet (lands
+// in a later slice). Until it does, this flag must stay off - the #error
+// below is the tripwire that enforces that instead of relying on someone
+// remembering it.
+#if BRIGHTNESS_INPUT_IS_PERCENT && !defined(MAX_FRAME_CURRENT_MA)
+#error "BRIGHTNESS_INPUT_IS_PERCENT requires a firmware-side current limiter (MAX_FRAME_CURRENT_MA)"
+#endif
+
 // Global brightness level (0-255) - applied per-LED in APA102 protocol
 uint8_t globalBrightness = DEFAULT_BRIGHTNESS;
 
@@ -115,6 +154,15 @@ static inline void sendEndFrame() {
 static inline void sendLED(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness) {
   // APA102 LED frame: 0b111BBBBB BBBBBBBB GGGGGGGG RRRRRRRR
   // Where BBBBB is 5-bit brightness (0-31)
+  if (APA102_BRIGHTNESS_MODE == 1) {
+    // Move dimming off the audible 5-bit global-brightness carrier and
+    // onto the inaudible 8-bit color PWM: pin the global field to max
+    // and scale the color channels by the requested brightness instead.
+    r = (uint8_t)(((uint16_t)r * brightness) / 255);
+    g = (uint8_t)(((uint16_t)g * brightness) / 255);
+    b = (uint8_t)(((uint16_t)b * brightness) / 255);
+    brightness = 255;
+  }
   uint8_t brightnessBits = map(brightness, 0, 255, 0, 31);
   uint8_t ledHeader = 0b11100000 | brightnessBits;
 
@@ -1089,6 +1137,13 @@ void handleConfigUpdate() {
     case 0x00: { // Brightness
       if (bleuart.available() >= 1) {
         int brightness = bleuart.read();
+        if (BRIGHTNESS_INPUT_IS_PERCENT) {
+          // Incoming value is 0-100 from the app; scale to 0-255.
+          brightness = (brightness * 255 + 50) / 100;
+          if (brightness > 255) {
+            brightness = 255;
+          }
+        }
         if (validateBrightness(brightness)) {
           ramBuffer.brightness = brightness;
           // Also update currentSettings for immediate preview
