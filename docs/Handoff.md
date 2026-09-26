@@ -332,5 +332,3 @@ Completed by: H1 worker (Claude Sonnet) — 2026-09-25T02:00:00Z
 **Done when:** the firmware has a real frame-current limiter proven correct by property-style g++ tests in CI; `validateBrightness` and the `0x00` brightness path are fixed; `parameterValidation.test.ts` passes against the current API; the failing-test count is lower than H1's after-count (68); this document is updated per "Agent workflow", with this prompt archived and the H3 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit`, `npx vitest run` (apps/simulator and packages/led-engine), and the new g++ firmware test job. Report before-and-after counts for each, same format as the H1 status table above.
-
-**Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
