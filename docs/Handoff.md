@@ -193,6 +193,47 @@ Completed by: Cursor agent — 2026-05-19T12:00:00Z
 
 ---
 
+## Remove orphaned duplicate Jest manual mocks — sign-off
+
+**What changed**
+
+- Deleted `__tests__/__mocks__/react-native.ts` and `__tests__/__mocks__/@react-native-async-storage/async-storage.ts` — byte-for-byte duplicates of `src/__tests__/__mocks__/*`, which is what `jest.config.js`'s `moduleNameMapper` actually points to. Jest's haste-map auto-discovers `__mocks__` folders regardless of the mapper, so the repo was indexing two manual mocks for the same module names and printing a `duplicate manual mock found` warning on every run.
+- No source or test behavior changed. This is repo hygiene only.
+
+**Also verified while in the repo (no code change)**
+
+- PR #3's EMI domain code and tests: sound, all 15 tests passing.
+- Firmware bitbang clock table (`CLOCK_DELAYS[]`, `DATA_PIN`/`CLOCK_PIN`) matches what is already documented on the Build Bench.
+
+**Flagged, not fixed here:** on plain `main`, `npx jest` with no path filter shows 15 of 16 suites failing, 70 of 138 tests failing, almost all "Cannot find module" errors from test files importing paths that no longer match the source tree. `npx tsc --noEmit` cannot even start (`tsconfig.json` conflicts with `expo/tsconfig.base`). Both predate this PR and reproduce on a clean `main` checkout. This became the top-priority Q18 hardening program (see the plan and H1-H4 slices later in this document).
+
+**Verification**
+
+- `npx jest --silent` before and after deleting the mocks: identical `15 failed / 1 passed` suites, `70 failed / 68 passed` tests both times — zero regression, only the duplicate-mock warning disappears.
+- `npx jest src/__tests__/domains/emi` (on PR #3's branch): 15/15 passing.
+
+Completed by: nightly session worker (Claude Sonnet) — 2026-09-22T01:20:00Z
+
+---
+
+## tsconfig fix + dead bleCommunicationService removal + ts-jest — sign-off
+
+**What changed**
+
+- Fixed `tsconfig.json`: dropped the local `moduleResolution: "node"` override, which conflicted with `customConditions` inherited from `expo/tsconfig.base` (needs `bundler`/`node16`/`nodenext`). This is what let `npx tsc --noEmit` run to completion again instead of dying immediately on `TS5098`.
+- Installed `ts-jest` as an actual dev dependency (`jest.config.js` already required it via `preset: 'ts-jest'`, but it was never declared, so `npm test` could not run at all before this).
+- Deleted `src/utils/bleCommunicationService.ts` — confirmed by repo-wide grep to be imported nowhere. It called `BLECommandEncoder.encodeColorUpdate(r, g, b)` with three loose numbers against a signature that takes a single `[r, g, b]` tuple, which is the same "color is not iterable" bug pattern seen elsewhere in the live suite. Removing it removes the dead code and the footgun in one pass.
+- No source or test files were fixed or deleted beyond the above — every "Cannot find module" import investigated resolves to a module that still exists under a different path or name, so nothing qualified as genuinely dead code under a conservative bar. That triage work carried forward into the Q18 hardening plan's H1 slice (below).
+
+**Verification**
+
+- `npx tsc --noEmit`: before this PR, immediate `TS5098` crash. After the tsconfig fix, 212 errors (211 in test files, 1 in the now-deleted dead file). After deleting the dead file: 211 errors, all in test files, zero in `src/`.
+- `npx jest`: unchanged at 15/16 suites failing, 70/138 tests failing, before and after (expected, since no test files were touched).
+
+Completed by: nightly session worker (Claude Sonnet) — 2026-09-23T01:25:00Z
+
+---
+
 ## Prompt archive (simulator next steps, superseded 2026-09-24)
 
 **Context:** Simulator has **37** patterns (ids **0–36**). Ids **0–13** have firmware equivalents; **14–36** are simulator-only (`larson` through `dissolve`).
