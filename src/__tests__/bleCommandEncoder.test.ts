@@ -80,8 +80,15 @@ describe('BLECommandEncoder', () => {
 
     describe('Color Update Commands', () => {
       it('should encode UPDATE_COLOR with HSV values', () => {
-        const command = BLECommandEncoder.encodeUpdateColor(MOCK_COLORS.red);
-        
+        // encodeUpdateColor takes a positional [x, y, z] tuple, not an {h, s, v}
+        // object. The three MOCK_COLORS.red channel values still travel through
+        // in the same order, so the assertions below are unchanged.
+        const command = BLECommandEncoder.encodeUpdateColor([
+          MOCK_COLORS.red.h,
+          MOCK_COLORS.red.s,
+          MOCK_COLORS.red.v,
+        ]);
+
         expect(command[0]).toBe(CommandType.UPDATE_COLOR);
         expect(command[1]).toBe(MOCK_COLORS.red.h);
         expect(command[2]).toBe(MOCK_COLORS.red.s);
@@ -90,12 +97,8 @@ describe('BLECommandEncoder', () => {
       });
 
       it('should clamp HSV values to 0-255 range', () => {
-        const command = BLECommandEncoder.encodeUpdateColor({
-          h: 300,
-          s: -10,
-          v: 260,
-        });
-        
+        const command = BLECommandEncoder.encodeUpdateColor([300, -10, 260]);
+
         expect(command[1]).toBe(255); // h clamped to 255
         expect(command[2]).toBe(0);   // s clamped to 0
         expect(command[3]).toBe(255); // v clamped to 255
