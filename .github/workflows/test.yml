@@ -6,8 +6,10 @@ on:
       - main
 
 jobs:
-  rn-app:
-    name: RN app (jest + tsc)
+  # Jest stays red until H2-H4 fix the failures H1 deliberately left.
+  # It is its own job so a non-zero Jest exit cannot skip the typecheck.
+  rn-app-jest:
+    name: RN app (jest)
     runs-on: ubuntu-latest
 
     steps:
@@ -25,6 +27,23 @@ jobs:
 
       - name: Run Jest (RN app)
         run: npx jest
+
+  rn-app-tsc:
+    name: RN app (tsc)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Type check (RN app)
         run: npx tsc --noEmit

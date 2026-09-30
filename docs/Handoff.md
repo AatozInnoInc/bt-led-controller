@@ -373,3 +373,16 @@ Completed by: H1 worker (Claude Sonnet) — 2026-09-25T02:00:00Z
 **Done when:** the firmware has a real frame-current limiter proven correct by property-style g++ tests in CI; `validateBrightness` and the `0x00` brightness path are fixed; `parameterValidation.test.ts` passes against the current API; the failing-test count is lower than H1's after-count (68); this document is updated per "Agent workflow", with this prompt archived and the H3 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit`, `npx vitest run` (apps/simulator and packages/led-engine), and the new g++ firmware test job. Report before-and-after counts for each, same format as the H1 status table above.
+
+---
+
+## CI jobs split (2026-09-30)
+
+The H2 prompt above is still the live prompt. This note only records a workflow correction on top of H1.
+
+**What changed**
+
+- `.github/workflows/test.yml` ran `npx jest` and `npx tsc --noEmit` in one job named "RN app (jest + tsc)". Jest exits non-zero on the failures H1 left in place, so the typecheck step never started and its result never appeared on the PR.
+- Jest and the typecheck are now separate jobs: "RN app (jest)" and "RN app (tsc)". Vitest is unchanged. H2 still adds its g++ job beside these and does not remove them.
+
+Completed by: Cursor agent — 2026-09-30T18:30:00Z
