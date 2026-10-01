@@ -294,3 +294,20 @@ Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
 **Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
+
+---
+
+## H2 decisions applied by default (2026-09-28)
+
+Two H2 decisions were put to Cow in the morning briefings of 2026-09-26, 2026-09-27 and 2026-09-28 with the default stated each time, and no answer came back. Per the standing rule that a stated default applies on silence, they are now settled. The H2 worker treats them as given and does not re-ask.
+
+| Question | Applied answer |
+|---|---|
+| Where the shared power-safety constants live (30 LED maximum, mA per channel at full, the 400 mA frame limit) so firmware and app read one source | `packages/ble-protocol`, beside the existing protocol constants. No new package. |
+| Whether H2 waits for the real battery number before setting the frame-current limit | No. Hard-code 400 mA as a named, overridable constant with a TODO naming the battery decision as the follow-up. H2 does not block on it. |
+
+Both remain reversible in one place once the battery is chosen, which is why waiting was not worth a night.
+
+Cow may overturn either at any time; if he does, the morning session queues a replacement entry here and the owning slice re-opens.
+
+Completed by: PM orchestrator (Claude, morning session) — 2026-09-28T12:00:00Z
