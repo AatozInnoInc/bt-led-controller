@@ -234,6 +234,47 @@ Completed by: nightly session worker (Claude Sonnet) — 2026-09-23T01:25:00Z
 
 ---
 
+## EMI risk warning banner + Phase 2 firmware flags — sign-off
+
+**What changed**
+
+- `src/domain/emi/emiRiskModel.ts`: pure, RN-free EMI/noise risk scoring across four weighted factors (brightness dimming PWM, drive current, pattern movement, data-line activity), each tied to a named physical mechanism. Reuses `calculateLEDCurrent` from `parameterValidation.ts` so this warning and the existing power-budget warning agree on what "worst case" means.
+- `src/domain/emi/emiCalibration.ts`: derives calibrated risk-band thresholds from field observations once at least 6 exist with both "quiet" and "heard" verdicts present.
+- `src/repositories/emiCalibrationRepository.ts`: AsyncStorage-backed per-device observation history, following the existing repository pattern.
+- `src/components/EmiRiskBanner.tsx` and `ConfigScreen.tsx` wiring: collapsed one-line verdict under the color picker, expandable factor breakdown, and Quiet / I hear it calibration buttons. Advisory only; the banner never blocks or clamps a control.
+- `bt-led-controller.ino`: two Phase 2 flags for the Build Bench "Test B" listening test, both default off. `APA102_BRIGHTNESS_MODE` dims via the 8-bit color PWM instead of the audible 5-bit global-brightness field. `BRIGHTNESS_INPUT_IS_PERCENT` corrects the app's 0-100 slider being sent into the firmware's 0-255 brightness field, which currently tops out around 39 percent of true intensity.
+- `package.json`: added `ts-jest` as a dev dependency. `jest.config.js` already required it, so `npm test` could not run at all before this change.
+- 15 new unit tests (`emiRiskModel.test.ts`, `emiCalibration.test.ts`), all passing.
+
+**Review fixes (blocking items resolved before merge, amended into the same commit)**
+
+- **Owner's name in source.** The design-contract comments in `emiRiskModel.ts` and `emiCalibration.ts` referenced the owner by his real first name. Both replaced with "Cow".
+- **Missing firmware current-limiter tripwire.** `BRIGHTNESS_INPUT_IS_PERCENT` raises the firmware's maximum output roughly 2.55x with no firmware-side current limit backing it up. Added a compile-time guard next to the flag's definition in `bt-led-controller.ino`:
+  ```cpp
+  #if BRIGHTNESS_INPUT_IS_PERCENT && !defined(MAX_FRAME_CURRENT_MA)
+  #error "BRIGHTNESS_INPUT_IS_PERCENT requires a firmware-side current limiter (MAX_FRAME_CURRENT_MA)"
+  #endif
+  ```
+  `MAX_FRAME_CURRENT_MA` does not exist yet; it is planned for a later slice (the H2 current-limiter work). This tripwire only prevents the flag from being enabled before that limiter lands.
+- **This Handoff entry**, added per the agent workflow rule.
+- Also fixed, while already touching these files: three single-line `if` statements this PR had introduced (`bt-led-controller.ino`, `EmiRiskBanner.tsx`, `emiRiskModel.ts` `bandFor()`), each split onto its own braced block, and reworked the banner's mount-guard from a negative `cancelled` check to a positive `active` check, per `.cursor/rules/code-design-qa.mdc`.
+
+**Deferred (non-blocking review items, left for a later PR)**
+
+- Model and calibration correctness: the brightness-scale assumption baked into `brightnessDimmingScore`, additive versus multiplicative combination of the dimming and movement factors, storing raw inputs instead of scores so recalibration survives a weight change, the accuracy of the PWM-carrier mechanism comment, the firmware build-flag name shown in end-user advice text, and the observation repository's error and pooling edges. Each needs design judgment, not a mechanical fix.
+- Test file location: `src/__tests__/domains/emi/` versus `src/domain/emi/`. This mirrors the same `domains/` (tests) versus `domain/` (source) split already used for `bluetooth`, `common`, and `config`, so it is a repo-wide naming question, not something scoped to this PR.
+- Extensive logging at EMI decision points (band chosen, calibration applied or rejected). Not added here; picking log levels and payloads needs design judgment.
+
+**Verification**
+
+- `npx jest src/__tests__/domains/emi`: exit 0, 2 suites, 15 tests, all passing.
+- `npx tsc --noEmit`: one pre-existing error (`tsconfig.json(2,3): TS5098 customConditions`), confirmed present on the branch before this PR's changes too by stashing them and re-running. No new errors in `src/`.
+- `npx jest` (full suite): 83 tests passing, up from 68 before this PR. 15 suites still fail on this branch for reasons unrelated to this PR (duplicate `__mocks__` haste-map entries under `__tests__/` and `src/__tests__/`, and a `domains/common` versus `src/domains/common` module-path mismatch); both predate this PR and are out of scope here.
+
+Completed by: Claude Code (PR #3 review-fix agent) — 2026-09-25T01:13:03Z
+
+---
+
 ## Prompt archive (simulator next steps, superseded 2026-09-24)
 
 **Context:** Simulator has **37** patterns (ids **0–36**). Ids **0–13** have firmware equivalents; **14–36** are simulator-only (`larson` through `dissolve`).
