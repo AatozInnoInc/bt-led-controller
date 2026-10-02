@@ -1,0 +1,55 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  rn-app:
+    name: RN app (jest + tsc)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jest (RN app)
+        run: npx jest
+
+      - name: Type check (RN app)
+        run: npx tsc --noEmit
+
+  simulator-and-packages:
+    name: Vitest (simulator + packages)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Vitest (apps/simulator)
+        working-directory: apps/simulator
+        run: npx vitest run
+
+      - name: Run Vitest (packages/led-engine)
+        working-directory: packages/led-engine
+        run: npx vitest run

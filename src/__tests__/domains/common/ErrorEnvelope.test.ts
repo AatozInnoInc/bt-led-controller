@@ -6,7 +6,7 @@ import {
   isErrorEnvelope,
   formatErrorForUser,
   ErrorCode,
-} from '../../../domains/common/ErrorEnvelope';
+} from '../../../domain/common/errorEnvelope';
 
 describe('ErrorEnvelope', () => {
   describe('parseErrorEnvelope', () => {
