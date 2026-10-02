@@ -351,7 +351,9 @@ Completed by: H1 worker (Claude Sonnet) — 2026-09-25T02:00:00Z
 
 ---
 
-## Prompt for next agent
+## Prompt archive (H2 completed, superseded 2026-10-02)
+
+**Status:** done. See "H2 status (2026-10-02)" below for the result, decisions and deviations.
 
 **Role:** worker for slice H2 of the RN app and firmware safety hardening plan above (see the "RN app and firmware safety hardening (Q18): orchestration plan" section, H2 row). Recommended model: Opus. This is safety-critical design, not mechanical repair.
 
@@ -373,3 +375,112 @@ Completed by: H1 worker (Claude Sonnet) — 2026-09-25T02:00:00Z
 **Done when:** the firmware has a real frame-current limiter proven correct by property-style g++ tests in CI; `validateBrightness` and the `0x00` brightness path are fixed; `parameterValidation.test.ts` passes against the current API; the failing-test count is lower than H1's after-count (68); this document is updated per "Agent workflow", with this prompt archived and the H3 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit`, `npx vitest run` (apps/simulator and packages/led-engine), and the new g++ firmware test job. Report before-and-after counts for each, same format as the H1 status table above.
+
+---
+
+## H2 status (2026-10-02)
+
+**Branch:** `claude/h2-power-safety`, created from `origin/claude/h1-test-suite-triage` (PR #7, unmerged). Merge #7 first; this branch is built on it.
+
+**Plan table, H2 row:** done. All six task items are complete. The orchestrator supplied the settled decisions (see also "H2 decisions applied by default (2026-09-28)" on the `claude/handoff-h2-decisions` branch), so they were not re-asked: constants live in `packages/ble-protocol`; 400 mA is hard-coded as an overridable `MAX_FRAME_CURRENT_MA` with a battery TODO; the `showLeds()` 30 FPS bypass is left alone; the limiter keeps the `MAX_FRAME_CURRENT_MA` name so PR #3's `#error` tripwire composes with it.
+
+**Before/after (measured on this branch; "before" is the H1 after-state, re-measured here before any H2 change):**
+
+| Check | Before | After |
+|---|---|---|
+| `npx jest` suites | 9 failed, 3 passed (12 total) | 8 failed, 4 passed (12 total) |
+| `npx jest` tests | 68 failed, 96 passed (164 total) | 49 failed, 122 passed (171 total) |
+| `npx tsc --noEmit` | 198 errors | 162 errors (the 36 in `parameterValidation.test.ts` are gone; no new errors) |
+| `npx vitest run` (apps/simulator) | 6 files / 29 tests, all passing | unchanged, all passing |
+| `npx vitest run` (packages/led-engine) | 19 files / 96 tests, all passing | unchanged, all passing |
+| g++ firmware job (new `firmware-host` job) | did not exist | constants drift check passes; `power_limiter_test`: 232,709,924 checks, 0 failures |
+| `npm run build --workspace=@bt-led/simulator` | passing | passing (it consumes `@bt-led/ble-protocol`, which gained one export) |
+| `npx expo export --platform android` (RN bundle, run locally, not in CI) | not measured | bundles (1208 modules), so Metro resolves the new shared-constants import |
+
+The 19 failing `parameterValidation.test.ts` tests now pass. The file has 26 tests: the 19 originals translated, 4 new unit tests and 3 property sweeps. Every remaining jest failure is unchanged from the H1 table above and keeps its owner (H3 or H4+).
+
+**What changed**
+
+| Task | Change |
+|---|---|
+| 1. Firmware limiter | `bt-led-controller/power_limiter.h`: pure C++ header, only `<stdint.h>`. `powerLimitFrameBrightness(channelSum, brightness, limitMa, maPerChannel)` returns the largest brightness at or under the requested one that keeps the frame at or under the limit, in exact integer math. `bitbangShow()` sums the frame's R+G+B bytes and sends the limited brightness. `globalBrightness` is not modified; only the value on the wire is capped. Every frame goes through `bitbangShow()` (it is the only caller of `sendLED()`). Serial logs once when the limiter engages and once when it releases. |
+| 2. Shared constants | Single source of truth: `packages/ble-protocol/src/powerSafety.ts` (`MAX_LED_COUNT = 30`, `MA_PER_CHANNEL_AT_FULL = 20`, `MAX_FRAME_CURRENT_MA = 400`), exported from the package index. Firmware mirror: `bt-led-controller/power_safety_constants.h`, checked in rather than generated. `scripts/check-power-safety-constants.mjs` fails CI on any drift (verified by changing 400 to 401). `MAX_FRAME_CURRENT_MA` is `#ifndef`-guarded so a build can override it. The header is included right after `device_config.h`, before where PR #3 puts its `#error`, so the two compose once both land. The `.ino` also refuses to compile if `LED_COUNT > MAX_LED_COUNT`. |
+| 3. `validateBrightness` | Now takes `int` and checks `0..MAX_BRIGHTNESS` through `powerIsBrightnessInRange` (host-tested). The old `uint8_t` parameter made `brightness <= 255` always true and silently wrapped `-1` (no data) to 255. Rejections are logged. Honest scope note: the protocol sends one byte, so every value that arrives intact is in range; the real power protection is the limiter. |
+| 4. Brightness `case 0x00` | Sets `currentSettings.brightness`, then calls `applyPowerMode()` (which applies the power-mode divisor and calls `showLeds()`) instead of writing `globalBrightness` directly. |
+| 5. Power tests revived | `src/__tests__/parameterValidation.test.ts` rewritten against `calculateLEDCurrent` / `calculateTotalCurrent` / `validateColorAndPower` with `[r, g, b]` tuples and 0-100 brightness. Each original assertion is kept and translated (see "Test translation notes"). |
+| 6. Property tests | Firmware: every per-LED channel sum 0..765 and a 16-level RGB grid, each x brightness 0..255 x LED count 0..30, plus 200,000 seeded mixed-colour frames at seven limits. Each case checks that the linear model, the APA102 5-bit global field and per-channel scaling (PR #3's mode 1) all stay at or under the limit, that safe frames are untouched, and that the limiter dims no more than needed. App: every channel sum x brightness 0..100 x LED count 0..30 (2.4M cases) proves `validatePowerConsumption` accepts exactly the configurations at or under the limit; a colour grid with fractional brightness; and `calculateMaxSafeBrightness` is always safe and tight. Mutation-checked: an off-by-one in the firmware limiter and a 5 mA slack in the app guard both make the sweeps fail. |
+
+**App-side changes beyond the test file**
+
+- `src/utils/parameterValidation.ts`: constants now come from the shared file (`MAX_LED_COUNT` goes from 14 to 30, so every default is sized for the real worst case). The unused `BATTERY_MAX_CURRENT = 500` is removed; the battery TODO now lives on `MAX_FRAME_CURRENT_MA`. New `calculateMaxSafeBrightness()` backs the "Reduce brightness to N%" hint, which the old inline formula could put a hair over the limit at exact boundaries. Blocked and warning decisions log through `logger`.
+- `src/screens/ConfigScreen.tsx`: the power indicator's four hard-coded `400`s now read `MAX_FRAME_CURRENT_MA`.
+- **Behaviour change Cow will see in the app:** with the default now 30 LEDs instead of 14, the app blocks more combinations. Full white is blocked above 22% brightness (was above 47%). This is the intended direction.
+- The app imports the shared file by relative path (`../../packages/ble-protocol/src/powerSafety`), not `@bt-led/ble-protocol`. The RN app had no `@bt-led/*` import before, and the relative path keeps Metro, ts-jest and tsc on plain file resolution. Verified with jest, tsc and a local `expo export`.
+- `.github/workflows/test.yml`: new `firmware-host` job (drift check, g++ build with `-Wall -Wextra -Werror`, run). The existing `rn-app` and `simulator-and-packages` jobs are untouched.
+
+**The current model and its limits (read this before trusting the number)**
+
+- Model: frame mA = (sum of all R, G, B bytes) x 20 mA x brightness / (255 x 255). The app uses the same model with brightness as a percentage. It is an upper bound for both APA102 dimming modes.
+- Not modelled: APA102 idle current (about 1 mA per LED even when dark, so about 10 mA at 10 LEDs and 30 mA at 30), plus the controller and BLE radio. The 400 mA limit covers LED colour current only.
+- 20 mA per channel is the APA102 datasheet nominal, not a measurement of this strip.
+- Today the app sends brightness 0-100 and the firmware treats it as 0-255 (PR #3's `BRIGHTNESS_INPUT_IS_PERCENT` addresses this). With today's `LED_COUNT 10` that caps full white at about 235 mA, so the limiter will not engage from the app alone until PR #3's flag is on or `LED_COUNT` grows.
+
+**Test translation notes (`parameterValidation.test.ts`)**
+
+- Brightness values on the old 0-255 scale (255, 128, 200, 191, 154) became 100, 50, 80, an exact-limit case and 18 on the 0-100 scale. Each new value exercises the same boundary under the current model with the default of 30 LEDs. The "840 mA at 14 LEDs" and "half brightness about 420 mA" checks pass `ledCount = 14` explicitly so the original numbers still hold.
+- `result.currentDrawMa` and `result.error.severity` do not exist in the current `ValidationResult`. Severity maps to the existing contract: "error" is `isValid: false`; "warning" is `isValid: true` with `error` set. Current draw is asserted through `calculateTotalCurrent`, and the blocked message is asserted to contain the mA figure and the limit.
+- "exactly 400 mA" was a conditional assertion; it is now deterministic: 20 LEDs of pure red is exactly 400 mA and must be allowed (the limit is inclusive), 21 must be blocked.
+- `toContain('power')` became `toMatch(/power/i)`: the real message starts with "Power".
+- "invalid HSV values" became out-of-range RGB `[300, 300, 300]`, and the test now also asserts it is rejected, which is stronger.
+- "effect type should not affect power" is kept: the power API takes no effect type, and two configurations that differ only in effect type get identical results.
+- `testFixtures.ts` is untouched (its HSV fixtures are still used by other suites); the RGB fixtures are local to this file.
+
+**Not verified (no hardware or Arduino toolchain in this session)**
+
+- The `.ino` was not compiled for the nRF52. As a substitute, the whole sketch was syntax-checked on the host with g++ against hand-written stubs of `Arduino.h`, `bluefruit.h` and the LittleFS headers. H2's edits add no errors or warnings, and the old "comparison is always true" warning on `validateBrightness` is gone. That is not a real build.
+- No current was measured on a real strip.
+
+**Found, not fixed (pre-existing, outside H2's one concern)**
+
+- **The sketch on `main` does not compile.** `wave()` uses `positionPhase` and `g`, which no longer exist: commit a830801 (Colour B) deleted the `positionPhase` line and renamed `g` to `gv` without updating the uses. The same two errors show on `origin/main` with the same stub check. The fix mirrors `packages/led-engine/src/patterns/wave.ts`: restore `uint8_t positionPhase = (uint8_t)((i * 255) / LED_COUNT);` inside the loop and call `hsv2rgb(hue, 255, gv)`. Until this is fixed, nothing can be flashed, including this PR. See the question for Cow below.
+- Power mode `case 0x03` sets `ramBuffer.powerMode` but not `currentSettings.powerMode`, and `applyPowerMode()` reads `currentSettings.powerMode`, so a power-mode change does not preview until commit. The frame limiter still caps every frame, so this is a UX bug, not a power hazard. Handed to H3 (config flow).
+- `MAX_POWER_MILLIAMPS 500` and `BRIGHTNESS_FACTOR` in `device_config.h` are defined but unused. Left alone; the limiter uses `MAX_FRAME_CURRENT_MA`.
+- Firmware `validateColor()` still returns true. With three single-byte channels every value is in range, so there is nothing to reject; current from colour is bounded by the limiter instead.
+- The `showLeds()` 30 FPS limiter bypass is left alone, per the settled decision.
+
+**Question for Cow (one line):** Fix the two-line `wave()` compile break (matching the simulator's `wave.ts`) as its own small PR now, yes or no?
+
+**Hands-on step for Cow (needs the guitar and a USB cable; about 15 minutes; only after the `wave()` fix lands):**
+
+1. Add `#define MAX_FRAME_CURRENT_MA 50` as the first line of `bt-led-controller.ino` (a temporary low limit so the limiter trips with today's 0-100 app brightness). Flash, with the Serial Monitor open at 115200 baud. (5 min)
+2. In the app, enter config mode, pick Solid White with colour white, set brightness to 22. Done when Serial shows `Power limiter engaged: requested brightness=22, sent=21, frame current=50 mA (limit 50 mA)` and the strip stays lit. (3 min)
+3. Drop brightness to 10. Done when Serial shows `Power limiter released`. (2 min)
+4. Delete the temporary line, flash again, repeat step 2. Done when no `Power limiter` line appears and brightness changes still preview immediately. (5 min)
+
+Completed by: H2 worker (Claude Opus) — 2026-10-02T01:20:00Z
+
+---
+
+## Prompt for next agent
+
+**Role:** worker for slice H3 (protocol integrity) of the RN app and firmware safety hardening plan above (see the orchestration plan's H3 row). Recommended model: Opus.
+
+**Read first:** this whole document, especially "Agent workflow" (it applies to you, and you must carry it into your own "Prompt for next agent"), the orchestration plan, the rows owned by H3 in the H1 status failing-test table, and "H2 status (2026-10-02)". Also `.cursor/rules/*`, `README.md`, `Contributing.md`, `docs/Architecture.md`, `jest.config.js`, `packages/ble-protocol/src/constants.ts`, `bt-led-controller/device_config.h`, `src/domain/bluetooth/bleCommandEncoder.ts`, `src/utils/bleCommandEncoder.ts` and `src/__tests__/domains/bluetooth/ProtocolSpecification.test.ts`.
+
+**Why this work exists.** The app, the simulator and the firmware must agree byte for byte on the BLE protocol. Today `ProtocolSpecification.test.ts` says `CMD_EXIT_CONFIG` and `CMD_COMMIT_CONFIG` are swapped (17 vs 18) relative to its spec. The colour command exists in two incompatible shapes: a 4-byte HSV `0x03` command in the test's spec, and a 5-byte RGB `CMD_CONFIG_UPDATE` with `paramType 0x02` in the encoder. The decoder also has known bugs. A disagreement here can send the wrong command to a controller inside a guitar.
+
+**Task:**
+
+1. Settle `CMD_EXIT_CONFIG` / `CMD_COMMIT_CONFIG` against what the firmware actually handles (`device_config.h` and the `.ino` dispatch). The firmware is what is in the field; change the app or the test to match it unless Cow says otherwise.
+2. Settle the colour command scheme (HSV `0x03` vs RGB `CMD_CONFIG_UPDATE` `0x02`) against the firmware, and make the tests encode the real one.
+3. Make `packages/ble-protocol` the single source for the protocol constants used by the app and by a checked firmware header, with a drift check that fails CI on disagreement. Reuse the H2 pattern (`scripts/check-power-safety-constants.mjs` plus the `firmware-host` job in `.github/workflows/test.yml`): extend or generalise it rather than adding a parallel mechanism.
+4. Fix the H3-owned failures from the H1 table: the 3 `bleCommandEncoder.test.ts` decoder failures (analytics batch too short, malformed error response) and the 9 `ProtocolSpecification.test.ts` failures. At your discretion, also take the `ConfigDomainController` / `config-mode-lifecycle` suites; they need a real `ConfigurationModule` mock, not just path fixes.
+5. Fix the power-mode preview bug from H2 status (`case 0x03` never sets `currentSettings.powerMode`) as a small, separate commit.
+
+**Before touching firmware:** check whether the `wave()` compile break from H2 status ("Found, not fixed") has been fixed. If it has not and Cow has not answered, ask him the one-line question recorded there; do not fold the fix into H3 silently. You cannot compile the `.ino` here, so keep `.ino` edits minimal, host-test any pure logic with g++ as H2 did, and say plainly in your status what was not verified.
+
+**Standing constraints:** never delete, skip or weaken an assertion that encodes a power, security or protocol invariant; fix the code or the test mechanics. A test may be deleted only if it is a verified exact duplicate of a passing test. The failing-test count must not increase (H2 after-count: 49 failed, 122 passed; tsc 162 errors). No single-line `if`s, prefer positive checks, log at decision points, no emojis or em dashes in docs and comments. The owner is always written "Cow". Critical decisions go to Cow as one-line, decision-shaped questions.
+
+**Done when:** the protocol constants are single-sourced with a CI drift check; the H3-owned failures pass or are explained with a decision from Cow; the failing-test count is below 49; this document is updated per "Agent workflow", with this prompt archived and the H4 prompt appended.
+
+**Verify before sign-off:** `npx jest`, `npx tsc --noEmit`, `npx vitest run` (apps/simulator and packages/led-engine), and the `firmware-host` CI job steps. Report before-and-after counts in the same table format as H1 and H2.
