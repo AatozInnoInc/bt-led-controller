@@ -53,3 +53,20 @@ jobs:
       - name: Run Vitest (packages/led-engine)
         working-directory: packages/led-engine
         run: npx vitest run
+
+  firmware-host:
+    name: Firmware power limiter (g++ host tests)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check power safety constants match the app
+        run: node scripts/check-power-safety-constants.mjs
+
+      - name: Build power limiter tests
+        run: g++ -std=c++11 -O2 -Wall -Wextra -Werror -I bt-led-controller firmware-tests/power_limiter_test.cpp -o power_limiter_test
+
+      - name: Run power limiter tests
+        run: ./power_limiter_test
