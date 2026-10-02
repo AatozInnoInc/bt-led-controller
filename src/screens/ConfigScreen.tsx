@@ -31,6 +31,7 @@ import { ErrorEnvelope, ErrorHandler, formatErrorForUser } from '../domain/commo
 import { createAlertFromError, createSuccessAlert, createErrorAlert, AlertMessages } from '../domain/common/alertEnvelope';
 import { useToast } from '../contexts/ToastContext';
 import { validateParameter, validateColor, validateColorAndPower, calculateTotalCurrent } from '../utils/parameterValidation';
+import { MAX_FRAME_CURRENT_MA } from '../../packages/ble-protocol/src/powerSafety';
 import { BluetoothDevice } from '../types/bluetooth';
 import { DeviceSettings, RGBColor } from '../utils/bleConstants';
 import { ConfigModeStatus } from '../domain/bluetooth/configurationModule';
@@ -1208,9 +1209,9 @@ const ConfigScreen: React.FC = () => {
           {config && (
             (() => {
               const currentDraw = calculateTotalCurrent(selectedColor, brightness);
-              const percentage = (currentDraw / 400) * 100; // Percentage of safe limit
-              const isHigh = currentDraw > 400 * 0.8; // Above 80% of safe limit
-              const isOverLimit = currentDraw > 400;
+              const percentage = (currentDraw / MAX_FRAME_CURRENT_MA) * 100; // Percentage of safe limit
+              const isHigh = currentDraw > MAX_FRAME_CURRENT_MA * 0.8; // Above 80% of safe limit
+              const isOverLimit = currentDraw > MAX_FRAME_CURRENT_MA;
               const isFirstStatusBar = !(DEV_MODE && connectedDevice?.id === MOCK_DEVICE.id) && !connectedDevice;
               
               return (
@@ -1233,7 +1234,7 @@ const ConfigScreen: React.FC = () => {
                     styles.statusText,
                     { color: isOverLimit ? themeColors.error : isHigh ? themeColors.warning : themeColors.success }
                   ]}>
-                    Power: {currentDraw.toFixed(0)}mA / {400}mA ({percentage.toFixed(0)}%)
+                    Power: {currentDraw.toFixed(0)}mA / {MAX_FRAME_CURRENT_MA}mA ({percentage.toFixed(0)}%)
                   </Text>
                 </View>
               );

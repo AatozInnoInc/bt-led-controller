@@ -5,6 +5,15 @@
 
 import { ParameterId } from '../types/commands';
 import { RGBColor } from '../utils/bleConstants';
+import { logger } from './logger';
+// Shared with the firmware (bt-led-controller/power_safety_constants.h).
+// Relative path on purpose: the RN app has no other @bt-led/* import yet,
+// and this keeps Metro, ts-jest and tsc on plain file resolution.
+import {
+  MAX_LED_COUNT,
+  MA_PER_CHANNEL_AT_FULL,
+  MAX_FRAME_CURRENT_MA,
+} from '../../packages/ble-protocol/src/powerSafety';
 
 /**
  * Minimal config interface for power validation
@@ -21,11 +30,10 @@ export interface ValidationResult {
   correctedValue?: number;
 }
 
-// Power consumption constants
-const MAX_LED_COUNT = 14; // Worst case: 14 LEDs
-const MAX_CURRENT_PER_LED_WHITE = 60; // mA per LED at full white, full brightness
-const BATTERY_MAX_CURRENT = 500; // mA - 500mAh battery
-const SAFE_CURRENT_LIMIT = 400; // mA - 80% of max for safety margin
+// Power consumption constants, derived from the shared power safety constants.
+// MAX_LED_COUNT (30) is the worst case every default below is sized for.
+const MAX_CURRENT_PER_LED_WHITE = 3 * MA_PER_CHANNEL_AT_FULL; // mA per LED at full white, full brightness
+const SAFE_CURRENT_LIMIT = MAX_FRAME_CURRENT_MA; // mA, see the battery TODO in powerSafety.ts
 
 /**
  * Validate a parameter value before sending
@@ -128,6 +136,32 @@ export function calculateTotalCurrent(
 }
 
 /**
+ * Highest whole brightness (0-100) whose total current stays at or under the
+ * safe limit for this color and LED count. The "reduce brightness to N%" hint
+ * in validatePowerConsumption uses it, so the hint itself is always safe.
+ * @param color RGB color [R, G, B]
+ * @param ledCount Number of LEDs (defaults to MAX_LED_COUNT for worst case)
+ * @returns Brightness in 0-100
+ */
+export function calculateMaxSafeBrightness(
+  color: RGBColor,
+  ledCount: number = MAX_LED_COUNT
+): number {
+  const fullBrightnessCurrent = calculateTotalCurrent(color, 100, ledCount);
+  if (fullBrightnessCurrent <= SAFE_CURRENT_LIMIT) {
+    return 100;
+  }
+
+  let brightness = Math.floor((SAFE_CURRENT_LIMIT / fullBrightnessCurrent) * 100);
+  // Floating point can land a hair over the limit at an exact boundary; step
+  // down until the real calculation agrees, so the result is provably safe.
+  while (brightness > 0 && calculateTotalCurrent(color, brightness, ledCount) > SAFE_CURRENT_LIMIT) {
+    brightness -= 1;
+  }
+  return brightness;
+}
+
+/**
  * Validate power consumption for a configuration
  * @param config LED configuration
  * @param ledCount Number of LEDs (defaults to MAX_LED_COUNT for worst case)
@@ -145,10 +179,16 @@ export function validatePowerConsumption(
   const totalCurrent = calculateTotalCurrent(config.color, config.brightness, ledCount);
   
   if (totalCurrent > SAFE_CURRENT_LIMIT) {
-    const maxSafeBrightness = Math.floor(
-      (SAFE_CURRENT_LIMIT / (ledCount * calculateLEDCurrent(config.color, 100))) * 100
-    );
-    
+    const maxSafeBrightness = calculateMaxSafeBrightness(config.color, ledCount);
+    logger.warn('PowerValidation', 'Blocked: frame current over the safe limit', undefined, {
+      totalCurrentMa: totalCurrent,
+      limitMa: SAFE_CURRENT_LIMIT,
+      color: config.color,
+      brightness: config.brightness,
+      ledCount,
+      maxSafeBrightness,
+    });
+
     return {
       isValid: false,
       error: `Power consumption too high: ${totalCurrent.toFixed(0)}mA (limit: ${SAFE_CURRENT_LIMIT}mA). ` +
@@ -158,6 +198,11 @@ export function validatePowerConsumption(
   
   // Warn if approaching limit (above 80% of safe limit = 320mA)
   if (totalCurrent > SAFE_CURRENT_LIMIT * 0.8) {
+    logger.info('PowerValidation', 'Allowed with warning: frame current above 80% of the safe limit', {
+      totalCurrentMa: totalCurrent,
+      limitMa: SAFE_CURRENT_LIMIT,
+      ledCount,
+    });
     return {
       isValid: true, // Still valid, but warn
       error: `High power consumption: ${totalCurrent.toFixed(0)}mA. Consider reducing brightness or changing color.`,
