@@ -294,3 +294,30 @@ Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
 **Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
+---
+
+## Unmerged-PR cap: clarification, and H2 is unblocked (2026-10-01)
+
+Cow confirmed on 2026-09-24 that an autonomous night opens no more than 2 unmerged SLICE PRs at once. For five nights the nightly session has counted every open PR against that cap and held slice H2 as a result. That reading is wrong, and it has cost five nights of zero engineering output on the program Cow named top priority.
+
+The open PRs, classified:
+
+| PR | Branch | Kind | Counts against the cap |
+|---|---|---|---|
+| #3 | `claude/magical-pascal-yg32dj` | EMI risk banner plus Phase 2 firmware flags. Predates the Q18 program. | No. Not a hardening slice. |
+| #6 | `claude/intelligent-knuth-qvj0qh` | One-line `.gitignore` chore. | No. |
+| #7 | `claude/h1-test-suite-triage` | Q18 slice H1. | Yes. This is the first and only slice PR open. |
+| #8 | `cursor/split-rn-ci-jobs-ac21` | Splits the Jest and tsc CI jobs. Authored by Cow through Cursor on 2026-09-30, not by an agent night. | No. |
+| #9 | `claude/handoff-h2-decisions` | Handoff-only decisions addendum. | No. |
+
+One slice PR is open. H2 is therefore the second, which is inside the cap, not over it. H2 starts on the next nightly run.
+
+**How H2 proceeds while H1 is unmerged.** Branch H2 from `claude/h1-test-suite-triage` rather than from `main`, and state the dependency in the PR body. This is the same pattern the H1 worker already used when it built on the then-unmerged PRs #4 and #5, so it is established practice in this repo, not a new exception. H2's shared-constants work needs `packages/ble-protocol` as H1 left it, and its property tests use H1's repaired encoder suite as their model, so building on H1 is also the technically correct base.
+
+**What does NOT change.** Cow still merges every PR; no agent merges its own work. The failing-test count must not increase. No assertion encoding a power, security or protocol invariant may be deleted, skipped or weakened. One concern per PR.
+
+The cap exists to keep Cow's review queue from growing without bound overnight. Holding the top-priority safety program for five nights did not shrink that queue, so the cap was costing what it was meant to protect.
+
+Cow may overturn this in one line, in which case H2 holds again until a merge lands.
+
+Completed by: PM orchestrator (Claude, morning session) — 2026-10-01T12:00:00Z
