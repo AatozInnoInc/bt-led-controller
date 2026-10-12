@@ -1561,6 +1561,9 @@ void wave() {
     // Create a wave that travels along the strip
     // Each LED has a phase offset based on position
     // Combine time and position for traveling wave
+    // Restored positionPhase + value channel (gv) to match packages/led-engine wave.ts
+    // after Colour B edit a830801 dropped the definitions while leaving the uses.
+    uint8_t positionPhase = (uint8_t)((i * 255) / LED_COUNT);
     uint8_t wavePhase = timePhase + positionPhase;
     uint8_t sineVal = sin8_approx(wavePhase);
     uint8_t gv = gamma8[sineVal];
@@ -1574,7 +1577,7 @@ void wave() {
     }
 
     // Use HSV color space for smooth color transitions
-    RGB rgb = hsv2rgb(wavePhase, 255, g);
+    RGB rgb = hsv2rgb(hue, 255, gv);
     ledBuf[i] = rgb;
   }
   ledBufferChanged = true;
