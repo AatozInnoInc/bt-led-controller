@@ -283,6 +283,27 @@ Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
 
 ---
 
+## Arduino sketch build support — sign-off
+
+**What changed**
+
+- Added `scripts/build-firmware.sh`: installs `arduino-cli` (pinned `1.5.1`), Adafruit board index, core `adafruit:nrf52@1.7.0`, and `adafruit-nrfutil`, then compiles `bt-led-controller/` for FQBN `adafruit:nrf52:itsybitsy52840`.
+- Added `.github/workflows/firmware-build.yml` so PRs that touch firmware run a real nRF52 sketch compile and upload the binaries.
+- Root `npm run build:firmware` wires the script; README / `bt-led-controller/README.md` / Contributing checklist document it.
+- Fixed the `wave()` compile break on `main` (missing `positionPhase`, wrong value channel / hue args) to match `packages/led-engine/src/patterns/wave.ts`. H2 had flagged this as blocking any flash; answered by making the sketch compile as part of this build work.
+
+**Verification**
+
+- `./scripts/build-firmware.sh` (and a direct `arduino-cli compile --fqbn adafruit:nrf52:itsybitsy52840`): exit 0. Sketch uses ~161228 bytes flash / ~16280 bytes RAM on ItsyBitsy nRF52840.
+
+**Not verified**
+
+- No hardware flash or BLE smoke test in this session.
+
+Completed by: cloud agent (Arduino sketch build support) — 2026-10-12T18:20:00Z
+
+---
+
 ## Prompt for next agent
 
 **Role:** worker for slice H1 of the RN app and firmware safety hardening plan above. Recommended model: Sonnet.

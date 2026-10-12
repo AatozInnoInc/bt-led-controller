@@ -94,6 +94,7 @@ Two outputs from the simulator:
 | `requestAnimationFrame` gated at 30 fps | 60 fps, `setInterval` | Matches `LED_UPDATE_INTERVAL_MS 33` in firmware; consistent timing |
 | SVG circles with layered opacity for LED render | WebGL, Canvas 2D, CSS drop-shadow | No build deps; no CSS filter performance issues on wide strips; scales cleanly |
 | Supabase for shared gallery (v1.5) | Firebase, custom API | Already likely in the main app ecosystem; simple row-level security |
+| Real `arduino-cli` compile for `bt-led-controller.ino` in CI | Host-only g++ stubs, Arduino IDE-only builds | Stubs cannot prove the nRF52 sketch links; CI must compile the real FQBN (`adafruit:nrf52:itsybitsy52840`) so firmware PRs cannot land broken |
 
 ---
 
