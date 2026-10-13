@@ -275,6 +275,29 @@ Completed by: Claude Code (PR #3 review-fix agent) — 2026-09-25T01:13:03Z
 
 ---
 
+## EMI raw observation storage (Job C, review item N2) - sign-off
+
+**What changed**
+
+- `src/domain/emi/emiCalibration.ts`: observations are now stored as raw inputs (`RawEmiObservation`: colour, brightness, speed, effect, LED count, verdict, timestamp, `modelVersion`) instead of the computed score. `rescoreObservations(records, weights)` recomputes scores under any weight set, purely, via `assessEmiRisk`. `createRawObservation` builds the record to persist. `calibrateThresholds` is unchanged and still works on scored `EmiObservation`s.
+- Versioning: records written before this change (score only, no `modelVersion`) are `LegacyEmiObservation`. They are kept, load without error, keep their frozen score, and are flagged `rescorable: false`. They are never dropped.
+- `src/repositories/emiCalibrationRepository.ts`: fixed review item N3. A read or parse error no longer makes the next `addObservation` start from an empty list and overwrite history; the save now throws instead. `loadObservations` (display only) still returns an empty list on error. Entries the model does not recognise, such as a future `modelVersion`, are preserved as written on save.
+- `src/components/EmiRiskBanner.tsx`: stores raw inputs on each tap, rescores the history under the current weights, and now has the missing `catch` in `recordVerdict` (review item N7). The app does not track strip length, so `ledCount` is recorded as `MAX_LED_COUNT` (14, now exported from `parameterValidation.ts`).
+- Tests in `src/__tests__/domain/emi/`: rescoring a stored observation under a changed weight set gives a different score from the same inputs; legacy records load and calibrate; the repository refuses to overwrite unreadable history.
+
+**Deviations and open items**
+
+- Skipped: the device-less `unknown-device` recording bucket. It needs a decision on how the banner learns the real device id, so it is not trivial.
+- `ledCount` does not affect any score today. It is stored so a later model can use it.
+- The existing EMI tests still live in `src/__tests__/domains/emi/`. The H1 branch moves them to `domain/emi/`, so the new tests already sit where they will end up.
+- This worker did not rewrite the "Prompt for next agent" section below. It is the H1 prompt belonging to this branch's history, and main carries a different live prompt, so changing it here would only create a merge conflict. Whoever merges this branch should keep main's live prompt.
+
+**Verified:** `npx jest` 70 failed before and after (new tests all pass, 13 added), `npx tsc --noEmit` 211 errors before and after, none in EMI files.
+
+Completed by: Job C worker (Claude Sonnet) - 2026-10-13T01:10:00Z
+
+---
+
 ## Prompt archive (simulator next steps, superseded 2026-09-24)
 
 **Context:** Simulator has **37** patterns (ids **0–36**). Ids **0–13** have firmware equivalents; **14–36** are simulator-only (`larson` through `dissolve`).
@@ -335,26 +358,3 @@ Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
 **Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
-
----
-
-## EMI raw observation storage (Job C, review item N2) - sign-off
-
-**What changed**
-
-- `src/domain/emi/emiCalibration.ts`: observations are now stored as raw inputs (`RawEmiObservation`: colour, brightness, speed, effect, LED count, verdict, timestamp, `modelVersion`) instead of the computed score. `rescoreObservations(records, weights)` recomputes scores under any weight set, purely, via `assessEmiRisk`. `createRawObservation` builds the record to persist. `calibrateThresholds` is unchanged and still works on scored `EmiObservation`s.
-- Versioning: records written before this change (score only, no `modelVersion`) are `LegacyEmiObservation`. They are kept, load without error, keep their frozen score, and are flagged `rescorable: false`. They are never dropped.
-- `src/repositories/emiCalibrationRepository.ts`: fixed review item N3. A read or parse error no longer makes the next `addObservation` start from an empty list and overwrite history; the save now throws instead. `loadObservations` (display only) still returns an empty list on error. Entries the model does not recognise, such as a future `modelVersion`, are preserved as written on save.
-- `src/components/EmiRiskBanner.tsx`: stores raw inputs on each tap, rescores the history under the current weights, and now has the missing `catch` in `recordVerdict` (review item N7). The app does not track strip length, so `ledCount` is recorded as `MAX_LED_COUNT` (14, now exported from `parameterValidation.ts`).
-- Tests in `src/__tests__/domain/emi/`: rescoring a stored observation under a changed weight set gives a different score from the same inputs; legacy records load and calibrate; the repository refuses to overwrite unreadable history.
-
-**Deviations and open items**
-
-- Skipped: the device-less `unknown-device` recording bucket. It needs a decision on how the banner learns the real device id, so it is not trivial.
-- `ledCount` does not affect any score today. It is stored so a later model can use it.
-- The existing EMI tests still live in `src/__tests__/domains/emi/`. The H1 branch moves them to `domain/emi/`, so the new tests already sit where they will end up.
-- This worker did not rewrite the "Prompt for next agent" section below. It is the H1 prompt belonging to this branch's history, and main carries a different live prompt, so changing it here would only create a merge conflict. Whoever merges this branch should keep main's live prompt.
-
-**Verified:** `npx jest` 70 failed before and after (new tests all pass, 13 added), `npx tsc --noEmit` 211 errors before and after, none in EMI files.
-
-Completed by: Job C worker (Claude Sonnet) - 2026-10-13T01:10:00Z
