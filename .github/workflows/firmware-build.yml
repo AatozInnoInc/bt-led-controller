@@ -25,7 +25,6 @@ jobs:
       ARDUINO_CORE_VERSION: '1.7.0'
       ARDUINO_FQBN: 'adafruit:nrf52:itsybitsy52840'
       ARDUINO_NRFUTIL_VERSION: '0.5.3.post16'
-      ARDUINO_BUILD_DIR: ${{ runner.temp }}/firmware-build
 
     steps:
       - name: Checkout repository
@@ -95,6 +94,8 @@ jobs:
 
       - name: Compile firmware sketch
         if: steps.changes.outputs.firmware == 'true'
+        env:
+          ARDUINO_BUILD_DIR: ${{ runner.temp }}/firmware-build
         run: |
           set -euo pipefail
           chmod +x ./scripts/build-firmware.sh
