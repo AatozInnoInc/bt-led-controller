@@ -349,6 +349,23 @@ Completed by: PM orchestrator (Claude, morning session), from Cow's direct repli
 
 ---
 
+## Firmware CI hardening (Job D) - sign-off
+
+Done on branch `claude/ci-firmware-hardening`, one concern: make the firmware compile check safe to require and cheaper to run.
+
+- [x] Always-reporting check: the `paths` filters were removed and one job named "Compile bt-led-controller.ino" always runs. A detect step diffs base against head over `bt-led-controller/`, `scripts/build-firmware.sh` and the workflow file. When none changed, the compile steps are skipped and the check still reports success. Chosen over a companion job because one workflow cannot hold two jobs with the same name and a second file would report two checks under one name.
+- [x] Cache: `actions/cache@v4` over `~/.local` and `~/.arduino15`, keyed on CLI 1.5.1, core 1.7.0, nrfutil version and Python 3.12.
+- [x] `adafruit-nrfutil` pinned to 0.5.3.post16 (kept, not removed), overridable with `ARDUINO_NRFUTIL_VERSION`.
+- [x] Dead `develop` push trigger removed.
+- Measured on Actions (workflow_dispatch, same commit): cold run 72 s total, compile step 54 s; warm run 32 s total, compile step 19 s.
+- Not exercised: the skip path (no firmware files changed). Dispatch runs always compile. It first runs for real on the next PR that touches no firmware path.
+
+Decision: the check name was kept identical so it can be made a required status check after Cow merges this.
+
+Completed by: Job D worker (Claude Sonnet) - 2026-10-13T01:20:00Z
+
+---
+
 ## Prompt for next agent
 
 **Role:** worker for the three open jobs as of 2026-10-12. The freeze otherwise holds. Do not start H3 or H4+. Do not redo Job A or Job B from earlier revisions of this entry: Cow already shipped both in PR #12. Recommended models: Sonnet for Job C, Sonnet for Job D, Sonnet for Job E.
