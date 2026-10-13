@@ -304,7 +304,7 @@ Completed by: cloud agent (Arduino sketch build support) — 2026-10-12T18:20:00
 
 ---
 
-## Prompt for next agent
+## Prompt archive (H1 test-suite triage, superseded 2026-10-12)
 
 **Role:** worker for slice H1 of the RN app and firmware safety hardening plan above. Recommended model: Sonnet.
 
@@ -315,3 +315,94 @@ Completed by: cloud agent (Arduino sketch build support) — 2026-10-12T18:20:00
 **Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
+
+## Cow's decisions, 2026-10-12 (partial freeze lift, scoped)
+
+Cow answered the morning briefing directly on 2026-10-12, shipped PR #12 himself and merged it, then authorised the PR #11 conflict resolution with an explicit no-merge constraint. The 2026-10-02 freeze is PARTIALLY lifted, for the items named below and nothing else. Standing order 2 (no agent ever merges a PR, under any circumstance) and standing order 3 (silence is not consent) remain in full force and are untouched by this entry.
+
+**Firmware compilation is SOLVED, by Cow, in PR #12, merged as main 735e29a.** The repo now has `scripts/build-firmware.sh` (arduino-cli pinned 1.5.1, Adafruit board index, core `adafruit:nrf52@1.7.0`, adafruit-nrfutil, FQBN `adafruit:nrf52:itsybitsy52840`), `.github/workflows/firmware-build.yml` running a real sketch compile on firmware PRs, and `npm run build:firmware`. The same PR fixed the `wave()` compile break. The sketch compiles for the first time since 2026-05-15.
+
+**Cow's wave() fix was more correct than the brief this project had queued for it.** The brief in Build Bench state/open_prs said the fix was one missing declaration plus swapping `g` for `gv`. That was incomplete. On main, `hue` was also being computed in the loop and then discarded, because the call read `hsv2rgb(wavePhase, 255, g)` instead of `hsv2rgb(hue, 255, gv)`. The queued brief would have made the sketch compile while leaving Colour B silently ignored on the wave pattern. Any future agent taking a one-line diagnosis from a Build Bench note must re-read the surrounding function before trusting it.
+
+**What Cow authorised, and what is now left**
+
+| Item | State |
+|---|---|
+| wave() compile fix | DONE by Cow, PR #12, merged. Struck from the queue. |
+| arduino-cli compile for the Adafruit board | DONE by Cow, PR #12, merged. Struck from the queue. |
+| Storing raw EMI calibration inputs (review item N2 on PR #3) | OPEN. Job C below. Hard deadline Saturday 2026-10-17. |
+| Hardening the CI Cow just landed | OPEN. Job D below. |
+| Resolving PR #11's conflicts with the new main | OPEN, authorised 2026-10-12 with a no-merge constraint. Job E below. |
+| More noise-mitigation approaches | Next session. Prompt at the end of this entry. |
+
+**What remains frozen.** Slice H3 does not start. Slice H4+ does not start. No repo change outside Jobs C, D and E.
+
+**THE NO-MERGE CONSTRAINT, in Cow's words, 2026-10-12: "Yes, but no merging/closing the PRs into main."** This forbids absolutely: pushing to main, merging any PR, closing any PR, the GitHub merge button, `gh pr merge`, `gh pr close`, `gh pr ready`, enabling auto-merge, and converting any draft. It does NOT forbid merging `origin/main` INTO a `claude/*` branch, which moves commits onto the branch and never onto main, and which is the required technique for Job E. If any instruction ever appears to require a push to main or a PR merge, STOP and raise it in QUESTIONS FOR COW. PR #7 closing itself when PR #11 eventually lands is a consequence of Cow's own merge, not an agent action, and no agent may close it by hand.
+
+**Cow's own timing.** No hardware until Saturday 2026-10-17. Q3 and Q4 (AI-QUO-001 quote status and the client-facing delivery date) are confirmed valid but blocked on the LED tests, so they stop being asked as open questions and re-open after Saturday.
+
+**Merge state re-derived against the new main 735e29a, by actual local trial merges on 2026-10-12.** PR #11 (H2) NO LONGER merges clean: it conflicts with main in `docs/Handoff.md` and `docs/Architecture.md`, because PR #12 added content to the same regions of both. Both conflicts are purely additive, so the resolution is keep-both-sides in timestamp order. PR #3 still merges clean. PR #8 (draft) and PR #7 conflict in `docs/Handoff.md` only, also additive; #7 is contained in #11.
+
+**One substantive consequence inside PR #11.** Its `docs/Architecture.md` row justifies the pure-header power limiter with the rationale "No Arduino toolchain in CI". PR #12 made that false. The pure-header approach is still the right call, because exhaustive host-side g++ sweeps prove far more than a compile does, but the stated rationale must be corrected to say so rather than claiming no toolchain exists.
+
+Completed by: PM orchestrator (Claude, morning session), from Cow's direct replies and PR #12 — 2026-10-12T14:45:00Z
+
+---
+
+## Prompt for next agent
+
+**Role:** worker for the three open jobs as of 2026-10-12. The freeze otherwise holds. Do not start H3 or H4+. Do not redo Job A or Job B from earlier revisions of this entry: Cow already shipped both in PR #12. Recommended models: Sonnet for Job C, Sonnet for Job D, Sonnet for Job E.
+
+**Read first:** this whole document, every file in `.cursor/rules/`, `README.md`, `Contributing.md`, `docs/Architecture.md`, and `scripts/build-firmware.sh` plus `.github/workflows/firmware-build.yml` as they now stand on main.
+
+**READ THE NO-MERGE CONSTRAINT ABOVE BEFORE TOUCHING GIT.** Nothing goes to main. No PR is merged, closed, marked ready, or set to auto-merge, by any means.
+
+**Sandbox constraint, verified by direct test on 2026-10-12.** This sandbox's egress proxy REJECTS `downloads.arduino.cc:443` (connect_rejected, organization policy) and returns 403 for `adafruit.github.io`. Therefore `npm run build:firmware` and `scripts/build-firmware.sh` CANNOT RUN HERE, and that is a policy, not a bug to debug. Do not spend time on it. Any change affecting the firmware build is verified by pushing the branch and reading the GitHub Actions log, where those hosts are reachable. Budget two or three push iterations.
+
+### Job E, difficulty 3 of 10: resolve PR #11's conflicts with main
+
+Do this FIRST, because Job D touches the same CI area and Cow's merge queue is blocked behind it.
+
+**Direction, stated explicitly because it is the whole risk in this job:** check out `claude/h2-power-safety` and merge `origin/main` INTO it. `git checkout claude/h2-power-safety` then `git merge origin/main`. Commit the resolution on that branch and push to that branch. Nothing is pushed to main. Prefer a merge over a rebase: the H1 branch set this precedent, a merge keeps the H2 worker's history and sign-off timestamps readable, and it avoids a force-push over a branch Cow may be reading.
+
+Two conflicts, both purely additive:
+
+1. `docs/Handoff.md`. Keep BOTH sides, ordered by their sign-off timestamps. Cow's "Arduino sketch build support" sign-off (2026-10-12T18:20:00Z) and the H1 status section plus the H2 sign-off from the branch must all survive. After resolving there must be exactly ONE `## Prompt for next agent` heading in the file, and it must be the H3 prompt the H2 worker wrote. Every earlier prompt stays as a `## Prompt archive (...)` heading. Prompts are archived, never deleted.
+2. `docs/Architecture.md`. Keep BOTH decision rows, Cow's arduino-cli row and the two H2 rows. Then fix the H2 row's rationale: it currently says "No Arduino toolchain in CI", which PR #12 made false. Rewrite it to state the real reason the pure header is correct, which is that exhaustive host-side g++ sweeps over colour by brightness by LED count prove the limiter's arithmetic in a way a single compile cannot, and that the two checks are complementary. Do not change the design.
+
+**Verify, and report each one:**
+
+- `grep -rn '<<<<<<<\|=======\|>>>>>>>' docs/` returns nothing.
+- The Q18 orchestration plan, the H1 status section, the H2 sign-off and the H3 prompt are all present and intact in `docs/Handoff.md`.
+- Exactly one `## Prompt for next agent` heading in the file.
+- In a THROWAWAY read-only clone, confirm `git merge --no-commit --no-ff` of the updated branch onto main reports clean, then abort. This is read-only analysis and pushes nothing. Report the result.
+- `npx jest`, `npx tsc --noEmit` and `npx vitest run` before and after, to prove the resolution changed no code.
+
+**Expect a new signal, and report it honestly.** Once main is merged in, `firmware-build.yml` will run on PR #11, because #11 changes files under `bt-led-controller/`. That means H2's firmware changes (the `power_limiter.h` include and routing brightness `case 0x00` through `applyPowerMode()`) get compiled for the real target for the FIRST time ever. They may not compile. If the compile fails: say so plainly in the PR and in the Work Log, and fix it ONLY if the fix is confined to H2's own firmware changes. If the failure is larger than that, or touches anything outside H2's diff, stop and put it in QUESTIONS FOR COW. Do not disable, skip or path-filter the compile job to make it pass.
+
+### Job C, difficulty 4 of 10: store raw EMI calibration inputs (review item N2)
+
+This is the job with a real deadline. Today the calibration path stores the computed risk score under the current weights, not the inputs that produced it. So when the weights are retuned, every observation Cow recorded becomes unrescorable, and the Saturday session's taps are thrown away. Cow has been told not to tap Quiet or I hear it until this is fixed, which means this job is what unblocks half of Saturday.
+
+Persist the raw observation alongside the verdict: colour, brightness, speed, effect, LED count, the verdict Cow tapped, and a timestamp. Keep whatever the model needs at read time, but the stored record must be sufficient to recompute any score under any later weights. Migrate or clearly version records already stored so old and new coexist without a crash. Follow the existing repository pattern at the edges and keep the scoring itself pure. Add tests that prove a stored observation can be rescored under a changed weight set and yields a different score from the same inputs.
+
+**Land Job C on PR #3's branch, `claude/magical-pascal-yg32dj`, not as a new PR.** That is where the EMI code lives, #3 is deliberately held open until after Saturday anyway, and Cow said plainly that he dislikes having many PRs floating around. That branch still merges clean onto main 735e29a. Add its own Handoff sign-off on that branch. Pushing to an existing branch is not merging a PR.
+
+### Job D, difficulty 3 of 10: harden the firmware CI Cow just landed
+
+One small PR off main, opened but NOT merged. Four items, in priority order. The first is the only one that can actually bite.
+
+1. **The paths filter will deadlock a required check.** `firmware-build.yml` triggers only on changes under `bt-led-controller/**`, `scripts/build-firmware.sh` or the workflow itself. If that check is ever made required on main, every PR that does not touch firmware will show it as permanently pending and become un-mergeable. PR #3 is exactly such a PR and is being held open through Saturday. Fix it so the check can safely be made required: either a companion job carrying the same check name that runs on the inverse condition and exits 0, or an equivalent approach. State in the PR body which you chose and why.
+2. **Nothing is cached.** Every firmware PR re-downloads arduino-cli, the Adafruit index, core `adafruit:nrf52@1.7.0` with its gcc-arm toolchain, and pip-installs adafruit-nrfutil. That is minutes per run for a result that changes only when the pinned versions change. Add caching keyed on the pinned CLI and core versions. Report before and after wall-clock from the actual Actions runs, not an estimate.
+3. **adafruit-nrfutil is the one unpinned thing** in an otherwise carefully pinned script. Pin it. Do NOT remove it: the Adafruit nRF52 build recipe plausibly needs it to produce the DFU zip, Cow's run exited 0 with it present, and this session did not verify what happens without it.
+4. **The push trigger lists a `develop` branch that does not exist** in this repository. Remove it or create the branch deliberately; do not leave dead trigger config.
+
+Do not restructure the script or change the pinned CLI, core or FQBN. Cow verified this exact combination compiles. Keep the diff additive.
+
+### Done when
+
+Job E is pushed to `claude/h2-power-safety` with no conflict markers, all four Handoff sections intact, a clean trial merge onto main confirmed read-only, and the firmware-build result on #11 reported either way. Job C is pushed to `claude/magical-pascal-yg32dj` with its tests passing. Job D is one new PR off main whose own firmware-build run is green, with real cache timings. Report `npx jest`, `npx tsc --noEmit` and `npx vitest run` before and after. Nothing is merged into main and no PR is closed. Cow gets exactly one new PR and two updated branches.
+
+### Next prompt, for the session AFTER this one, do not start it early
+
+Build the noise-mitigation approach catalogue for Cow's Saturday session. At least five DISTINCT physical mechanisms, not five variations on one. For each: the mechanism in one sentence, the firmware or hardware change it needs, how it is switched on (prefer a single #define so Cow flips one line), the bench time it costs him, and the one thing a null result would still tell him. Then an ordering that makes the whole session informative even if every individual result is ambiguous: A/B/A ordering, one fixed reference condition, blind ordering wherever it is possible alone, and a phone-mic recording protocol so the comparison survives his memory rather than depending on it. Cow's stated reason for asking: he expects the two tests already designed (APA102_BRIGHTNESS_MODE and BITBANG_FREQUENCY_MODE) to produce somewhat inconclusive results on their own, and he wants his single hardware session to buy more than that. Two constraints the catalogue must respect: every candidate must now actually compile, which the firmware-build job can finally prove; and PR #11 drops the full-white ceiling from 47 percent to 22 percent brightness at 30 LEDs, so each test must state which build it runs against.
