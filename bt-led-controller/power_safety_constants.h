@@ -1,6 +1,7 @@
 #ifndef POWER_SAFETY_CONSTANTS_H
 #define POWER_SAFETY_CONSTANTS_H
 
+// TODO FOR AGENT: Is there a way to truly share ONE file between both apps? A file to read, a config, env vars, etc?
 // ========================================
 // POWER SAFETY CONSTANTS (shared with the app)
 // ========================================
