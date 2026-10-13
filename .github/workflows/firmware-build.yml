@@ -1,20 +1,16 @@
 # Compile the real Adafruit nRF52840 sketch with arduino-cli on every PR/push.
+#
+# The workflow has no trigger-level paths filter on purpose. A filtered workflow
+# never starts on unrelated PRs, so its check stays "pending" forever and blocks
+# merging if the check is made required. Instead the single job always starts and
+# always reports, and a detection step decides whether the compile steps run.
 name: Firmware Build
 
 on:
   push:
     branches:
       - main
-      - develop
-    paths:
-      - 'bt-led-controller/**'
-      - 'scripts/build-firmware.sh'
-      - '.github/workflows/firmware-build.yml'
   pull_request:
-    paths:
-      - 'bt-led-controller/**'
-      - 'scripts/build-firmware.sh'
-      - '.github/workflows/firmware-build.yml'
   workflow_dispatch:
 
 jobs:
@@ -22,29 +18,90 @@ jobs:
     name: Compile bt-led-controller.ino
     runs-on: ubuntu-latest
 
+    env:
+      # Pin toolchain pieces so CI matches local scripts/build-firmware.sh defaults.
+      ARDUINO_CLI_VERSION: '1.5.1'
+      ARDUINO_CORE: 'adafruit:nrf52'
+      ARDUINO_CORE_VERSION: '1.7.0'
+      ARDUINO_FQBN: 'adafruit:nrf52:itsybitsy52840'
+      ARDUINO_NRFUTIL_VERSION: '0.5.3.post16'
+      ARDUINO_BUILD_DIR: ${{ runner.temp }}/firmware-build
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect firmware changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Same file set the old paths filter watched.
+          firmware_paths=(
+            'bt-led-controller/'
+            'scripts/build-firmware.sh'
+            '.github/workflows/firmware-build.yml'
+          )
+          run=true
+          case "${EVENT_NAME}" in
+            pull_request)
+              base="${PR_BASE_SHA}"; head="${PR_HEAD_SHA}" ;;
+            push)
+              base="${PUSH_BEFORE_SHA}"; head="${PUSH_AFTER_SHA}" ;;
+            *)
+              base=""; head="" ;;
+          esac
+          # workflow_dispatch, a new branch (all-zero before SHA) or a SHA that is
+          # not in the clone all fall through to "run", the safe default.
+          if [ -n "${base}" ] && ! [[ "${base}" =~ ^0+$ ]] \
+              && git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            changed="$(git diff --name-only "${base}...${head}" -- "${firmware_paths[@]}")"
+            if [ -z "${changed}" ]; then
+              run=false
+            else
+              echo "Firmware-related files changed:"
+              echo "${changed}"
+            fi
+          fi
+          echo "firmware=${run}" >> "${GITHUB_OUTPUT}"
+          if [ "${run}" = false ]; then
+            echo "No firmware-related changes; compile skipped, check reports success."
+          fi
 
       - name: Setup Python
+        if: steps.changes.outputs.firmware == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # arduino-cli binary and pip --user installs live in ~/.local; the board
+      # index and the gcc-arm core live in ~/.arduino15. The key changes only when a
+      # pinned version does.
+      - name: Cache Arduino toolchain
+        if: steps.changes.outputs.firmware == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local
+            ~/.arduino15
+          key: arduino-${{ runner.os }}-cli${{ env.ARDUINO_CLI_VERSION }}-core${{ env.ARDUINO_CORE_VERSION }}-nrfutil${{ env.ARDUINO_NRFUTIL_VERSION }}-py3.12
+
       - name: Compile firmware sketch
-        env:
-          # Pin toolchain pieces so CI matches local scripts/build-firmware.sh defaults.
-          ARDUINO_CLI_VERSION: '1.5.1'
-          ARDUINO_CORE: 'adafruit:nrf52'
-          ARDUINO_CORE_VERSION: '1.7.0'
-          ARDUINO_FQBN: 'adafruit:nrf52:itsybitsy52840'
-          ARDUINO_BUILD_DIR: ${{ runner.temp }}/firmware-build
+        if: steps.changes.outputs.firmware == 'true'
         run: |
           set -euo pipefail
           chmod +x ./scripts/build-firmware.sh
           ./scripts/build-firmware.sh
 
       - name: Upload firmware artifacts
+        if: steps.changes.outputs.firmware == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: bt-led-controller-firmware

@@ -12,6 +12,7 @@ CORE_VERSION="${ARDUINO_CORE_VERSION:-1.7.0}"
 BOARD_INDEX_URL="${ARDUINO_BOARD_INDEX_URL:-https://adafruit.github.io/arduino-board-index/package_adafruit_index.json}"
 BUILD_DIR="${ARDUINO_BUILD_DIR:-${ROOT_DIR}/build/firmware}"
 CLI_VERSION="${ARDUINO_CLI_VERSION:-1.5.1}"
+NRFUTIL_VERSION="${ARDUINO_NRFUTIL_VERSION:-0.5.3.post16}"
 CLI_INSTALL_DIR="${ARDUINO_CLI_DIR:-${HOME}/.local/bin}"
 
 log() {
@@ -50,8 +51,8 @@ ensure_nrfutil() {
     return
   fi
 
-  log "adafruit-nrfutil not found; installing with pip"
-  python3 -m pip install --user --quiet adafruit-nrfutil
+  log "adafruit-nrfutil not found; installing ${NRFUTIL_VERSION} with pip"
+  python3 -m pip install --user --quiet "adafruit-nrfutil==${NRFUTIL_VERSION}"
   export PATH="${HOME}/.local/bin:${PATH}"
   command -v adafruit-nrfutil >/dev/null 2>&1 || die "adafruit-nrfutil install failed"
 }
