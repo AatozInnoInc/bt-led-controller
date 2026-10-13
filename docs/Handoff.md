@@ -324,6 +324,20 @@ Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
 
 ---
 
+## Prompt for next agent
+
+**Role:** worker for slice H1 of the RN app and firmware safety hardening plan above. Recommended model: Sonnet.
+
+**Read first:** this whole document (especially "Agent workflow" and the hardening plan directly above), `.cursor/rules/*`, `README.md`, `Contributing.md`, `docs/Architecture.md`, `jest.config.js`.
+
+**Task:** make every suite that fails on "Cannot find module" or "color is not iterable" load and run against the current code, with its assertions intact. Remove the root `__tests__/` directory once its `src/__tests__` twins pass. Move the EMI tests to `src/__tests__/domain/emi/`. Add a GitHub Actions workflow that runs `npx jest`, `npx tsc --noEmit` and `npx vitest run` on pull requests. Leave power, ownership, pairing and protocol failures that reflect real bugs failing, and list them for H2 to H4. Do not mask them.
+
+**Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
+
+**Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
+
+---
+
 ## EMI raw observation storage (Job C, review item N2) - sign-off
 
 **What changed**
@@ -344,17 +358,3 @@ Completed by: PM orchestrator (Claude, morning session) — 2026-09-24T16:00:00Z
 **Verified:** `npx jest` 70 failed before and after (new tests all pass, 13 added), `npx tsc --noEmit` 211 errors before and after, none in EMI files.
 
 Completed by: Job C worker (Claude Sonnet) - 2026-10-13T01:10:00Z
-
----
-
-## Prompt for next agent
-
-**Role:** worker for slice H1 of the RN app and firmware safety hardening plan above. Recommended model: Sonnet.
-
-**Read first:** this whole document (especially "Agent workflow" and the hardening plan directly above), `.cursor/rules/*`, `README.md`, `Contributing.md`, `docs/Architecture.md`, `jest.config.js`.
-
-**Task:** make every suite that fails on "Cannot find module" or "color is not iterable" load and run against the current code, with its assertions intact. Remove the root `__tests__/` directory once its `src/__tests__` twins pass. Move the EMI tests to `src/__tests__/domain/emi/`. Add a GitHub Actions workflow that runs `npx jest`, `npx tsc --noEmit` and `npx vitest run` on pull requests. Leave power, ownership, pairing and protocol failures that reflect real bugs failing, and list them for H2 to H4. Do not mask them.
-
-**Done when:** the failing-test count is lower than 70 and every remaining failure is listed in this document with its root cause and the slice (H2 to H4) that owns it. CI runs on the PR. This document is updated per "Agent workflow", with this prompt archived and the H2 prompt appended.
-
-**Verify before sign-off:** `npx jest`, `npx tsc --noEmit` and `npx vitest run`; report before and after counts for each.
