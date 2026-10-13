@@ -114,7 +114,8 @@ describe('Error Handling Integration', () => {
       });
       await mockService.sendCommand(deviceId, updateBrightness);
       
-      const updateColor = BLECommandEncoder.encodeUpdateColor({ h: 0, s: 0, v: 255 }); // White
+      // encodeUpdateColor takes a positional [x, y, z] tuple, not an {h, s, v} object.
+      const updateColor = BLECommandEncoder.encodeUpdateColor([0, 0, 255]); // White
       await mockService.sendCommand(deviceId, updateColor);
       
       const updatePower = BLECommandEncoder.encodeUpdateParameter({
