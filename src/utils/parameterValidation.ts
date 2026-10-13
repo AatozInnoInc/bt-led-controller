@@ -180,6 +180,7 @@ export function validatePowerConsumption(
   
   if (totalCurrent > SAFE_CURRENT_LIMIT) {
     const maxSafeBrightness = calculateMaxSafeBrightness(config.color, ledCount);
+    // TODO FOR AGENT: Why are we logging "undefined" here?
     logger.warn('PowerValidation', 'Blocked: frame current over the safe limit', undefined, {
       totalCurrentMa: totalCurrent,
       limitMa: SAFE_CURRENT_LIMIT,
