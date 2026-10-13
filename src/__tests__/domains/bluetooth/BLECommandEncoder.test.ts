@@ -1,4 +1,4 @@
-import { BLECommandEncoder } from '../../../domains/bluetooth/BLECommandEncoder';
+import { BLECommandEncoder } from '../../../domain/bluetooth/bleCommandEncoder';
 import { BLE_COMMANDS, RESPONSE_CODES } from '../../../utils/bleConstants';
 
 describe('BLECommandEncoder', () => {
@@ -81,7 +81,7 @@ describe('BLECommandEncoder', () => {
 
   describe('encodeColorUpdate', () => {
     it('should encode color update', () => {
-      const command = BLECommandEncoder.encodeColorUpdate(255, 128, 64);
+      const command = BLECommandEncoder.encodeColorUpdate([255, 128, 64]);
       
       expect(command.length).toBe(5);
       expect(command[0]).toBe(BLE_COMMANDS.CMD_CONFIG_UPDATE);
