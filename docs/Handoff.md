@@ -517,8 +517,6 @@ Completed by: cloud agent (Arduino sketch build support) — 2026-10-12T18:20:00
 
 ---
 
----
-
 ## Job E (PR #11 conflict resolution): sign-off
 
 **What changed**
@@ -539,6 +537,23 @@ Completed by: cloud agent (Arduino sketch build support) — 2026-10-12T18:20:00
 `grep -rn '<<<<<<<\|=======\|>>>>>>>' docs/` returns nothing, and there is exactly one `## Prompt for next agent` heading. The `firmware-build` result on PR #11 is reported on the PR and to Cow; it is a new signal on this branch because main's workflow now runs against H2's firmware changes.
 
 Completed by: Job E worker (Claude Sonnet) - 2026-10-13T01:12:00Z
+
+---
+
+## Firmware CI hardening (Job D) - sign-off
+
+Done on branch `claude/ci-firmware-hardening`, one concern: make the firmware compile check safe to require and cheaper to run.
+
+- [x] Always-reporting check: the `paths` filters were removed and one job named "Compile bt-led-controller.ino" always runs. A detect step diffs base against head over `bt-led-controller/`, `scripts/build-firmware.sh` and the workflow file. When none changed, the compile steps are skipped and the check still reports success. Chosen over a companion job because one workflow cannot hold two jobs with the same name and a second file would report two checks under one name.
+- [x] Cache: `actions/cache@v4` over `~/.local` and `~/.arduino15`, keyed on CLI 1.5.1, core 1.7.0, nrfutil version and Python 3.12.
+- [x] `adafruit-nrfutil` pinned to 0.5.3.post16 (kept, not removed), overridable with `ARDUINO_NRFUTIL_VERSION`.
+- [x] Dead `develop` push trigger removed.
+- Measured on Actions (workflow_dispatch, same commit): cold run 72 s total, compile step 54 s; warm run 32 s total, compile step 19 s.
+- Not exercised: the skip path (no firmware files changed). Dispatch runs always compile. It first runs for real on the next PR that touches no firmware path.
+
+Decision: the check name was kept identical so it can be made a required status check after Cow merges this.
+
+Completed by: Job D worker (Claude Sonnet) - 2026-10-13T01:20:00Z
 
 ---
 
