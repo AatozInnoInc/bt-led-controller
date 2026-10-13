@@ -16,15 +16,59 @@
  * preserved rather than collapsed.
  */
 
-import { DEFAULT_BAND_THRESHOLDS } from './emiRiskModel';
+import { EffectType, RGBColor } from '../../types/config';
+import {
+  assessEmiRisk,
+  DEFAULT_BAND_THRESHOLDS,
+  DEFAULT_WEIGHTS,
+  EmiRiskInput,
+  EmiRiskWeights,
+} from './emiRiskModel';
 
 export const MIN_OBSERVATIONS = 6;
 
+/**
+ * Version stamped on every stored raw record. Bump it when the shape of
+ * RawEmiObservation changes. Records written before versioning existed
+ * (score only) carry no modelVersion and are treated as legacy.
+ */
+export const EMI_OBSERVATION_MODEL_VERSION = 2;
+
+/** A scored observation, the only shape calibrateThresholds needs. */
 export interface EmiObservation {
-  score: number; // 0-1, the assessEmiRisk score at the time of the tap
+  score: number; // 0-1, the assessEmiRisk score for this observation
+  verdict: 'quiet' | 'heard';
+  at: number; // epoch ms
+  /**
+   * False for legacy records that only kept a score. Their score is frozen
+   * under the weights of the day and cannot be recomputed. Absent means true.
+   */
+  rescorable?: boolean;
+}
+
+/**
+ * What is persisted: the raw inputs behind a tap, so the score can be
+ * recomputed under any later weight set.
+ */
+export interface RawEmiObservation {
+  modelVersion: number;
+  color: RGBColor;
+  brightness: number;
+  speed: number;
+  effectType: EffectType;
+  ledCount: number;
   verdict: 'quiet' | 'heard';
   at: number; // epoch ms
 }
+
+/** Pre-versioning record: computed score only. Kept, flagged unrescorable. */
+export interface LegacyEmiObservation {
+  score: number;
+  verdict: 'quiet' | 'heard';
+  at: number;
+}
+
+export type StoredEmiRecord = RawEmiObservation | LegacyEmiObservation;
 
 export interface EmiBandThresholds {
   lowMax: number;
@@ -70,4 +114,86 @@ export function calibrateThresholds(observations: EmiObservation[]): EmiCalibrat
     isCalibrated: true,
     observationCount: observations.length,
   };
+}
+
+const isVerdict = (value: unknown): value is 'quiet' | 'heard' =>
+  value === 'quiet' || value === 'heard';
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+export function isRawEmiObservation(value: any): value is RawEmiObservation {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    isFiniteNumber(value.modelVersion) &&
+    Array.isArray(value.color) &&
+    value.color.length === 3 &&
+    value.color.every(isFiniteNumber) &&
+    isFiniteNumber(value.brightness) &&
+    isFiniteNumber(value.speed) &&
+    isFiniteNumber(value.effectType) &&
+    isFiniteNumber(value.ledCount) &&
+    isVerdict(value.verdict) &&
+    isFiniteNumber(value.at)
+  );
+}
+
+export function isLegacyEmiObservation(value: any): value is LegacyEmiObservation {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    isFiniteNumber(value.score) &&
+    isVerdict(value.verdict) &&
+    isFiniteNumber(value.at)
+  );
+}
+
+export function isStoredEmiRecord(value: unknown): value is StoredEmiRecord {
+  return isRawEmiObservation(value) || isLegacyEmiObservation(value);
+}
+
+/** Build the record to persist for one tap. Pure: the caller supplies the clock. */
+export function createRawObservation(
+  input: EmiRiskInput,
+  ledCount: number,
+  verdict: 'quiet' | 'heard',
+  at: number
+): RawEmiObservation {
+  return {
+    modelVersion: EMI_OBSERVATION_MODEL_VERSION,
+    color: [input.color[0], input.color[1], input.color[2]],
+    brightness: input.brightness,
+    speed: input.speed,
+    effectType: input.effectType,
+    ledCount,
+    verdict,
+    at,
+  };
+}
+
+/**
+ * Turn stored records into scored observations under the given weights.
+ * Raw records are rescored from their inputs; legacy records keep their
+ * frozen score and are flagged rescorable: false rather than dropped.
+ */
+export function rescoreObservations(
+  records: StoredEmiRecord[],
+  weights: EmiRiskWeights = DEFAULT_WEIGHTS
+): EmiObservation[] {
+  return records.map((record) => {
+    if (isRawEmiObservation(record)) {
+      const { score } = assessEmiRisk(
+        {
+          color: record.color,
+          brightness: record.brightness,
+          speed: record.speed,
+          effectType: record.effectType,
+        },
+        weights
+      );
+      return { score, verdict: record.verdict, at: record.at, rescorable: true };
+    }
+    return { score: record.score, verdict: record.verdict, at: record.at, rescorable: false };
+  });
 }

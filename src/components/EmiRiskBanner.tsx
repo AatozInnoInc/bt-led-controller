@@ -16,7 +16,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { RGBColor, EffectType } from '../types/config';
 import { assessEmiRisk, EmiRiskBand, EmiRiskInput } from '../domain/emi/emiRiskModel';
-import { calibrateThresholds, MIN_OBSERVATIONS } from '../domain/emi/emiCalibration';
+import {
+  calibrateThresholds,
+  createRawObservation,
+  MIN_OBSERVATIONS,
+  rescoreObservations,
+  StoredEmiRecord,
+} from '../domain/emi/emiCalibration';
+import { MAX_LED_COUNT } from '../utils/parameterValidation';
 import { emiCalibrationRepository } from '../repositories/emiCalibrationRepository';
 
 export interface EmiRiskBannerProps {
@@ -42,16 +49,14 @@ export const EmiRiskBanner: React.FC<EmiRiskBannerProps> = ({
 }) => {
   const { colors: themeColors, isDark } = useTheme();
   const [expanded, setExpanded] = useState(false);
-  const [observations, setObservations] = useState<
-    Awaited<ReturnType<typeof emiCalibrationRepository.loadObservations>>
-  >([]);
+  const [records, setRecords] = useState<StoredEmiRecord[]>([]);
   const [recording, setRecording] = useState(false);
 
   useEffect(() => {
     let active = true;
     emiCalibrationRepository.loadObservations(deviceId).then((loaded) => {
       if (active) {
-        setObservations(loaded);
+        setRecords(loaded);
       }
     });
     return () => {
@@ -59,6 +64,8 @@ export const EmiRiskBanner: React.FC<EmiRiskBannerProps> = ({
     };
   }, [deviceId]);
 
+  // Scores are recomputed from stored inputs under the current weights.
+  const observations = useMemo(() => rescoreObservations(records), [records]);
   const calibration = useMemo(() => calibrateThresholds(observations), [observations]);
 
   const input: EmiRiskInput = useMemo(
@@ -82,17 +89,19 @@ export const EmiRiskBanner: React.FC<EmiRiskBannerProps> = ({
     async (verdict: 'quiet' | 'heard') => {
       setRecording(true);
       try {
-        const updated = await emiCalibrationRepository.addObservation(deviceId, {
-          score: assessment.score,
-          verdict,
-          at: Date.now(),
-        });
-        setObservations(updated);
+        // The app does not track strip length yet, so record the model's worst case.
+        const updated = await emiCalibrationRepository.addObservation(
+          deviceId,
+          createRawObservation(input, MAX_LED_COUNT, verdict, Date.now())
+        );
+        setRecords(updated);
+      } catch (error) {
+        console.error('EMI calibration: could not record verdict:', error);
       } finally {
         setRecording(false);
       }
     },
-    [deviceId, assessment.score]
+    [deviceId, input]
   );
 
   return (

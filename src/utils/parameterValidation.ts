@@ -22,7 +22,7 @@ export interface ValidationResult {
 }
 
 // Power consumption constants
-const MAX_LED_COUNT = 14; // Worst case: 14 LEDs
+export const MAX_LED_COUNT = 14; // Worst case: 14 LEDs
 const MAX_CURRENT_PER_LED_WHITE = 60; // mA per LED at full white, full brightness
 const BATTERY_MAX_CURRENT = 500; // mA - 500mAh battery
 const SAFE_CURRENT_LIMIT = 400; // mA - 80% of max for safety margin
