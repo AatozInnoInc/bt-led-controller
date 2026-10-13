@@ -36,3 +36,15 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .vercel
+
+# Claude Code local agent worktrees (session-local, never project content)
+.claude/
+
+# Arduino / arduino-cli local compile output
+build/firmware/
+*.hex
+*.bin
+*.elf
+*.zip
+*.map
+

@@ -9,13 +9,19 @@ This Arduino sketch provides a Bluetooth Low Energy (BLE) controller for LED gui
    - Change `DEVICE_NAME` to a unique identifier for your guitar
    - Example: `#define DEVICE_NAME "LED_GUITAR_MY_STRAT"`
 
-2. **Upload the Code**:
-   - Connect your nRF52 board to your computer
-   - Open `my-led-controller.ino` in Arduino IDE
-   - Select your board (nRF52 Feather, ItsyBitsy, etc.)
+2. **Compile (CLI, required in CI)**:
+   - From the repo root: `npm run build:firmware` (or `./scripts/build-firmware.sh`)
+   - Target board FQBN: `adafruit:nrf52:itsybitsy52840` (Adafruit ItsyBitsy nRF52840 Express)
+   - Output lands in `build/firmware/`
+   - The script installs `arduino-cli`, Adafruit nRF52 core `1.7.0`, and `adafruit-nrfutil` when needed
+
+3. **Upload the Code**:
+   - Connect your ItsyBitsy nRF52840 Express
+   - Open `bt-led-controller.ino` in Arduino IDE (or flash the CLI build output)
+   - Select **Adafruit ItsyBitsy nRF52840 Express**
    - Upload the code
 
-3. **Test the Connection**:
+4. **Test the Connection**:
    - Open the React Native app
    - Scan for devices
    - Your device should appear as `LED_GUITAR_[YOUR_NAME]`

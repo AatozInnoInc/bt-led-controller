@@ -1,0 +1,53 @@
+# Compile the real Adafruit nRF52840 sketch with arduino-cli on every PR/push.
+name: Firmware Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'bt-led-controller/**'
+      - 'scripts/build-firmware.sh'
+      - '.github/workflows/firmware-build.yml'
+  pull_request:
+    paths:
+      - 'bt-led-controller/**'
+      - 'scripts/build-firmware.sh'
+      - '.github/workflows/firmware-build.yml'
+  workflow_dispatch:
+
+jobs:
+  compile-sketch:
+    name: Compile bt-led-controller.ino
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile firmware sketch
+        env:
+          # Pin toolchain pieces so CI matches local scripts/build-firmware.sh defaults.
+          ARDUINO_CLI_VERSION: '1.5.1'
+          ARDUINO_CORE: 'adafruit:nrf52'
+          ARDUINO_CORE_VERSION: '1.7.0'
+          ARDUINO_FQBN: 'adafruit:nrf52:itsybitsy52840'
+          ARDUINO_BUILD_DIR: ${{ runner.temp }}/firmware-build
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/build-firmware.sh
+          ./scripts/build-firmware.sh
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bt-led-controller-firmware
+          path: ${{ runner.temp }}/firmware-build/*
+          if-no-files-found: error
+          retention-days: 14

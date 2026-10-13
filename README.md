@@ -37,6 +37,19 @@ Pick a pattern, tune color + speed, then:
 
 The simulator runs entirely in the browser — no backend, no hardware required.
 
+### Firmware (Arduino / nRF52840)
+
+Compile the real sketch for Adafruit ItsyBitsy nRF52840 Express with `arduino-cli`:
+
+```bash
+npm run build:firmware
+# or: ./scripts/build-firmware.sh
+```
+
+The script installs `arduino-cli`, the Adafruit nRF52 core (`adafruit:nrf52@1.7.0`), and `adafruit-nrfutil` when they are missing, then writes binaries under `build/firmware/`. CI runs the same compile on every change under `bt-led-controller/` (see `.github/workflows/firmware-build.yml`).
+
+To flash from Arduino IDE: open `bt-led-controller/bt-led-controller.ino`, select **Adafruit ItsyBitsy nRF52840 Express**, then Upload. Details live in [`bt-led-controller/README.md`](./bt-led-controller/README.md).
+
 ### Mobile / desktop app (Expo RN)
 
 ```bash
@@ -111,9 +124,10 @@ Effects that run in the simulator run on hardware — they share the same math h
 ```bash
 npx vitest run     # simulator + engine (Vitest, 44 tests)
 npm test           # RN app (Jest)
+npm run build:firmware   # real nRF52840 sketch compile (arduino-cli)
 ```
 
-Both must stay green at every commit.
+JS suites and the firmware sketch compile must stay green at every commit.
 
 ---
 

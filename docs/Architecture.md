@@ -95,7 +95,8 @@ Two outputs from the simulator:
 | SVG circles with layered opacity for LED render | WebGL, Canvas 2D, CSS drop-shadow | No build deps; no CSS filter performance issues on wide strips; scales cleanly |
 | Supabase for shared gallery (v1.5) | Firebase, custom API | Already likely in the main app ecosystem; simple row-level security |
 | Power safety constants in `packages/ble-protocol/src/powerSafety.ts`, mirrored by a checked-in `bt-led-controller/power_safety_constants.h` with a CI drift check (H2) | New package; generated header; app-only limit | One source beside the other shared protocol constants; Arduino IDE builds need a plain header in the sketch folder; the firmware must enforce the limit itself, so it cannot rely on the app |
-| Firmware frame current limiter as a pure header (`power_limiter.h`) tested on the host with g++ (H2) | Limit inside the `.ino` only; rely on app validation | No Arduino toolchain in CI; a pure header can be proven by exhaustive sweeps on every PR |
+| Firmware frame current limiter as a pure header (`power_limiter.h`) tested on the host with g++ (H2) | Limit inside the `.ino` only; rely on app validation | Exhaustive host-side g++ sweeps over colour x brightness x LED count prove the limiter arithmetic in a way a single compile cannot; the `arduino-cli` compile job and the host sweeps are complementary, one proving the sketch builds for the board and the other proving the limiter math |
+| Real `arduino-cli` compile for `bt-led-controller.ino` in CI | Host-only g++ stubs, Arduino IDE-only builds | Stubs cannot prove the nRF52 sketch links; CI must compile the real FQBN (`adafruit:nrf52:itsybitsy52840`) so firmware PRs cannot land broken |
 
 ---
 
