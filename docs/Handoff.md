@@ -714,3 +714,18 @@ Work he authorised BEFORE this window stays authorised and proceeds: the noise-m
 The morning briefings keep running, because he said on 2026-10-02 that the updates help, but for this window they are report-only: what landed, what is queued, no numbered questions he cannot answer, and no 20-minute action. Questions that accumulate are gathered and put to him once, on Saturday, when his quota resets and his hardware session happens on the same day.
 
 Completed by: PM orchestrator (Claude, morning session), from Cow's direct replies — 2026-10-13T12:10:00Z
+
+---
+
+## iOS build fix (PR #15) status, 2026-10-14
+
+BLUF: iOS Build run 84 failed because Xcode 26.0.1 on the runner had no iOS platform component, not because of signing or the Apple subscription. PR #15 (`claude/ios-platform-fix`, workflow only, not merged) fixes it; a development build on that branch is green end to end (run 38494125022, about 19 minutes).
+
+- Root cause: `xcodebuild: error: ... iOS 26.0 is not installed` in Build & Archive. Signing, profile install and `agvtool` all passed.
+- First attempt failed (run 86): the guard `xcrun --sdk iphoneos --show-sdk-path` passes while the platform component is absent, so it never downloaded. Do not reintroduce a conditional on the SDK path.
+- Fix: `xcodebuild -downloadPlatform iOS` runs unconditionally ("Ensure iOS platform is installed", about 4 minutes). The verify step now prints `xcodebuild -showsdks` and the iOS SDK. Dead `develop` trigger removed.
+- A production dispatch from the branch was queued to exercise the TestFlight chain. Its outcome was not observed by this session (the monitoring command was denied by the permission classifier). Read the `iOS Build` and `iOS Publish to TestFlight` runs on `claude/ios-platform-fix` first.
+- Run logs print the signing identity common name, which includes a personal name; do not copy log output into commits, PRs or docs.
+- The live `## Prompt for next agent` (H3) above is unchanged. The queued noise catalogue, the docs slim-down and the two TODO jobs are not started: PR #3 and PR #15 are open, and iOS was declared job one.
+
+Completed by: nightly WORK orchestrator (Claude Sonnet) — 2026-10-14T02:00:00Z
