@@ -63,6 +63,7 @@ The preset format is consumed by the companion RN app. Any change to `ExportEnve
 
 - [ ] `npm test` passes
 - [ ] `npm run build` passes
+- [ ] If firmware changed: `npm run build:firmware` passes (real `arduino-cli` compile for ItsyBitsy nRF52840)
 - [ ] No new dependencies added without discussion
 - [ ] If engine changed: behaviour matches `bt-led-controller.ino`
 - [ ] If preset format changed: companion RN app team informed

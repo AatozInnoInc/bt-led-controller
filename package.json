@@ -30,7 +30,8 @@
     "test:coverage": "jest --coverage",
     "test:unit": "jest --testPathPattern='.*\\.test\\.ts$'",
     "test:integration": "jest --testPathPattern='(configDomainController|ownership|analytics|errorHandling)\\.test\\.ts$'",
-    "test:components": "jest --testPathPattern='screens/.*\\.test\\.tsx$'"
+    "test:components": "jest --testPathPattern='screens/.*\\.test\\.tsx$'",
+    "build:firmware": "./scripts/build-firmware.sh"
   },
   "dependencies": {
     "@expo/cli": "^0.24.20",

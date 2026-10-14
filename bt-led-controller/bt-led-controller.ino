@@ -23,6 +23,13 @@
 #include <math.h>
 
 #include "device_config.h"
+// Frame current limiter (pure C++, host-tested in firmware-tests/). Also
+// defines MAX_FRAME_CURRENT_MA and the other shared power safety constants.
+#include "power_limiter.h"
+
+#if LED_COUNT > MAX_LED_COUNT
+#error "LED_COUNT exceeds MAX_LED_COUNT; the power budget is only proven up to MAX_LED_COUNT LEDs"
+#endif
 
 // BLE Services
 BLEDfu bledfu;
@@ -173,11 +180,34 @@ static inline void sendLED(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness) 
 }
 
 // Update all LEDs - this is our "show()" function
+// Every frame passes through the frame current limiter here, so no pattern,
+// preview or power mode can put more than MAX_FRAME_CURRENT_MA on the strip.
+// globalBrightness itself is left alone; only the value sent is capped.
+static bool frameWasPowerLimited = false;
+
 static inline void bitbangShow() {
+  uint32_t frameChannelSum = 0;
+  for (int i = 0; i < LED_COUNT; i++) {
+    frameChannelSum += (uint32_t)ledBuf[i].r + ledBuf[i].g + ledBuf[i].b;
+  }
+  uint8_t frameBrightness = powerLimitFrameBrightnessDefault(frameChannelSum, globalBrightness);
+
+  // Log only on transitions so the 30 FPS loop does not flood Serial.
+  bool isPowerLimited = frameBrightness < globalBrightness;
+  if (isPowerLimited != frameWasPowerLimited) {
+    Serial.printf("Power limiter %s: requested brightness=%d, sent=%d, frame current=%lu mA (limit %d mA)\n",
+                  isPowerLimited ? "engaged" : "released",
+                  globalBrightness,
+                  frameBrightness,
+                  (unsigned long)powerFrameCurrentMa(frameChannelSum, frameBrightness, MA_PER_CHANNEL_AT_FULL),
+                  (int)MAX_FRAME_CURRENT_MA);
+    frameWasPowerLimited = isPowerLimited;
+  }
+
   sendStartFrame();
 
   for (int i = 0; i < LED_COUNT; i++) {
-    sendLED(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b, globalBrightness);
+    sendLED(ledBuf[i].r, ledBuf[i].g, ledBuf[i].b, frameBrightness);
   }
 
   sendEndFrame();
@@ -387,7 +417,7 @@ uint32_t calculateChecksum(DeviceSettings* settings);
 void applySettings();
 
 bool validateConfig(DeviceSettings* settings);
-bool validateBrightness(uint8_t brightness);
+bool validateBrightness(int brightness);
 bool validatePattern(uint8_t pattern);
 bool validatePowerMode(uint8_t powerMode);
 bool validateColor(uint8_t r, uint8_t g, uint8_t b);
@@ -837,7 +867,18 @@ bool validateConfig(DeviceSettings* settings) {
          (settings->hasSecondaryColor == 0 || settings->hasSecondaryColor == 1);
 }
 
-bool validateBrightness(uint8_t brightness) { return brightness <= MAX_BRIGHTNESS; }
+// Takes int, not uint8_t: the BLE handler passes bleuart.read() straight in,
+// and a uint8_t parameter silently wrapped -1 or 256 into a "valid" byte,
+// which made this check always true. Range logic is host-tested in
+// firmware-tests/power_limiter_test.cpp (powerIsBrightnessInRange).
+bool validateBrightness(int brightness) {
+  bool isInRange = powerIsBrightnessInRange(brightness, MAX_BRIGHTNESS);
+  if (isInRange) {
+    return true;
+  }
+  Serial.printf("validateBrightness: rejected %d (allowed 0-%d)\n", brightness, MAX_BRIGHTNESS);
+  return false;
+}
 bool validatePattern(uint8_t pattern) { return pattern < MAX_EFFECTS; }
 bool validatePowerMode(uint8_t powerMode) { return powerMode <= 2; }
 bool validateColor(uint8_t r, uint8_t g, uint8_t b) { (void)r; (void)g; (void)b; return true; }
@@ -1148,11 +1189,13 @@ void handleConfigUpdate() {
           ramBuffer.brightness = brightness;
           // Also update currentSettings for immediate preview
           currentSettings.brightness = brightness;
-          globalBrightness = brightness;
           updated = true;
 
-          // preview immediately
-          showLeds();
+          // Preview through applyPowerMode() so the power mode divisor applies
+          // (it used to set globalBrightness directly and skip it). It also
+          // calls showLeds(), and every frame then passes the current limiter.
+          Serial.printf("  Brightness update: %d (power mode %d)\n", brightness, currentSettings.powerMode);
+          applyPowerMode();
         } else {
           sendErrorResponse(ERROR_INVALID_PARAMETER, "Invalid brightness");
           return;
@@ -1616,6 +1659,9 @@ void wave() {
     // Create a wave that travels along the strip
     // Each LED has a phase offset based on position
     // Combine time and position for traveling wave
+    // Restored positionPhase + value channel (gv) to match packages/led-engine wave.ts
+    // after Colour B edit a830801 dropped the definitions while leaving the uses.
+    uint8_t positionPhase = (uint8_t)((i * 255) / LED_COUNT);
     uint8_t wavePhase = timePhase + positionPhase;
     uint8_t sineVal = sin8_approx(wavePhase);
     uint8_t gv = gamma8[sineVal];
@@ -1629,7 +1675,7 @@ void wave() {
     }
 
     // Use HSV color space for smooth color transitions
-    RGB rgb = hsv2rgb(wavePhase, 255, g);
+    RGB rgb = hsv2rgb(hue, 255, gv);
     ledBuf[i] = rgb;
   }
   ledBufferChanged = true;

@@ -19,11 +19,11 @@ import { assessEmiRisk, EmiRiskBand, EmiRiskInput } from '../domain/emi/emiRiskM
 import {
   calibrateThresholds,
   createRawObservation,
+  EMI_OBSERVATION_LED_COUNT,
   MIN_OBSERVATIONS,
   rescoreObservations,
   StoredEmiRecord,
 } from '../domain/emi/emiCalibration';
-import { MAX_LED_COUNT } from '../utils/parameterValidation';
 import { emiCalibrationRepository } from '../repositories/emiCalibrationRepository';
 
 export interface EmiRiskBannerProps {
@@ -89,10 +89,10 @@ export const EmiRiskBanner: React.FC<EmiRiskBannerProps> = ({
     async (verdict: 'quiet' | 'heard') => {
       setRecording(true);
       try {
-        // The app does not track strip length yet, so record the model's worst case.
+        // The app does not track strip length yet; see EMI_OBSERVATION_LED_COUNT.
         const updated = await emiCalibrationRepository.addObservation(
           deviceId,
-          createRawObservation(input, MAX_LED_COUNT, verdict, Date.now())
+          createRawObservation(input, EMI_OBSERVATION_LED_COUNT, verdict, Date.now())
         );
         setRecords(updated);
       } catch (error) {

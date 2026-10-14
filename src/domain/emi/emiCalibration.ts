@@ -27,6 +27,12 @@ import {
 
 export const MIN_OBSERVATIONS = 6;
 
+// Strip length recorded with every observation. Cow decided on 2026-10-13 that
+// this stays 14 until slice H3 adds a real strip-length setting. It is NOT the
+// power-safety MAX_LED_COUNT (30). Raw inputs are stored, so observations can
+// be rescored once the real length is known.
+export const EMI_OBSERVATION_LED_COUNT = 14;
+
 /**
  * Version stamped on every stored raw record. Bump it when the shape of
  * RawEmiObservation changes. Records written before versioning existed
