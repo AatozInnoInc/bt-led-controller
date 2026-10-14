@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - develop
   workflow_dispatch:
     inputs:
       environment:
@@ -34,11 +33,21 @@ jobs:
         with:
           xcode-version: '26.0'
 
-      - name: Verify Xcode / SDK versions
+      - name: Ensure iOS platform is installed
+        run: |
+          set -euo pipefail
+          if ! xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
+            echo "iOS platform missing for this Xcode; downloading"
+            xcodebuild -downloadPlatform iOS
+          fi
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Verify Xcode and iOS SDK
         run: |
           set -euo pipefail
           xcodebuild -version
-          xcrun --show-sdk-version
+          xcodebuild -showsdks
+          echo "iOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
 
       - name: Set environment
         id: set-env
