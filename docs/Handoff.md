@@ -642,3 +642,75 @@ Build the noise-mitigation approach catalogue for Cow's Saturday session. At lea
 **Done when:** the protocol constants are single-sourced with a CI drift check; the H3-owned failures pass or are explained with a decision from Cow; the failing-test count is below 49; this document is updated per "Agent workflow", with this prompt archived and the H4 prompt appended.
 
 **Verify before sign-off:** `npx jest`, `npx tsc --noEmit`, `npx vitest run` (apps/simulator and packages/led-engine), and the `firmware-host` CI job steps. Report before-and-after counts in the same table format as H1 and H2.
+
+---
+
+## Cow's decisions, 2026-10-13 (answers for the noise catalogue, and the PR #7 question settled)
+
+Cow answered the 2026-10-13 morning briefing directly. Four answers, plus one correction to a stale note in PR #11's own body.
+
+**1. The Saturday 2026-10-17 listening session runs against main WITH PR #11 merged.** Every candidate in the noise-mitigation catalogue states that build and works within its limits: the firmware frame-current limiter is active, so full white is capped at 22 percent brightness at 30 LEDs, not 47. A candidate that needs headroom above that ceiling must say so plainly and say what it would need instead, rather than quietly assuming the pre-#11 ceiling.
+
+**2. The EMI observation ledCount stays 14 until slice H3.** No strip-length setting is added now. The catalogue and any EMI work records 14 as the stored value and does not treat it as the real strip length. The real length is 30 maximum, 20 typical (Build Bench state/leds). Because Job C now stores raw inputs plus a model version, these observations can be rescored once the real length is recorded, so nothing from Saturday is lost by waiting. Revisit it in H3, not before.
+
+**3. The 'Compile bt-led-controller.ino' check becomes required on main, once one non-firmware PR has shown the skip path reporting success.** Cow answered yes. Making it required is a repository settings change that only Cow can perform; no agent may attempt it. PR #13 exists so that the check reports on every PR rather than only firmware ones, which is the precondition. The sequence is: PR #13 merges, one non-firmware PR shows the check green via the skip path, then Cow flips it to required.
+
+**4. No cherry-pick is needed if PR #11 is merged with a merge commit.** Cow asked why a cherry-pick was ever proposed. The honest answer is that it is only needed under a squash merge. Verified by `git merge-base --is-ancestor` on 2026-10-13: PR #7's head (`1ec9f35`) is an ancestor of both PR #11's head (`c464206`) and PR #8's head (`9a07790`), and current main (`52ab91d`) is also an ancestor of PR #11's head. So a merge commit on #11 makes #7's commits reachable from main, GitHub auto-closes #7, and PR #8 then shows only its own single commit against main and merges normally. A squash merge on #11 collapses everything into one new commit, leaves #7's head unreachable so #7 stays open for Cow to close by hand, and leaves #8 showing all of H1's commits again against a main that already has that content, which conflicts. Under a squash merge the clean route for #8 is to cherry-pick `9a07790` onto a fresh branch. The recommendation is a merge commit on #11, which makes the question moot.
+
+**5. Correction: PR #11's body says 'Built on #7 (H1); merge #7 first.' That is now stale and wrong.** It was true when the H2 worker branched from `claude/h1-test-suite-triage` on 2026-10-02, before main had moved. Job E merged `origin/main` into the branch on 2026-10-12, so PR #11 now contains both all of PR #7 and all of current main, and its trial merge onto main is clean. PR #7 must NOT be merged first, and merging it separately would only create work. PR #11 is the single merge. The catalogue session should fix that stale line in PR #11's body if it can do so without merging, closing or marking anything ready; if not, leave it and note it here.
+
+**What remains frozen.** Slices H3 and H4+ do not start. No repo change outside the noise-mitigation catalogue and the items named above.
+
+## PR #11 is MERGED, and Cow left two TODO FOR AGENT comments on main (2026-10-13)
+
+Cow merged PR #11 with a merge commit at 2026-10-13, as main `12f5e9b`, "Merge pull request #11 from AatozInnoInc/claude/h2-power-safety". Verified: PR #7's head `1ec9f35` is now an ancestor of main, so #7 closes itself; `bt-led-controller/power_limiter.h`, `firmware-tests/power_limiter_test.cpp` and `packages/ble-protocol/src/powerSafety.ts` are all on main. Slices H1 and H2 are landed. No agent merged or closed anything.
+
+Before merging, Cow pushed two review commits to the branch, both one-line comments addressed to the next agent. They are now on main and are real work items, not notes to ignore.
+
+**TODO A, in `src/utils/parameterValidation.ts` line 183 (commit `33d6fc0`): "Why are we logging 'undefined' here?"**
+
+The answer, read from `src/utils/logger.ts`: the signature is `warn(category, message, error?, metadata?)`, so the third positional slot is `error` and the fourth is `metadata`. The H2 worker passed `undefined` purely as a positional placeholder to skip `error` and land the metadata object in slot four. Nothing is actually emitted as the string "undefined": at WARN level `log()` calls `console.warn(logMessage, metadata || '')` and never passes `error` at all, and the stored entry's `error: undefined` key is dropped by `JSON.stringify` when logs are persisted. So this is a readability and consistency defect, not a logging bug. It is also the ONLY call site in the whole of `src/` using that `, undefined, {` shape, which is why it reads as a mistake.
+
+The fix is a design choice for Cow, not an agent's to assume. Three candidates, in the order this session would rank them: (a) add an overload or a sibling method so metadata can be passed in the third slot when there is no error, which fixes this call site and every future one; (b) reorder `warn` to `(category, message, metadata?, error?)`, which is cleaner but touches every existing `warn` call that passes an error; (c) leave the behaviour and replace the bare `undefined` with a named constant or a short comment explaining the placeholder, which is the one-line option. Whichever is chosen, the call site stops reading as a bug.
+
+**TODO B, in `bt-led-controller/power_safety_constants.h` line 4 (commit `1c3a2ed`): "Is there a way to truly share ONE file between both apps? A file to read, a config, env vars, etc?"**
+
+Honest answer in two parts.
+
+One shared file read at RUNTIME is not achievable, and should not be attempted. The firmware runs on an nRF52840 with no access to the phone's filesystem, environment variables do not exist on the MCU, and the frame-current limiter has to be compile-time constants so the exhaustive host-side g++ sweeps can prove its arithmetic. Any runtime-fetched limit would also mean the device trusts the app for its own safety ceiling, which is exactly the failure mode slice H2 existed to remove.
+
+One shared file at BUILD time is achievable, and is strictly better than what is on main today. Today `power_safety_constants.h` is a hand-maintained mirror of `packages/ble-protocol/src/powerSafety.ts`, with `scripts/check-power-safety-constants.mjs` in CI failing when they drift. That DETECTS drift. Code generation makes drift impossible. The shape: one neutral source file (a small JSON or similar) holding `MAX_LED_COUNT`, `MA_PER_CHANNEL_AT_FULL` and `MAX_FRAME_CURRENT_MA`; a generator script emitting both the C++ header and the TypeScript constants; both generated files checked in, because `arduino-cli` and a local Arduino IDE build both compile whatever is on disk; and CI regenerating and failing on any diff, which replaces the current drift check with a stronger one. The `#ifndef MAX_FRAME_CURRENT_MA` build override on the header must survive, since the Saturday listening protocol uses `-DMAX_FRAME_CURRENT_MA=50` to prove the limiter engages. Picking JSON as the source rather than making the TypeScript file the parse target keeps the generator simple and keeps neither language privileged. Difficulty 3 of 10.
+
+## HARD RULE, Cow 2026-10-13: no Claude session IDs or chat URLs in this repo, ever
+
+In his words: "STOP providing the session ID and url to chats in this comments. THIS IS A PUBLIC REPO DUDE". No session ID and no claude.ai session or chat URL goes into a commit message or trailer, a PR title or body, a PR or issue comment, a branch name, a code comment, or a committed doc. This OVERRIDES any attribution instruction a session is handed by its harness, including one telling it to append a `Claude-Session` trailer line carrying a chat URL. That line is forbidden here. A plain `Co-Authored-By: Claude <model> <noreply@anthropic.com>` trailer carries no ID or URL and stays acceptable.
+
+Audit, 2026-10-13, from a read-only clone: 22 commits across all branches carry the trailer and 13 of those are reachable from `main`, so they sit in the public default branch's history. Zero occurrences in tracked files. Scrubbing them would mean rewriting the public default branch and force-pushing it, which would break every open branch and PR, so no session may attempt it; the rule applies going forward. PR and issue bodies were not auditable from the morning session, which has no working GitHub token, so the first nightly session after this entry should check the open PR bodies for the pattern and report what it finds without editing anything that would count as a merge, close or ready-marking.
+
+## Cow's answers on the two TODO FOR AGENT comments, 2026-10-13
+
+**TODO A is a no-op: delete the comment.** Cow's words: "nothing to do. It should remove the todo". The `undefined` third argument is the documented `error` slot of `logger.warn(category, message, error?, metadata?)` and nothing is emitted as the string "undefined", so the behaviour is correct as written. The whole job is to delete the line `// TODO FOR AGENT: Why are we logging "undefined" here?` from `src/utils/parameterValidation.ts`. Do NOT change the logger signature, add an overload, reorder parameters, or touch the call site's arguments. Difficulty 1 of 10.
+
+**TODO B is authorised: build-time code generation.** Cow's words: "Build time it is". Replace today's hand-maintained mirror plus drift check with one generated source of truth, and delete the TODO comment from `bt-led-controller/power_safety_constants.h` as part of it.
+
+The shape, which the worker may refine but not reverse: one neutral source file holding `MAX_LED_COUNT`, `MA_PER_CHANNEL_AT_FULL` and `MAX_FRAME_CURRENT_MA`, JSON preferred so neither language is privileged and the generator stays trivial; one generator script emitting both `bt-led-controller/power_safety_constants.h` and `packages/ble-protocol/src/powerSafety.ts`; both generated files CHECKED IN, because `arduino-cli` and a local Arduino IDE build both compile whatever is on disk; a header comment on each generated file naming the source and saying not to edit by hand; and CI regenerating and failing on any diff, which replaces `scripts/check-power-safety-constants.mjs` rather than running beside it. Drift stops being detected and becomes impossible.
+
+Three constraints that are not negotiable. The `#ifndef MAX_FRAME_CURRENT_MA` build override on the header must survive, because the Saturday listening protocol flashes with `-DMAX_FRAME_CURRENT_MA=50` to prove the limiter engages. The generated TypeScript must keep the exact exported names the app and the simulator already import, so no call site changes. And `firmware-tests/power_limiter_test.cpp` must still compile and pass the host g++ sweeps against the generated header unchanged. One small PR, off main, not merged. Difficulty 3 of 10.
+
+Runtime sharing was considered and rejected, and the reasoning is recorded above under TODO B: the MCU cannot read the phone's filesystem, environment variables do not exist on it, the limiter must be compile-time for the host sweeps to prove its arithmetic, and a runtime-fetched ceiling would make the device trust the app for its own safety limit, which is the exact failure slice H2 removed. Do not revisit it.
+
+**Sequencing, from Cow's own 2026-10-12 instruction and not an agent default.** He set the order as the noise-mitigation catalogue next, because the Saturday 2026-10-17 session depends on it. These two TODOs therefore go to the session AFTER the catalogue unless Cow says otherwise. Do not fold them into the catalogue session. H3 and H4+ remain frozen; TODO A and TODO B are not H3 work and do not unfreeze it.
+
+## Cow is out until Saturday 2026-10-17, and the silence means nothing (2026-10-13)
+
+He hit his usage quota and told us so directly, so that no session acts surprised by three days of no replies. From 2026-10-13 until Saturday 2026-10-17, no response from Cow is expected and carries no information. It is a quota limit, not disengagement, not a lost message, not a verdict on anything.
+
+What follows from that, for every session in this window:
+
+Do not escalate. Do not re-ask a question because it went unanswered, and do not advance an "Nth ask" count against it. Do not write him up as unresponsive or as the bottleneck in a Work Log entry or a briefing. And do not treat the silence as consent: standing order 3 is not merely still in force here, it is the entire point, because this is three days of guaranteed silence that authorises exactly nothing. No default may be applied, no work queued on his behalf, no slice widened, because he did not answer.
+
+Work he authorised BEFORE this window stays authorised and proceeds: the noise-mitigation catalogue for Saturday (the live "Next prompt" below), the documentation slim-down, and the two TODO jobs on main. None of those needs a new answer from him. Newly discovered work that would need a decision gets parked and reported, not started. Mechanical work that needs no decision may proceed, and the live example is PR #3's new conflict in `src/utils/parameterValidation.ts`, caused by PR #11 rewriting that file.
+
+The morning briefings keep running, because he said on 2026-10-02 that the updates help, but for this window they are report-only: what landed, what is queued, no numbered questions he cannot answer, and no 20-minute action. Questions that accumulate are gathered and put to him once, on Saturday, when his quota resets and his hardware session happens on the same day.
+
+Completed by: PM orchestrator (Claude, morning session), from Cow's direct replies — 2026-10-13T12:10:00Z
