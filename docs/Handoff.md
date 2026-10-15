@@ -769,3 +769,42 @@ Cow reported directly: the iOS publish succeeded, the app runs on his iPhone, an
 **Done when** the branch has main merged in with no conflict markers, the test and compile numbers are reported, and a TestFlight build from that branch is available to Cow with its build number stated. Nothing merged into main, no PR closed or marked ready, no signature block anywhere.
 
 **Then, and only then,** the noise-mitigation catalogue (the next-prompt section of the 2026-10-12 entry). It must state which build each test runs against: main with PR #11 caps full white at 22 percent brightness at 30 LEDs, not 47. Still after that: the documentation slim-down (`handoff/2026-10-13-docs-slim`) and TODO A and TODO B. H3 and H4+ stay frozen.
+## Job G, Cow's request 2026-10-14: make PR #16 mergeable
+
+His words: "Have the nightly bot fix the merge conflict". Do this FIRST tonight, ahead of the documentation slim-down and TODO A and TODO B. It is small, it is the only thing standing between Cow and a one-click merge, and Saturday 2026-10-17 is three days out.
+
+**The state, verified 2026-10-14 by read-only clone and an actual trial merge.** PR #16 is `claude/noise-catalogue`, head `b8084ad`, correctly based on `claude/magical-pascal-yg32dj` (head `80c41d0`, which now contains main `0c1641b` after Job F). Its content is markdown only: `docs/NoiseCatalogue.md` (+184, new) and `docs/Handoff.md` (+10/-1), one commit, no signature block in the message. Merging it starts no iOS build and no TestFlight publish, and `firmware-build.yml` takes the always-reporting skip path, so nothing needs rebuilding.
+
+**The one conflict.** `git merge b8084ad` into `80c41d0` conflicts in `docs/Handoff.md` only, 22 lines across both sides, purely additive. Both sides appended a status section at the END of the file:
+
+- PR #16's side: `## Noise catalogue status (2026-10-14)`, signed off `2026-10-14T15:05:00Z`.
+- The base branch's side: `## Job F status (PR #3 branch, 2026-10-14)`, signed off `2026-10-14T22:00:00Z`.
+
+**What to do.** Check out `claude/noise-catalogue` and merge the BASE BRANCH into it: `git checkout claude/noise-catalogue` then `git merge origin/claude/magical-pascal-yg32dj`. That direction moves commits onto the PR branch and never onto main or onto the base, and pushing to a `claude/*` branch is not merging a PR. Do NOT rebase: Cow may be reading the branch, and a force-push over an open PR he is about to merge is the wrong risk to take.
+
+Resolve by keeping BOTH sections, ordered by sign-off timestamp: the noise catalogue section (15:05) first, then Job F (22:00). Nothing is dropped, nothing is reworded, no sign-off line is touched. Then push the branch.
+
+**Verify, and report each one:**
+
+- `grep -rn '<<<<<<<\|=======\|>>>>>>>' docs/` returns nothing.
+- Both sign-off lines survive verbatim: `Completed by: noise catalogue worker (Claude Opus) - 2026-10-14T15:05:00Z` and `Completed by: nightly WORK orchestrator (Claude Sonnet) - 2026-10-14T22:00:00Z`.
+- `docs/NoiseCatalogue.md` is unchanged by the resolution, byte for byte against `b8084ad`.
+- Every `## Prompt for next agent` and `## Prompt archive (...)` heading is intact and no prompt was deleted.
+- In a THROWAWAY read-only clone, `git merge --no-commit --no-ff` of the updated `claude/noise-catalogue` onto `claude/magical-pascal-yg32dj` reports clean, then abort. Report the result; this is the check that tells Cow his merge button is green.
+- No signature block, no attribution trailer, no session ID or claude.ai URL in the merge commit message, per the 2026-10-14 hard rule.
+
+**Do not** merge, close or mark ready PR #16 or any other PR, touch main except for this entry's own Handoff-only commit, or rebuild or re-publish anything for Saturday. The app binary does not change, and the TestFlight build already produced from `80c41d0` stays the one Cow installs.
+
+**One note for Saturday.** Once #16 merges, the `claude/magical-pascal-yg32dj` head moves past `80c41d0`. The Build Bench Saturday card's "PR #3 head 80c41d0" label then reads stale; it should be read as "the PR #3 branch". Do not re-dispatch a build to make the label true.
+
+**After Job G:** the documentation slim-down (`handoff/2026-10-13-docs-slim`, still pending), then TODO A and TODO B. H3 and H4+ stay frozen.
+
+## Job G status (PR #16 conflict, 2026-10-15)
+
+BLUF: Job G is done. `claude/noise-catalogue` (PR #16) now contains `claude/magical-pascal-yg32dj` at `80c41d0` through merge commit `4b4cc7f`, and a read-only trial merge of it onto the PR #3 branch reports clean.
+
+- One conflict in `docs/Handoff.md`, resolved by keeping both appended sections in sign-off order: noise catalogue (15:05) first, Job F (22:00) second. Both `Completed by:` lines survive verbatim.
+- `docs/NoiseCatalogue.md` is byte-identical to `b8084ad`. Both `## Prompt for next agent` headings are untouched; no conflict markers remain.
+- Nothing was merged, closed or marked ready. Next pending: documentation slim-down (`handoff/2026-10-13-docs-slim`), then TODO A and TODO B. H3 and H4+ stay frozen.
+
+Completed by: nightly WORK orchestrator (Claude) - 2026-10-15T01:30:00Z
