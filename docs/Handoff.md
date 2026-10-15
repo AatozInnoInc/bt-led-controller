@@ -833,6 +833,15 @@ Cow reported directly: the iOS publish succeeded, the app runs on his iPhone, an
 **Done when** the branch has main merged in with no conflict markers, the test and compile numbers are reported, and a TestFlight build from that branch is available to Cow with its build number stated. Nothing merged into main, no PR closed or marked ready, no signature block anywhere.
 
 **Then, and only then,** the noise-mitigation catalogue (the next-prompt section of the 2026-10-12 entry). It must state which build each test runs against: main with PR #11 caps full white at 22 percent brightness at 30 LEDs, not 47. Still after that: the documentation slim-down (`handoff/2026-10-13-docs-slim`) and TODO A and TODO B. H3 and H4+ stay frozen.
+
+## Noise catalogue status (2026-10-14)
+
+The noise-mitigation catalogue for the Saturday 2026-10-17 listening session is done: `docs/NoiseCatalogue.md`, one docs-only PR off main, not merged. It lists seven new mechanisms beside T1 (`APA102_BRIGHTNESS_MODE`) and T2 (`BITBANG_FREQUENCY_MODE`), an R/B/R session plan with a fixed reference, phone-mic recording and blind scoring, and states that every test runs against PR #3 head `80c41d0` (main with PR #11). One candidate (C7, frame push on change) needs new code and is off the Saturday list until a PR compiles it. The two `## Prompt for next agent` headings above are unchanged.
+
+Next pending jobs: the documentation slim-down (`handoff/2026-10-13-docs-slim`), then TODO A and TODO B. H3 and H4+ stay frozen.
+
+Completed by: noise catalogue worker (Claude Opus) - 2026-10-14T15:05:00Z
+
 ## Job F status (PR #3 branch, 2026-10-14)
 
 BLUF: `claude/magical-pascal-yg32dj` now contains `origin/main` (2d9242c plus the Handoff-only commit 0c1641b), so its `ios-build.yml` carries the iOS platform fix and its firmware has the H2 power limiter. Nothing was pushed to main by this work and no PR was merged, closed or marked ready.
