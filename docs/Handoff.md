@@ -12,9 +12,9 @@ BLUF, as of 2026-10-15. Keep this section current; a session that reads only thi
 
 - Q18: H1 and H2 are landed on main (PR #11 merged as `12f5e9b`). H3 and H4+ are frozen. The live H3 prompt is `## Prompt for next agent` below.
 - main is `7f04a1b`. PR #15 (iOS platform fix) is merged and the app is on Cow's phone.
-- Open PRs: #3 (EMI banner, held open through Saturday 2026-10-17; its branch has main merged in and a TestFlight build exists from `80c41d0`), #16 (noise catalogue, conflict resolved by Job G, waiting for Cow), #13 (always-reporting firmware compile check; Cow makes it required after one non-firmware PR shows it green).
+- Open PRs: #3 (EMI banner, held open through Saturday 2026-10-17; its branch has main merged in and a TestFlight build exists from `80c41d0`), #16 (noise catalogue, conflict resolved by Job G, waiting for Cow). PR #13 (always-reporting firmware compile check) is merged as `07c2a6b`; Cow makes the check required after one non-firmware PR shows it green.
 - Cow is out until Saturday 2026-10-17. His silence authorises nothing. No agent merges, closes or marks ready any PR. No signature block, attribution trailer or session ID anywhere in the repo.
-- Queue: Job F (PR #3 build to his phone, live prompt near the end of this file), then the documentation slim-down (this PR), then TODO A (delete a comment) and TODO B (generate the shared power constants).
+- Queue: Job F is done (PR #3 branch has main merged in); the documentation slim-down is this PR; next TODO A (delete a comment) and TODO B (generate the shared power constants).
 - Known blockers: no hardware until Saturday; the sandbox cannot reach `downloads.arduino.cc`, so firmware builds are verified only through GitHub Actions; the failing-test table in "H1 status" still lists every remaining jest failure and its owning slice.
 
 Older prompts are in [`PromptArchive.md`](/docs/PromptArchive.md) and completed sign-offs are in [`HandoffArchive.md`](/docs/HandoffArchive.md). Both are consulted only when a specific past prompt or sign-off is needed.
