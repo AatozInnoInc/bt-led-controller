@@ -102,7 +102,7 @@ Two outputs from the simulator:
 
 ## Agent handoff workflow
 
-This project uses Claude Code agents to execute development work. The handoff document (`Handoff.md`) is the source of truth for what has been done and what comes next.
+This project uses Claude Code agents to execute development work. The handoff document (`Handoff.md`) is the source of truth for what has been done and what comes next. Superseded prompts live in `PromptArchive.md` and completed sign-offs in `HandoffArchive.md`; only the live working set and the one live "Prompt for next agent" stay in `Handoff.md`.
 
 ```mermaid
 flowchart TD
