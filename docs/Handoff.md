@@ -808,3 +808,16 @@ BLUF: Job G is done. `claude/noise-catalogue` (PR #16) now contains `claude/magi
 - Nothing was merged, closed or marked ready. Next pending: documentation slim-down (`handoff/2026-10-13-docs-slim`), then TODO A and TODO B. H3 and H4+ stay frozen.
 
 Completed by: nightly WORK orchestrator (Claude) - 2026-10-15T01:30:00Z
+
+## TODO A and TODO B status (2026-10-16)
+
+BLUF: both of Cow's authorised TODO jobs are done and open as PRs, not merged. TODO A is PR #18 (`claude/remove-undefined-log-todo`, one comment line deleted, `parameterValidation` tests 26 of 26 before and after). TODO B is PR #19 (`claude/shared-power-constants-codegen`, build-time codegen).
+
+- TODO B: `packages/ble-protocol/power-safety.json` is the single source. `scripts/generate-power-safety-constants.mjs` emits `packages/ble-protocol/src/powerSafety.ts` and `bt-led-controller/power_safety_constants.h` (both checked in) and has a `--check` mode that CI's `firmware-host` job runs. It replaces `scripts/check-power-safety-constants.mjs`, which is deleted on that branch.
+- The `#ifndef MAX_FRAME_CURRENT_MA` override survives. Host g++ sweeps pass at 400 mA and with `-DMAX_FRAME_CURRENT_MA=50`. Jest 49 failed / 122 passed and tsc 162 errors are unchanged. The sketch compile against the generated header is unproven until `firmware-build.yml` runs on #19.
+- Once #19 merges, the live H3 prompt's step 3 ("reuse the H2 pattern") should extend `scripts/generate-power-safety-constants.mjs`, not the old check script. Earlier mentions of the old script in this file are history and stay as written.
+- PR #18's `RN app (jest + tsc)` check is red on the known 49-failure baseline, not on this change.
+- Found, not fixed: PR #17 (`claude/docs-slim`) conflicts with main in `docs/Handoff.md`, because Handoff-only commits landed on main after it was opened. Resolving it means merging `origin/main` into that branch and keeping every `Completed by:` line. This session left it for a deliberate pass.
+- Nothing merged, closed or marked ready. H3 and H4+ stay frozen.
+
+Completed by: nightly WORK orchestrator (Claude) - 2026-10-16T01:30:00Z
