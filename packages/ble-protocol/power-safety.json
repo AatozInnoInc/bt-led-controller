@@ -1,0 +1,33 @@
+{
+  "$comment": "Single source of truth for the power safety constants shared by the RN app and the firmware. After editing, run `npm run generate:power-safety` and commit the regenerated packages/ble-protocol/src/powerSafety.ts and bt-led-controller/power_safety_constants.h. CI runs `npm run check:power-safety` and fails on any diff.",
+  "constants": [
+    {
+      "name": "MAX_LED_COUNT",
+      "value": 30,
+      "doc": [
+        "Largest LED count the hardware build supports. Every power check is sized for this worst case."
+      ]
+    },
+    {
+      "name": "MA_PER_CHANNEL_AT_FULL",
+      "value": 20,
+      "doc": [
+        "Current drawn by one colour channel (R, G or B) of one LED at full value",
+        "and full brightness, in mA. Full white on one LED is 3 x this value."
+      ]
+    },
+    {
+      "name": "MAX_FRAME_CURRENT_MA",
+      "value": 400,
+      "buildOverride": true,
+      "doc": [
+        "Upper bound on the current all LEDs may draw in one frame, in mA.",
+        "",
+        "TODO(battery decision): 400 mA is a placeholder until Cow picks the",
+        "battery. Once the battery and its safe continuous discharge are known,",
+        "set the real number in packages/ble-protocol/power-safety.json and regenerate.",
+        "The firmware header lets a build override it with -DMAX_FRAME_CURRENT_MA=..."
+      ]
+    }
+  ]
+}
