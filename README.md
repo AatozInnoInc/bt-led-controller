@@ -101,7 +101,7 @@ bt-led-controller/
 └── charts/                 # architecture docs (Mermaid)
 ```
 
-See [`Architecture.md`](docs/Architecture.md) for design decisions, [`Handoff.md`](docs/Handoff.md) for the simulator build plan, and [`charts/repository-structure.md`](./charts/repository-structure.md) for the full diagram.
+See [`Architecture.md`](docs/Architecture.md) for design decisions, [`Handoff.md`](docs/Handoff.md) for the live working set and next-agent prompt (older prompts are in [`PromptArchive.md`](docs/PromptArchive.md), completed sign-offs in [`HandoffArchive.md`](docs/HandoffArchive.md)), and [`charts/repository-structure.md`](./charts/repository-structure.md) for the full diagram.
 
 ---
 
