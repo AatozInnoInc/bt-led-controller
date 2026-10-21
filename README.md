@@ -5,6 +5,7 @@ Monorepo for the LED Guitar Controller system — firmware, mobile app, and a br
 | Workspace | What it is |
 |---|---|
 | `bt-led-controller/` | Arduino firmware for Adafruit ItsyBitsy nRF52840 Express |
+| `legacy/itsybitsy-rp2040/` | Standalone legacy firmware + UF2s for Adafruit ItsyBitsy RP2040 (not BLE / not CI) |
 | Root (Expo/RN) | Mobile + desktop app for controlling real hardware over BLE |
 | `apps/simulator/` | Browser-based effect designer (Vite + React, deploys to Vercel) |
 | `packages/ble-protocol/` | `CMD_*` / `RESPONSE_*` / `ERROR_*` — single source of truth for both apps |
@@ -49,6 +50,10 @@ npm run build:firmware
 The script installs `arduino-cli`, the Adafruit nRF52 core (`adafruit:nrf52@1.7.0`), and `adafruit-nrfutil` when they are missing, then writes binaries under `build/firmware/`. CI runs the same compile on every change under `bt-led-controller/` (see `.github/workflows/firmware-build.yml`).
 
 To flash from Arduino IDE: open `bt-led-controller/bt-led-controller.ino`, select **Adafruit ItsyBitsy nRF52840 Express**, then Upload. Details live in [`bt-led-controller/README.md`](./bt-led-controller/README.md).
+
+### Legacy firmware (ItsyBitsy RP2040)
+
+Older RP2040 hardware lives under [`legacy/itsybitsy-rp2040/`](./legacy/itsybitsy-rp2040/). The official sketch is `sketches/no-noise-moriah-eric-official/`. That tree does not share the nRF52840 BLE protocol and is not part of `npm run build:firmware`.
 
 ### Mobile / desktop app (Expo RN)
 
@@ -97,6 +102,7 @@ bt-led-controller/
 │   ├── led-types/          # shared preset + pattern types
 │   └── led-engine/         # math.ts, VirtualDevice, patterns/
 ├── bt-led-controller/      # Arduino firmware (.ino + device_config.h)
+├── legacy/itsybitsy-rp2040/ # legacy RP2040 sketches + bootloader UF2s
 ├── src/                    # Expo/RN mobile app
 └── charts/                 # architecture docs (Mermaid)
 ```

@@ -8,6 +8,7 @@ graph TD
     Root[bt-led-controller/] --> Apps[apps/]
     Root --> Packages[packages/]
     Root --> Firmware[bt-led-controller/]
+    Root --> Legacy[legacy/itsybitsy-rp2040/]
 
     Apps --> Sim[simulator/]
     Apps --> RN[rn-app/ - companion app]
@@ -47,6 +48,10 @@ graph TD
 
     Firmware --> F1[bt-led-controller.ino]
     Firmware --> F2[device_config.h]
+
+    Legacy --> L1[sketches/no-noise-moriah-eric-official/]
+    Legacy --> L2[bootloader UF2s]
+    Legacy --> L3[historical bunny / no-noise sketches]
 ```
 
 ## Dependency rules
