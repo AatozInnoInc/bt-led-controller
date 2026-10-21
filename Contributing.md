@@ -59,11 +59,18 @@ The preset format is consumed by the companion RN app. Any change to `ExportEnve
 
 ---
 
+## Power safety constants
+
+`MAX_LED_COUNT`, `MA_PER_CHANNEL_AT_FULL` and `MAX_FRAME_CURRENT_MA` live in `packages/ble-protocol/power-safety.json`. Edit the JSON, run `npm run generate:power-safety`, and commit the regenerated `packages/ble-protocol/src/powerSafety.ts` and `bt-led-controller/power_safety_constants.h` with it. Never edit those two files by hand. CI runs `npm run check:power-safety` and fails if they do not match the JSON.
+
+---
+
 ## PR checklist
 
 - [ ] `npm test` passes
 - [ ] `npm run build` passes
 - [ ] If firmware changed: `npm run build:firmware` passes (real `arduino-cli` compile for ItsyBitsy nRF52840)
+- [ ] If power safety constants changed: edited the JSON and `npm run check:power-safety` passes
 - [ ] No new dependencies added without discussion
 - [ ] If engine changed: behaviour matches `bt-led-controller.ino`
 - [ ] If preset format changed: companion RN app team informed

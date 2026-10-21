@@ -62,8 +62,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check power safety constants match the app
-        run: node scripts/check-power-safety-constants.mjs
+      - name: Check generated power safety constants are up to date
+        run: node scripts/generate-power-safety-constants.mjs --check
 
       - name: Build power limiter tests
         run: g++ -std=c++11 -O2 -Wall -Wextra -Werror -I bt-led-controller firmware-tests/power_limiter_test.cpp -o power_limiter_test
