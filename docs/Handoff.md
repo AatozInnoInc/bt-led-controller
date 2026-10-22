@@ -234,6 +234,70 @@ Completed by: nightly session worker (Claude Sonnet) — 2026-09-23T01:25:00Z
 
 ---
 
+## EMI risk warning banner + Phase 2 firmware flags — sign-off
+
+**What changed**
+
+- `src/domain/emi/emiRiskModel.ts`: pure, RN-free EMI/noise risk scoring across four weighted factors (brightness dimming PWM, drive current, pattern movement, data-line activity), each tied to a named physical mechanism. Reuses `calculateLEDCurrent` from `parameterValidation.ts` so this warning and the existing power-budget warning agree on what "worst case" means.
+- `src/domain/emi/emiCalibration.ts`: derives calibrated risk-band thresholds from field observations once at least 6 exist with both "quiet" and "heard" verdicts present.
+- `src/repositories/emiCalibrationRepository.ts`: AsyncStorage-backed per-device observation history, following the existing repository pattern.
+- `src/components/EmiRiskBanner.tsx` and `ConfigScreen.tsx` wiring: collapsed one-line verdict under the color picker, expandable factor breakdown, and Quiet / I hear it calibration buttons. Advisory only; the banner never blocks or clamps a control.
+- `bt-led-controller.ino`: two Phase 2 flags for the Build Bench "Test B" listening test, both default off. `APA102_BRIGHTNESS_MODE` dims via the 8-bit color PWM instead of the audible 5-bit global-brightness field. `BRIGHTNESS_INPUT_IS_PERCENT` corrects the app's 0-100 slider being sent into the firmware's 0-255 brightness field, which currently tops out around 39 percent of true intensity.
+- `package.json`: added `ts-jest` as a dev dependency. `jest.config.js` already required it, so `npm test` could not run at all before this change.
+- 15 new unit tests (`emiRiskModel.test.ts`, `emiCalibration.test.ts`), all passing.
+
+**Review fixes (blocking items resolved before merge, amended into the same commit)**
+
+- **Owner's name in source.** The design-contract comments in `emiRiskModel.ts` and `emiCalibration.ts` referenced the owner by his real first name. Both replaced with "Cow".
+- **Missing firmware current-limiter tripwire.** `BRIGHTNESS_INPUT_IS_PERCENT` raises the firmware's maximum output roughly 2.55x with no firmware-side current limit backing it up. Added a compile-time guard next to the flag's definition in `bt-led-controller.ino`:
+  ```cpp
+  #if BRIGHTNESS_INPUT_IS_PERCENT && !defined(MAX_FRAME_CURRENT_MA)
+  #error "BRIGHTNESS_INPUT_IS_PERCENT requires a firmware-side current limiter (MAX_FRAME_CURRENT_MA)"
+  #endif
+  ```
+  `MAX_FRAME_CURRENT_MA` does not exist yet; it is planned for a later slice (the H2 current-limiter work). This tripwire only prevents the flag from being enabled before that limiter lands.
+- **This Handoff entry**, added per the agent workflow rule.
+- Also fixed, while already touching these files: three single-line `if` statements this PR had introduced (`bt-led-controller.ino`, `EmiRiskBanner.tsx`, `emiRiskModel.ts` `bandFor()`), each split onto its own braced block, and reworked the banner's mount-guard from a negative `cancelled` check to a positive `active` check, per `.cursor/rules/code-design-qa.mdc`.
+
+**Deferred (non-blocking review items, left for a later PR)**
+
+- Model and calibration correctness: the brightness-scale assumption baked into `brightnessDimmingScore`, additive versus multiplicative combination of the dimming and movement factors, storing raw inputs instead of scores so recalibration survives a weight change, the accuracy of the PWM-carrier mechanism comment, the firmware build-flag name shown in end-user advice text, and the observation repository's error and pooling edges. Each needs design judgment, not a mechanical fix.
+- Test file location: `src/__tests__/domains/emi/` versus `src/domain/emi/`. This mirrors the same `domains/` (tests) versus `domain/` (source) split already used for `bluetooth`, `common`, and `config`, so it is a repo-wide naming question, not something scoped to this PR.
+- Extensive logging at EMI decision points (band chosen, calibration applied or rejected). Not added here; picking log levels and payloads needs design judgment.
+
+**Verification**
+
+- `npx jest src/__tests__/domains/emi`: exit 0, 2 suites, 15 tests, all passing.
+- `npx tsc --noEmit`: one pre-existing error (`tsconfig.json(2,3): TS5098 customConditions`), confirmed present on the branch before this PR's changes too by stashing them and re-running. No new errors in `src/`.
+- `npx jest` (full suite): 83 tests passing, up from 68 before this PR. 15 suites still fail on this branch for reasons unrelated to this PR (duplicate `__mocks__` haste-map entries under `__tests__/` and `src/__tests__/`, and a `domains/common` versus `src/domains/common` module-path mismatch); both predate this PR and are out of scope here.
+
+Completed by: Claude Code (PR #3 review-fix agent) — 2026-09-25T01:13:03Z
+
+---
+
+## EMI raw observation storage (Job C, review item N2) - sign-off
+
+**What changed**
+
+- `src/domain/emi/emiCalibration.ts`: observations are now stored as raw inputs (`RawEmiObservation`: colour, brightness, speed, effect, LED count, verdict, timestamp, `modelVersion`) instead of the computed score. `rescoreObservations(records, weights)` recomputes scores under any weight set, purely, via `assessEmiRisk`. `createRawObservation` builds the record to persist. `calibrateThresholds` is unchanged and still works on scored `EmiObservation`s.
+- Versioning: records written before this change (score only, no `modelVersion`) are `LegacyEmiObservation`. They are kept, load without error, keep their frozen score, and are flagged `rescorable: false`. They are never dropped.
+- `src/repositories/emiCalibrationRepository.ts`: fixed review item N3. A read or parse error no longer makes the next `addObservation` start from an empty list and overwrite history; the save now throws instead. `loadObservations` (display only) still returns an empty list on error. Entries the model does not recognise, such as a future `modelVersion`, are preserved as written on save.
+- `src/components/EmiRiskBanner.tsx`: stores raw inputs on each tap, rescores the history under the current weights, and now has the missing `catch` in `recordVerdict` (review item N7). The app does not track strip length, so `ledCount` is recorded as `MAX_LED_COUNT` (14, now exported from `parameterValidation.ts`).
+- Tests in `src/__tests__/domain/emi/`: rescoring a stored observation under a changed weight set gives a different score from the same inputs; legacy records load and calibrate; the repository refuses to overwrite unreadable history.
+
+**Deviations and open items**
+
+- Skipped: the device-less `unknown-device` recording bucket. It needs a decision on how the banner learns the real device id, so it is not trivial.
+- `ledCount` does not affect any score today. It is stored so a later model can use it.
+- The existing EMI tests still live in `src/__tests__/domains/emi/`. The H1 branch moves them to `domain/emi/`, so the new tests already sit where they will end up.
+- This worker did not rewrite the "Prompt for next agent" section below. It is the H1 prompt belonging to this branch's history, and main carries a different live prompt, so changing it here would only create a merge conflict. Whoever merges this branch should keep main's live prompt.
+
+**Verified:** `npx jest` 70 failed before and after (new tests all pass, 13 added), `npx tsc --noEmit` 211 errors before and after, none in EMI files.
+
+Completed by: Job C worker (Claude Sonnet) - 2026-10-13T01:10:00Z
+
+---
+
 ## Prompt archive (simulator next steps, superseded 2026-09-24)
 
 **Context:** Simulator has **37** patterns (ids **0–36**). Ids **0–13** have firmware equivalents; **14–36** are simulator-only (`larson` through `dissolve`).
@@ -769,6 +833,18 @@ Cow reported directly: the iOS publish succeeded, the app runs on his iPhone, an
 **Done when** the branch has main merged in with no conflict markers, the test and compile numbers are reported, and a TestFlight build from that branch is available to Cow with its build number stated. Nothing merged into main, no PR closed or marked ready, no signature block anywhere.
 
 **Then, and only then,** the noise-mitigation catalogue (the next-prompt section of the 2026-10-12 entry). It must state which build each test runs against: main with PR #11 caps full white at 22 percent brightness at 30 LEDs, not 47. Still after that: the documentation slim-down (`handoff/2026-10-13-docs-slim`) and TODO A and TODO B. H3 and H4+ stay frozen.
+## Job F status (PR #3 branch, 2026-10-14)
+
+BLUF: `claude/magical-pascal-yg32dj` now contains `origin/main` (2d9242c plus the Handoff-only commit 0c1641b), so its `ios-build.yml` carries the iOS platform fix and its firmware has the H2 power limiter. Nothing was pushed to main by this work and no PR was merged, closed or marked ready.
+
+- One conflict, `src/utils/parameterValidation.ts`: resolved by keeping main's power-safety block whole (constants derived from `powerSafety.ts`, 30 LEDs, 400 mA). PR #3's only addition there was exporting the old 14-LED `MAX_LED_COUNT`; that export is gone.
+- Follow-on fix: `EmiRiskBanner.tsx` imported `MAX_LED_COUNT` for the stored observation length. Per Cow's 2026-10-13 decision it now uses `EMI_OBSERVATION_LED_COUNT = 14` (new, in `src/domain/emi/emiCalibration.ts`), so observations do not silently change to 30.
+- Tripwire: `#error` on `BRIGHTNESS_INPUT_IS_PERCENT` without `MAX_FRAME_CURRENT_MA` still trips when the limiter header is absent (preprocessor check), and is satisfied now that `power_safety_constants.h` is included first.
+- Counts, before the merge versus after: jest 49 failed / 150 passed after (main baseline 49 failed), tsc 162 errors (unchanged from main), vitest 29 passed, power-safety drift check in sync. No failing-test increase.
+- Exactly one `## Prompt for next agent` heading remains from the H3 prompt, plus the Job F prompt heading from the 2026-10-14 entry.
+
+Completed by: nightly WORK orchestrator (Claude Sonnet) — 2026-10-14T22:00:00Z
+
 ## Job G, Cow's request 2026-10-14: make PR #16 mergeable
 
 His words: "Have the nightly bot fix the merge conflict". Do this FIRST tonight, ahead of the documentation slim-down and TODO A and TODO B. It is small, it is the only thing standing between Cow and a one-click merge, and Saturday 2026-10-17 is three days out.
@@ -821,3 +897,41 @@ BLUF: both of Cow's authorised TODO jobs are done and open as PRs, not merged. T
 - Nothing merged, closed or marked ready. H3 and H4+ stay frozen.
 
 Completed by: nightly WORK orchestrator (Claude) - 2026-10-16T01:30:00Z
+
+## Prompt for next agent, Job I: clear PR #3's conflict with main
+
+**Authorised by Cow directly, 2026-10-22.** He was asked whether to merge `origin/main` into `claude/magical-pascal-yg32dj` so PR #3 stops conflicting, or to leave #3 held untouched. His answer: "Yes". That authorises the merge and nothing else. PR #3 is not merged, closed or marked ready, by any means (standing order 2).
+
+**The state, verified 2026-10-21 and again 2026-10-22 from git on a full-history clone.** main is `bdc8e94`, unchanged since 2026-10-16. `claude/magical-pascal-yg32dj` is `80c41d0`, 9 ahead of main and 2 behind. `git merge-tree --write-tree origin/claude/magical-pascal-yg32dj origin/main` reports exactly one conflict, `docs/Handoff.md`, and nothing else. The cause is the two Handoff-only commits that landed on main after Job F merged main into the branch: `7f04a1b` (Job G record) and `bdc8e94` (TODO A and TODO B record).
+
+**Task**
+
+1. `git checkout claude/magical-pascal-yg32dj` then `git merge origin/main`. That direction moves commits onto the PR branch only. Nothing goes to main.
+2. Resolve the single `docs/Handoff.md` conflict as purely additive. Both sides appended status sections. Keep every one of them, keep every `Completed by:` line verbatim, reword nothing, delete no prompt. Order the sections by their sign-off timestamps.
+3. After resolving, `docs/Handoff.md` must still contain the H3 `## Prompt for next agent` heading, and every earlier prompt must still be a `## Prompt archive (...)` heading.
+4. Push the branch.
+
+**Check PR #16 before you sign off.** `claude/noise-catalogue` (PR #16) is based on this branch, so moving this branch can re-conflict it in `docs/Handoff.md`. That is exactly what happened in Job G. Run the trial merge and REPORT what git says. Whether you may also fix #16 the same way was put to Cow on 2026-10-22 as a separate question; if his answer is not recorded in Build Bench `state`, report the conflict and stop there.
+
+**Verify, and report each one**
+
+- `grep -rn '<<<<<<<\|=======\|>>>>>>>' docs/` returns nothing.
+- Every `Completed by:` line present on main and on the branch before the merge is still present after it. Count them before and after and state both numbers.
+- In a throwaway full-history clone (never `--depth 1`, which makes `git merge-tree` report CONFLICT on everything for want of a merge base), the updated branch trial-merges onto main CLEAN. This is the check that tells Cow his merge button is green.
+- The same trial merge for `claude/noise-catalogue` onto the updated branch, clean or conflicting, reported either way.
+- `npx jest`, `npx tsc --noEmit` and `npx vitest run` before and after. The 49 failed / 122 passed jest baseline and the 162 tsc errors must not get worse.
+- The firmware compile result from `firmware-build.yml`, which runs on this branch because it touches `bt-led-controller/`.
+
+**Done when** the branch has main merged in, no conflict markers remain, no sign-off line was lost, the trial merge onto main reports clean, and PR #16's trial merge result is reported. Nothing merged into main, no PR closed or marked ready, no signature block anywhere.
+
+**Difficulty: 2 of 10.** Mechanical, one additive conflict, the same shape as Job E and Job G.
+
+## Job I status (PR #3 branch, 2026-10-22)
+
+BLUF: `claude/magical-pascal-yg32dj` now contains `origin/main` (bdc8e94). The single `docs/Handoff.md` conflict was additive and is resolved by keeping every section: Job F status first, then Job G, Job G status and the TODO A and TODO B status from main. No conflict markers remain, nothing was reworded and no prompt was deleted.
+
+- Counts after the merge: jest 49 failed / 150 passed (baseline 49 failed), tsc 162 errors (baseline 162), vitest 125 passed. Nothing got worse.
+- The Job I prompt above was appended as authorised. The stale completed Job F prompt heading is left as it was: archiving it is a Handoff-only change on main, held under handoff/2026-10-20 because it would re-conflict PR #17.
+- PR #3 is not merged, closed or marked ready.
+
+Completed by: nightly WORK orchestrator (Claude) - 2026-10-23T01:30:00Z
