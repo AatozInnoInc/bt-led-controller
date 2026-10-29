@@ -272,7 +272,7 @@ Not in scope, and not to be attempted: rewriting the 22 commits already carrying
 
 Cow reported directly: the iOS publish succeeded, the app runs on his iPhone, and he approved and merged PR #15. Verified from a read-only clone: main is now `2d9242c`, "Merge pull request #15 from AatozInnoInc/claude/ios-platform-fix", and the `claude/ios-platform-fix` branch is gone. The publish pipeline is proven end to end for the first time. It is no longer job one.
 
-## Prompt for next agent, Job F: get PR #3's build onto Cow's phone
+## Prompt archive (Job F, completed 2026-10-14)
 
 **This is job one tonight, ahead of the noise-mitigation catalogue.** Cow asked for the plan directly. Saturday 2026-10-17 needs the EMI banner build on his phone, and today it cannot be built at all.
 
